@@ -54,6 +54,8 @@ class RateLimiter:
 claude_limiter = RateLimiter(max_calls=45, period_seconds=60)
 actionable_file_lock = threading.Lock()
 news_cache_lock = threading.Lock()
+last_clear_lock = threading.Lock()
+last_clear_time = 0.0
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
@@ -175,6 +177,9 @@ def clear_actionable_moves(reason="manual", archive_date=None, clear_news_too=Fa
         archive_actionable_moves(archive_date)
         with open(ACTIONABLE_FILE, 'w') as f:
             json.dump({}, f)
+    with last_clear_lock:
+        global last_clear_time
+        last_clear_time = time.time()
     print(f"[CLEANUP] actionable_moves.json cleared ({reason}).")
     if clear_news_too:
         clear_news_cache(reason=reason)
@@ -192,6 +197,7 @@ def patch_actionable_move(ticker, updates):
 
 def run_synthesis_in_background(ticker, opt_data, pct_change):
     """Fetches news + runs Claude synthesis off the main loop, then patches the card in place."""
+    triggered_at = time.time()
     try:
         cached = get_cached_news(ticker)
         if cached is not None:
@@ -212,6 +218,11 @@ def run_synthesis_in_background(ticker, opt_data, pct_change):
             set_cached_news(ticker, news_text, news_source)
 
         ai_synthesis = generate_ai_synthesis(ticker, opt_data, news_text, round(pct_change, 2))
+        with last_clear_lock:
+            cleared_after_trigger = last_clear_time > triggered_at
+        if cleared_after_trigger:
+            print(f"[STALE THREAD] {ticker}: midnight clear fired after this thread started — discarding synthesis.")
+            return
         patch_actionable_move(ticker, {
             "status": "TRIGGERED - Exceeded Premium",
             "news_source": news_source,
@@ -222,6 +233,11 @@ def run_synthesis_in_background(ticker, opt_data, pct_change):
         print(f"[SYNTHESIS COMPLETE] {ticker} (news via {news_source})")
     except Exception as e:
         print(f"[SYNTHESIS THREAD ERROR] {ticker}: {e}")
+        with last_clear_lock:
+            cleared_after_trigger = last_clear_time > triggered_at
+        if cleared_after_trigger:
+            print(f"[STALE THREAD] {ticker}: midnight clear fired after this thread started — discarding failed synthesis.")
+            return
         patch_actionable_move(ticker, {
             "status": "TRIGGERED - Synthesis Failed",
             "why": "AI synthesis failed to complete.",

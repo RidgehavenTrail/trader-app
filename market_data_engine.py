@@ -200,11 +200,12 @@ an active trader."""
 def macro_loop():
     """Runs generate_macro_regime() once at startup and then every
     hour during market hours (8am-4pm ET weekdays)."""
+    generate_macro_regime()
     while True:
+        time.sleep(3600)
         state = market_state()
         if state in ('pre_market', 'open'):
             generate_macro_regime()
-        time.sleep(3600)
 
 def get_tickers():
     if os.path.exists(TICKERS_FILE):

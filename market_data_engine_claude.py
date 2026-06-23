@@ -656,8 +656,16 @@ def fetch_loop(test_mode=False):
                         session_label = "test"
                     elif state == "pre_market":
                         pre_price = getattr(stock.fast_info, 'pre_market_price', None)
-                        current_price = float(pre_price) if pre_price else float(hist['Close'].iloc[-1])
-                        prev_close    = float(hist['Close'].iloc[-2])
+                        if pre_price is None:
+                            market_data[ticker] = {
+                                "price": f"${float(hist['Close'].iloc[-1]):,.2f}",
+                                "change": "pre-mkt",
+                                "is_positive": None,
+                                "session": state
+                            }
+                            continue
+                        current_price = float(pre_price)
+                        prev_close    = float(hist['Close'].iloc[-1])
                         session_label = state
                     else:
                         current_price = float(hist['Close'].iloc[-1])

@@ -131,8 +131,8 @@ def generate_macro_regime():
         tnx = yf.Ticker("^TNX")
         vix = yf.Ticker("^VIX")
 
-        tnx_hist = tnx.history(period="2d")
-        vix_hist = vix.history(period="2d")
+        tnx_hist = tnx.history(period="5d")
+        vix_hist = vix.history(period="5d")
 
         if len(tnx_hist) < 2 or len(vix_hist) < 2:
             return

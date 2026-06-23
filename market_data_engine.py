@@ -272,7 +272,7 @@ def fetch_latest_news(ticker_symbol):
             # coverage rather than a dedicated story about ticker_symbol.
             other_high_scores = [
                 float(t.get("relevance_score", 0)) for t in ticker_sentiments
-                if t.get("ticker") != ticker_symbol and float(t.get("relevance_score", 0)) >= 0.4
+                if t.get("ticker") != ticker_symbol and float(t.get("relevance_score", 0)) >= relevance - 0.05
             ]
             is_shared_coverage = len(other_high_scores) > 0
 

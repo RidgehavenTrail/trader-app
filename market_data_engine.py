@@ -210,9 +210,28 @@ def run_synthesis_in_background(ticker, opt_data, pct_change):
             news_source = "Alpha Vantage"
 
             if news_text is None:
-                print(f"[NEWS FALLBACK] {ticker}: Alpha Vantage had nothing, asking Claude to search...")
-                news_text = fetch_news_via_claude_search(ticker, round(pct_change, 2))
+                print(f"[NEWS FALLBACK] {ticker}: Alpha Vantage had nothing, using Claude search+synthesize...")
+                ai_synthesis = search_and_synthesize_fallback(ticker, opt_data, round(pct_change, 2))
                 news_source = "Claude Search"
+                failure_phrases = ("synthesis failed", "timed out", "api error", "n/a", "unavailable")
+                if any(p in ai_synthesis.get('why', '').lower() for p in failure_phrases):
+                    print(f"[CACHE SKIP] {ticker}: synthesis result looks like a failure, not caching.")
+                else:
+                    set_cached_news(ticker, ai_synthesis.get('why', ''), news_source)
+                with last_clear_lock:
+                    cleared_after_trigger = last_clear_time > triggered_at
+                if cleared_after_trigger:
+                    print(f"[STALE THREAD] {ticker}: midnight clear fired after this thread started — discarding synthesis.")
+                    return
+                patch_actionable_move(ticker, {
+                    "status": "TRIGGERED - Exceeded Premium",
+                    "news_source": news_source,
+                    "why": ai_synthesis.get('why', ''),
+                    "structure": ai_synthesis.get('structure', ''),
+                    "impact": ai_synthesis.get('impact', '')
+                })
+                print(f"[SYNTHESIS COMPLETE] {ticker} (news via {news_source})")
+                return
 
         ai_synthesis = generate_ai_synthesis(ticker, opt_data, news_text, round(pct_change, 2))
         failure_phrases = ("synthesis failed", "timed out", "api error", "n/a", "unavailable")
@@ -317,77 +336,130 @@ def fetch_latest_news(ticker_symbol):
         print(f"[NEWS ERROR] Alpha Vantage fetch failed for {ticker_symbol}: {e}")
         return None
 
-def fetch_news_via_claude_search(ticker_symbol, pct_change):
+def search_and_synthesize_fallback(ticker, opt_data, pct_change):
     """
-    Fallback for when Alpha Vantage has no news (quota exhausted or empty feed).
-    Uses Claude's native web search tool to research the move directly.
-    Note: web search and forced-JSON-only prompting don't mix well in one call,
-    so this returns plain text to be fed into generate_ai_synthesis() as news_text.
+    Two-turn search-and-synthesize fallback for when Alpha Vantage has no news.
+    Matches the pattern used in market_data_engine_claude.py.
+    Turn 1: web search for the catalyst.
+    Turn 2: structured JSON synthesis using text summary only (raw search blocks stripped).
     """
     if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":
-        return "News unavailable: no fallback possible (missing Claude API key)."
+        return {"why": "API Key Missing.", "structure": "N/A", "impact": "N/A"}
 
     with fallback_semaphore:
-        return _fetch_news_via_claude_search_inner(ticker_symbol, pct_change)
+        claude_limiter.wait_for_slot(estimated_tokens=8000)
 
-def _fetch_news_via_claude_search_inner(ticker_symbol, pct_change):
-    claude_limiter.wait_for_slot()
-
-    prompt = f"""The stock {ticker_symbol} moved {pct_change}% today. Use the web_search tool right now to find out why - search for something like "{ticker_symbol} stock news today" or "why did {ticker_symbol} stock move today".
-
-Do not answer from memory. You must call the search tool before responding.
-
-After searching, summarize the 2-3 most relevant, recent headlines and a brief summary of each in plain text. Focus on company-specific news, earnings, analyst actions, or sector-wide catalysts."""
-
-    url = "https://api.anthropic.com/v1/messages"
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-    payload = {
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 1500,
-        "messages": [{"role": "user", "content": prompt}],
-        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-
-        if response.status_code == 429:
-            print(f"[RATE LIMIT] Hit limit during search fallback for {ticker_symbol}. Waiting 30s...")
-            time.sleep(30)
-            response = requests.post(url, headers=headers, json=payload, timeout=45)
-
-        result = response.json()
-
-        if 'error' in result:
-            print(f"[SEARCH FALLBACK ERROR] {ticker_symbol}: {result['error'].get('message', 'Unknown Error')}")
-            return "News unavailable: search fallback failed."
-
-        content_blocks = result.get('content', [])
-
-        # Debug: log what block types actually came back, so we can see
-        # whether the model searched at all or just answered directly.
-        block_types = [b.get('type') for b in content_blocks]
-        print(f"[SEARCH DEBUG] {ticker_symbol} response blocks: {block_types}")
-
-        searched = any(t in ('server_tool_use', 'web_search_tool_result') for t in block_types)
-        if not searched:
-            print(f"[SEARCH DEBUG] {ticker_symbol}: model did not invoke web_search at all.")
-
-        text = "\n".join(
-            block.get('text', '') for block in content_blocks if block.get('type') == 'text'
+        search_prompt = (
+            f"What's driving the {pct_change}% move in {ticker} during the most recent trading session? "
+            f"Do not answer from memory — search for today's news before responding. "
+            f"Focus on company-specific catalysts: earnings, guidance, analyst actions, product news, "
+            f"regulatory decisions, executive commentary. Summarize your findings in 3-5 sentences."
         )
-        if text.strip():
-            return text.strip()
 
-        return "News unavailable: search fallback returned no content."
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
 
-    except Exception as e:
-        print(f"[SEARCH FALLBACK EXCEPTION] {ticker_symbol}: {e}")
-        return "News unavailable: search fallback failed."
+        search_payload = {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1500,
+            "messages": [{"role": "user", "content": search_prompt}],
+            "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=search_payload, timeout=45)
+
+            if response.status_code == 429:
+                print(f"[RATE LIMIT] {ticker}: waiting 30s...")
+                time.sleep(30)
+                response = requests.post(url, headers=headers, json=search_payload, timeout=45)
+
+            result = response.json()
+
+            if 'error' in result:
+                print(f"[SEARCH ERROR] {ticker}: {result['error'].get('message', 'Unknown')}")
+                return {"why": f"Search failed: {result['error'].get('message')}", "structure": "N/A", "impact": "N/A"}
+
+            t1_usage = result.get('usage', {})
+            t1_in = t1_usage.get('input_tokens', 0)
+            t1_out = t1_usage.get('output_tokens', 0)
+            print(f"[TOKENS] {ticker} Turn 1 (search):    in={t1_in:,}  out={t1_out:,}")
+            claude_limiter.record_usage(t1_in + t1_out)
+
+            block_types = [b.get('type') for b in result.get('content', [])]
+            print(f"[SEARCH DEBUG] {ticker} response blocks: {block_types}")
+            if not any(t in ('server_tool_use', 'web_search_tool_result') for t in block_types):
+                print(f"[SEARCH DEBUG] {ticker}: model did not invoke web_search.")
+
+            # Strip raw search blocks — keep only text summary for Turn 2
+            summary_only = [b for b in result.get('content', []) if b.get('type') == 'text']
+
+            claude_limiter.wait_for_slot(estimated_tokens=t1_in + t1_out)
+
+            synthesis_prompt = (
+                f"Based on your search findings above, synthesize with the options data "
+                f"and return ONLY a valid JSON object with exactly three keys — no preamble, no markdown fences:\n\n"
+                f"Options Structure Data for {ticker}:\n"
+                f"- Put Wall: {opt_data['put_wall']}\n"
+                f"- Call Wall: {opt_data['call_wall']}\n"
+                f"- ATM IV: {opt_data['atm_iv']}%\n\n"
+                f'"why": 2-3 sentence company-specific reason. Say so plainly if insufficient.\n'
+                f'"structure": 1-2 sentence options mechanics explanation.\n'
+                f'"impact": 1-2 sentence actionable trading rule.'
+            )
+
+            synthesis_payload = {
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 1000,
+                "messages": [
+                    {"role": "user", "content": search_prompt},
+                    {"role": "assistant", "content": summary_only},
+                    {"role": "user", "content": synthesis_prompt}
+                ]
+            }
+
+            synth_response = requests.post(url, headers=headers, json=synthesis_payload, timeout=30)
+
+            if synth_response.status_code == 429:
+                print(f"[RATE LIMIT] {ticker}: waiting 30s on synthesis...")
+                time.sleep(30)
+                synth_response = requests.post(url, headers=headers, json=synthesis_payload, timeout=30)
+
+            synth_result = synth_response.json()
+
+            if 'error' in synth_result:
+                print(f"[SYNTHESIS ERROR] {ticker}: {synth_result['error'].get('message', 'Unknown')}")
+                return {"why": f"Synthesis failed: {synth_result['error'].get('message')}", "structure": "N/A", "impact": "N/A"}
+
+            t2_usage = synth_result.get('usage', {})
+            t2_in = t2_usage.get('input_tokens', 0)
+            t2_out = t2_usage.get('output_tokens', 0)
+            total_in = t1_in + t2_in
+            total_out = t1_out + t2_out
+            print(f"[TOKENS] {ticker} Turn 2 (synthesis): in={t2_in:,}  out={t2_out:,}")
+            print(f"[TOKENS] {ticker} TOTAL:              in={total_in:,}  out={total_out:,}  "
+                  f"(est. cost: ${(total_in * 0.000001) + (total_out * 0.000005):.5f})")
+
+            text = "".join(
+                b.get('text', '') for b in synth_result.get('content', []) if b.get('type') == 'text'
+            )
+            if text:
+                text = text.replace('```json', '').replace('```', '').strip()
+                return json.loads(text)
+
+            print(f"[SYNTHESIS ERROR] {ticker}: no text in synthesis response.")
+            return {"why": "Synthesis returned no data.", "structure": "N/A", "impact": "N/A"}
+
+        except json.JSONDecodeError as e:
+            print(f"[SYNTHESIS ERROR] {ticker}: JSON parse failed - {e}")
+            return {"why": "Synthesis output was not valid JSON.", "structure": "N/A", "impact": "N/A"}
+        except Exception as e:
+            print(f"[SYNTHESIS ERROR] {ticker}: {e}")
+            return {"why": "Synthesis failed or timed out.", "structure": "N/A", "impact": "N/A"}
 
 def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
     if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":

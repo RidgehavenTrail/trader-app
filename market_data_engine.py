@@ -21,6 +21,7 @@ DATA_FILE = 'market_data.json'
 ACTIONABLE_FILE = 'actionable_moves.json'
 ARCHIVE_DIR = 'archive'
 NEWS_CACHE_FILE = 'news_cache.json'
+MACRO_FILE = 'macro_regime.json'
 
 # --- Claude Rate Limiter (token-aware, Tier 1: 50 RPM / 50k TPM) ---
 class RateLimiter:
@@ -114,6 +115,96 @@ fallback_semaphore = threading.Semaphore(2)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+def generate_macro_regime():
+    """
+    Fetches live ^TNX and ^VIX data via yfinance, then calls Gemini with
+    Google Search grounding to generate a market briefing headline and
+    2-3 sentence summary. Writes result to macro_regime.json.
+    Only runs during market hours (8am-4pm ET weekdays).
+    """
+    if not GEMINI_API_KEY:
+        print("[MACRO] Gemini API key missing — skipping macro regime update.")
+        return
+    try:
+        tnx = yf.Ticker("^TNX")
+        vix = yf.Ticker("^VIX")
+
+        tnx_hist = tnx.history(period="2d")
+        vix_hist = vix.history(period="2d")
+
+        if len(tnx_hist) < 2 or len(vix_hist) < 2:
+            return
+
+        tnx_price = round(float(tnx_hist['Close'].iloc[-1]), 2)
+        tnx_change = round(float(tnx_hist['Close'].iloc[-1]) - float(tnx_hist['Close'].iloc[-2]), 2)
+        vix_price = round(float(vix_hist['Close'].iloc[-1]), 2)
+        vix_change = round(float(vix_hist['Close'].iloc[-1]) - float(vix_hist['Close'].iloc[-2]), 2)
+
+        prompt = f"""Search for today's market news and provide a concise market briefing.
+
+Current market data:
+- 10-Year Treasury Yield: {tnx_price}% ({'+' if tnx_change >= 0 else ''}{tnx_change} today)
+- VIX: {vix_price} ({'+' if vix_change >= 0 else ''}{vix_change} today)
+
+Search for what's driving broad market movement today, any major scheduled
+catalysts (Fed speakers, economic data releases, large earnings announcements),
+and the current risk tone across markets.
+
+Return ONLY a valid JSON object with exactly these two keys, no preamble,
+no markdown fences:
+"headline": A single punchy sentence capturing the dominant market theme today
+"summary": 2-3 sentences covering what's moving markets, major catalysts on
+deck today, and the current risk tone. Keep it concise and actionable for
+an active trader."""
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "tools": [{"google_search": {}}]
+        }
+
+        response = requests.post(url, json=payload, timeout=30)
+        result = response.json()
+
+        if 'error' in result:
+            print(f"[MACRO] Gemini error: {result['error'].get('message', 'Unknown')}")
+            return
+
+        if 'candidates' not in result or not result['candidates']:
+            print("[MACRO] Gemini returned no candidates.")
+            return
+
+        text = result['candidates'][0].get('content', {}).get('parts', [{}])[0].get('text', '')
+        if not text:
+            return
+
+        text = text.replace('```json', '').replace('```', '').strip()
+        macro_data = json.loads(text)
+
+        macro_data['tnx'] = tnx_price
+        macro_data['tnx_change'] = tnx_change
+        macro_data['vix'] = vix_price
+        macro_data['vix_change'] = vix_change
+        macro_data['updated_at'] = datetime.now(ET).strftime('%I:%M %p ET')
+
+        with open(MACRO_FILE, 'w') as f:
+            json.dump(macro_data, f)
+
+        print(f"[MACRO] Updated macro regime: {macro_data['headline'][:60]}...")
+
+    except Exception as e:
+        print(f"[MACRO] Failed to generate macro regime: {e}")
+
+def macro_loop():
+    """Runs generate_macro_regime() once at startup and then every
+    hour during market hours (8am-4pm ET weekdays)."""
+    while True:
+        state = market_state()
+        if state in ('pre_market', 'open'):
+            generate_macro_regime()
+        time.sleep(3600)
 
 def get_tickers():
     if os.path.exists(TICKERS_FILE):
@@ -679,6 +770,16 @@ def sync_tickers():
         return jsonify({"status": "success", "tickers": clean_tickers})
     return jsonify({"status": "no_change"})
 
+@app.route('/get_macro_regime', methods=['GET'])
+def get_macro_regime():
+    if os.path.exists(MACRO_FILE):
+        try:
+            with open(MACRO_FILE, 'r') as f:
+                return jsonify(json.load(f))
+        except:
+            pass
+    return jsonify({})
+
 # --- Market Hours ---
 ET = ZoneInfo("America/New_York")
 
@@ -860,4 +961,5 @@ if __name__ == "__main__":
 
     clear_actionable_moves(reason="startup")
     threading.Thread(target=fetch_loop, args=(args.test,), daemon=True).start()
+    threading.Thread(target=macro_loop, daemon=True).start()
     app.run(port=5000)

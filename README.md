@@ -191,8 +191,6 @@ project/
 ├── market_data_engine_claude.py   # Claude engine (port 5001)
 ├── trader_dashboard.html          # AV dashboard
 ├── trader_dashboard_claude.html   # Claude dashboard
-├── inspect_news_cache.py          # Debug: inspect cache entries
-├── inspect_alpha_vantage.py       # Debug: raw AV news response
 ├── tickers.json                   # Shared watchlist
 ├── market_data.json               # AV engine live prices
 ├── market_data_claude.json        # Claude engine live prices

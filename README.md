@@ -46,7 +46,12 @@ Open `http://localhost:8000/trader_dashboard.html` and `http://localhost:8000/tr
 
 ## API Keys Required
 
-All keys are pasted directly into the top of each engine file — never committed to source control.
+Keys are stored in a `.env` file in the project root (never committed to source control). Copy `.env.example` to `.env` and fill in your values:
+
+```
+ANTHROPIC_API_KEY=your-key-here
+ALPHA_VANTAGE_KEY=your-key-here
+```
 
 - **`ANTHROPIC_API_KEY`** — both engines use this for AI synthesis (Haiku 4.5). Get from platform.anthropic.com. Requires $5 minimum deposit (Tier 1) for 50 RPM.
 - **`ALPHA_VANTAGE_KEY`** — AV engine only, for news sentiment. Free tier: 25 calls/day. Get from alphavantage.co.

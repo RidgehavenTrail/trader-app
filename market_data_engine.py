@@ -2,6 +2,8 @@ import time
 import json
 import os
 import argparse
+from dotenv import load_dotenv
+load_dotenv()
 import yfinance as yf
 import threading
 import requests
@@ -53,12 +55,8 @@ claude_limiter = RateLimiter(max_calls=45, period_seconds=60)
 actionable_file_lock = threading.Lock()
 news_cache_lock = threading.Lock()
 
-# ==========================================
-# PASTE YOUR ANTHROPIC (CLAUDE) API KEY HERE - platform.claude.com
-ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE"
-# PASTE YOUR ALPHA VANTAGE API KEY HERE (free at alphavantage.co)
-ALPHA_VANTAGE_KEY = "L5CDTQYL6SG2P4VR"
-# ==========================================
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 
 def get_tickers():
     if os.path.exists(TICKERS_FILE):

@@ -56,6 +56,7 @@ actionable_file_lock = threading.Lock()
 news_cache_lock = threading.Lock()
 last_clear_lock = threading.Lock()
 last_clear_time = 0.0
+fallback_semaphore = threading.Semaphore(2)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
@@ -213,9 +214,11 @@ def run_synthesis_in_background(ticker, opt_data, pct_change):
                 news_text = fetch_news_via_claude_search(ticker, round(pct_change, 2))
                 news_source = "Claude Search"
 
-            # Cache whatever we got (including fallback text) so a re-trigger
-            # today - e.g. from a restart during testing - doesn't call out again
-            set_cached_news(ticker, news_text, news_source)
+            failure_phrases = ("synthesis failed", "timed out", "api error", "n/a", "unavailable")
+            if any(p in (news_text or "").lower() for p in failure_phrases):
+                print(f"[CACHE SKIP] {ticker}: news text contains failure phrase, not caching.")
+            else:
+                set_cached_news(ticker, news_text, news_source)
 
         ai_synthesis = generate_ai_synthesis(ticker, opt_data, news_text, round(pct_change, 2))
         with last_clear_lock:
@@ -324,6 +327,10 @@ def fetch_news_via_claude_search(ticker_symbol, pct_change):
     if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":
         return "News unavailable: no fallback possible (missing Claude API key)."
 
+    with fallback_semaphore:
+        return _fetch_news_via_claude_search_inner(ticker_symbol, pct_change)
+
+def _fetch_news_via_claude_search_inner(ticker_symbol, pct_change):
     claude_limiter.wait_for_slot()
 
     prompt = f"""The stock {ticker_symbol} moved {pct_change}% today. Use the web_search tool right now to find out why - search for something like "{ticker_symbol} stock news today" or "why did {ticker_symbol} stock move today".

@@ -8,39 +8,26 @@ A real-time stock watchlist dashboard that monitors a user-defined list of ticke
 
 ## System Overview
 
-Two parallel engines serve two separate dashboards for A/B comparison:
-
-| | AV Engine | Claude Engine |
-|---|---|---|
-| **File** | `market_data_engine.py` | `market_data_engine_claude.py` |
-| **Port** | 5000 | 5001 |
-| **Dashboard** | `trader_dashboard.html` | `trader_dashboard_claude.html` |
-| **News source** | Alpha Vantage (Claude search fallback) | Claude web search only |
-| **Data files** | `market_data.json`, `actionable_moves.json` | `market_data_claude.json`, `actionable_moves_claude.json` |
-| **Cache file** | `news_cache.json` | `news_cache_claude.json` |
-| **Archive** | `archive/` | `archive_claude/` |
-| **Shared** | `tickers.json` (watchlist shared between both engines) | |
+- **Engine** (`market_data_engine.py`) — Alpha Vantage news + Claude synthesis, with Claude web search as a fallback when Alpha Vantage has no relevant articles. Port 5000.
+- **Dashboard** (`trader_dashboard.html`) — polls the engine every 10 seconds.
+- **Macro panel** — powered by Gemini 2.5 Flash + Google Search grounding; updates on startup and hourly during market hours.
 
 ---
 
 ## How to Run
 
 ```bash
-# Serve dashboards (one terminal)
+# Serve dashboard (one terminal)
 python3 -m http.server 8000
 
-# AV engine (second terminal)
+# Engine (second terminal)
 python3 market_data_engine.py
-
-# Claude engine (third terminal)
-python3 market_data_engine_claude.py
 
 # Test mode — bypasses market hours, uses last two trading session closes
 python3 market_data_engine.py --test
-python3 market_data_engine_claude.py --test
 ```
 
-Open `http://localhost:8000/trader_dashboard.html` and `http://localhost:8000/trader_dashboard_claude.html` in separate browser tabs.
+Open `http://localhost:8000/trader_dashboard.html` in a browser.
 
 ---
 
@@ -51,10 +38,12 @@ Keys are stored in a `.env` file in the project root (never committed to source 
 ```
 ANTHROPIC_API_KEY=your-key-here
 ALPHA_VANTAGE_KEY=your-key-here
+GEMINI_API_KEY=your-key-here
 ```
 
-- **`ANTHROPIC_API_KEY`** — both engines use this for AI synthesis (Haiku 4.5). Get from platform.anthropic.com. Requires $5 minimum deposit (Tier 1) for 50 RPM.
-- **`ALPHA_VANTAGE_KEY`** — AV engine only, for news sentiment. Free tier: 25 calls/day. Get from alphavantage.co.
+- **`ANTHROPIC_API_KEY`** — AI synthesis and Claude web search fallback (Haiku 4.5). Get from platform.anthropic.com. Requires $5 minimum deposit (Tier 1) for 50 RPM.
+- **`ALPHA_VANTAGE_KEY`** — primary news source. Free tier: 25 calls/day. Get from alphavantage.co.
+- **`GEMINI_API_KEY`** — macro regime panel (Gemini 2.5 Flash + Google Search grounding). Get from aistudio.google.com.
 
 ---
 
@@ -71,8 +60,9 @@ Where `pct_change` is calculated against the previous trading session's close (h
 When triggered:
 1. A card is immediately written to the dashboard with placeholder text
 2. A background thread runs news fetch + AI synthesis
-3. The card is patched in place when synthesis completes
-4. The dashboard polls every 10 seconds and re-renders automatically
+3. If Alpha Vantage has no relevant articles, a two-turn Claude web search + synthesis call runs as fallback
+4. The card is patched in place when synthesis completes
+5. The dashboard polls every 10 seconds and re-renders automatically
 
 ---
 
@@ -91,29 +81,24 @@ Weekend behavior: dashboard stays static all weekend. Midnight clear only fires 
 
 ## Caching
 
-### AV Engine (`news_cache.json`)
+### News cache (`news_cache.json`)
 - Caches raw Alpha Vantage headline text (pre-synthesis) keyed by `YYYY-MM-DD:TICKER`
 - Cache hit → reuses stored text, still runs a Claude synthesis call
+- Failed synthesis results are never cached (checked against failure phrases on `why` field before writing)
 - Cleared on weekday midnight rollovers; **not** cleared on engine restart (intentional — preserves today's fetched news across restarts)
-
-### Claude Engine (`news_cache_claude.json`)
-- Caches the **full synthesis output** `{why, structure, impact}` keyed by `YYYY-MM-DD:TICKER`
-- Cache hit → patches card directly, **zero API calls**
-- Failed synthesis results are never cached (checked against failure phrases before writing)
-- Cleared on weekday midnight rollovers; not cleared on engine restart
 
 ### Clearing a specific cache entry manually
 ```bash
 python3 -c "
 import json
 from datetime import date
-with open('news_cache_claude.json') as f:
+with open('news_cache.json') as f:
     cache = json.load(f)
 key = f'{date.today().isoformat()}:TICKER'
 if key in cache:
     del cache[key]
     print(f'Removed {key}')
-with open('news_cache_claude.json', 'w') as f:
+with open('news_cache.json', 'w') as f:
     json.dump(cache, f)
 "
 ```
@@ -122,11 +107,11 @@ with open('news_cache_claude.json', 'w') as f:
 ```bash
 python3 -c "
 import json
-with open('news_cache_claude.json') as f:
+with open('news_cache.json') as f:
     cache = json.load(f)
 before = len(cache)
 cache = {k: v for k, v in cache.items() if 'unavailable' not in v.get('why', '').lower()}
-with open('news_cache_claude.json', 'w') as f:
+with open('news_cache.json', 'w') as f:
     json.dump(cache, f, indent=2)
 print(f'Removed {before - len(cache)} bad entries.')
 "
@@ -134,59 +119,56 @@ print(f'Removed {before - len(cache)} bad entries.')
 
 ---
 
-## Alpha Vantage News Filtering (AV Engine)
+## Alpha Vantage News Filtering
 
 Articles are filtered by two conditions before being sent to Claude:
 
-1. **Relevance score ≥ 0.5** for the specific ticker (not just any mention)
-2. **No other ticker scoring ≥ 0.4 in the same article** — prevents sector/comparison pieces (e.g. "AMD vs INTC") from being treated as single-company news
-
-This addresses a real issue where Alpha Vantage's relevance scoring can assign high scores to articles primarily about a different company in the same sector.
+1. **Relevance score ≥ 0.5** for the specific ticker
+2. **No other ticker scoring within 0.05 of the primary ticker's relevance score** — prevents sector/comparison pieces (e.g. "AMD vs INTC") from being treated as single-company news
 
 ---
 
-## Claude Engine — Search & Synthesis Architecture
+## Claude Search Fallback — Architecture
 
-Two-turn conversation per trigger:
+When Alpha Vantage returns no qualifying articles, a two-turn Claude search runs:
 
-- **Turn 1:** Claude searches the web with a natural-language question ("What's driving the X% move in TICKER during the most recent trading session?") using the `web_search_20250305` tool with `max_uses: 3`
-- **Turn 2:** The **text summary only** from Turn 1 is passed forward (raw search result blocks are stripped before Turn 2 to avoid token bloat — this was critical; leaving them in caused single-ticker calls to exceed 45,000 tokens)
-- **ETF detection:** `stock.info['quoteType'] == 'ETF'` branches to a macro/sector-focused prompt instead of a company-specific one, keeping search results targeted
+- **Turn 1:** Claude searches the web ("What's driving the X% move in TICKER?") using `web_search_20250305` with `max_uses: 3`
+- **Turn 2:** Text summary only from Turn 1 is passed forward (raw search result blocks stripped to avoid token bloat)
+- **ETF detection:** `stock.info['quoteType'] == 'ETF'` branches to a macro/sector-focused prompt
+- **Semaphore:** `fallback_semaphore = threading.Semaphore(2)` caps concurrent fallback calls
 
 Model: `claude-haiku-4-5-20251001` for both turns.
 
 ---
 
-## Rate Limiting (Claude Engine)
+## Rate Limiting
 
-A token-aware `RateLimiter` class tracks both RPM and TPM in a rolling 60-second window. Key behaviors:
+A token-aware `RateLimiter` class tracks both RPM and TPM in a rolling 60-second window:
 
 - `wait_for_slot(estimated_tokens)` blocks until both RPM and TPM limits allow the call
-- After Turn 1 completes, `record_usage(actual_tokens)` updates the reservation with real token counts — Turn 2 uses Turn 1's actual count as its estimate (since Turn 2 context includes Turn 1's output)
-- **Oversized call bypass:** if a single call's estimated tokens exceed the TPM ceiling (e.g. a high-coverage ETF consuming 47k tokens), the limiter lets it through rather than looping forever, relying on the API's 429 retry handler
-- **`synthesis_semaphore = threading.Semaphore(2)`** caps concurrent synthesis calls at 2 to prevent TPM bursts when multiple tickers trigger in the same loop pass
-
-Limits set at: 45 RPM (buffer under Tier 1's 50 RPM), 45,000 TPM (buffer under 50,000 TPM).
+- `record_usage(actual_tokens)` updates with real counts after each call
+- **Oversized call bypass:** single calls exceeding the TPM ceiling are let through rather than looping forever
+- Limits: 45 RPM, 45,000 TPM (buffer under Tier 1's 50 RPM / 50,000 TPM)
 
 ---
 
 ## Known Issues & Design Decisions
 
-**Race condition (fixed):** The original `fetch_loop` read `actionable_moves.json` once at the top of each pass and wrote it all back at the end — this caused background thread patches to be overwritten by the main loop's stale snapshot. Fixed by routing all writes through `patch_actionable_move()` (lock-protected read-modify-write) and never doing a whole-file blind overwrite.
+**Race condition (fixed):** The original `fetch_loop` read `actionable_moves.json` once at the top of each pass and wrote it all back at the end — this caused background thread patches to be overwritten. Fixed by routing all writes through `patch_actionable_move()` (lock-protected read-modify-write).
 
-**Cache prefill (fixed):** On engine restart with existing cache, background threads completing near-instantly on cache hits could race with the main loop's placeholder write for subsequent tickers. Fixed by checking cache before writing placeholder — if cache exists and is valid, write real synthesis directly from `fetch_loop` itself with no background thread.
+**Stale thread guard (fixed):** Background synthesis threads triggered near 4pm could still be alive at midnight when the daily clear fires. Fixed by recording `last_clear_time` on each clear and checking it before any `patch_actionable_move` call — stale threads log `[STALE THREAD]` and discard their result.
 
-**Alpha Vantage ticker confusion:** Similar ticker symbols (e.g. SPCX vs SPCK) can cause cross-ticker contamination in Alpha Vantage's news feed even with relevance filtering. The co-mention filter catches most cases but not all.
+**Token bloat (fixed):** Passing Turn 1's full `content` array into Turn 2 included raw search result blocks. Stripping to `text` blocks only dropped per-ticker usage from ~50,000 to ~5,000-15,000.
 
-**Token bloat (fixed):** Passing Turn 1's full `content` array into Turn 2 included raw `web_search_tool_result` blocks (up to 8,000 tokens each × 3 searches). Stripping to `text` blocks only dropped per-ticker token usage from ~50,000 to ~5,000-15,000.
+**Alpha Vantage ticker confusion:** Similar ticker symbols (e.g. SPCX vs SPCK) can cause cross-ticker contamination even with relevance filtering.
 
-**Claude search coverage gaps:** Claude search fallback performs well on hard catalyst news (earnings, analyst actions, press releases) but may miss fundamental/valuation analysis pieces that Google surfaces more readily. "Insufficient information" results on declining stocks may reflect search coverage gaps rather than a true absence of relevant content. This is an accepted edge case — the honest "no catalyst found" response is preferable to hallucinating an explanation.
+**Claude search coverage gaps:** Claude search fallback performs well on hard catalyst news (earnings, analyst actions, press releases) but may miss fundamental/valuation analysis pieces. "Insufficient information" on declining stocks may reflect search coverage gaps rather than a true absence of content. Honest over hallucinated.
 
 ---
 
 ## Archive
 
-On each weekday midnight rollover (and Sunday→Monday), `actionable_moves.json` is archived to `archive/YYYY-MM-DD.json` before being cleared. Archives contain trimmed entries: `ticker`, `status`, `price`, `price_change`, `why`, `structure`, `impact`. The full options data (put wall, call wall, etc.) is not archived.
+On each weekday midnight rollover, `actionable_moves.json` is archived to `archive/YYYY-MM-DD.json` before being cleared. Archives contain trimmed entries: `ticker`, `status`, `price`, `price_change`, `why`, `structure`, `impact`.
 
 ---
 
@@ -194,19 +176,17 @@ On each weekday midnight rollover (and Sunday→Monday), `actionable_moves.json`
 
 ```
 project/
-├── market_data_engine.py          # AV engine (port 5000)
-├── market_data_engine_claude.py   # Claude engine (port 5001)
-├── trader_dashboard.html          # AV dashboard
-├── trader_dashboard_claude.html   # Claude dashboard
-├── tickers.json                   # Shared watchlist
-├── market_data.json               # AV engine live prices
-├── market_data_claude.json        # Claude engine live prices
-├── actionable_moves.json          # AV engine triggered cards
-├── actionable_moves_claude.json   # Claude engine triggered cards
-├── news_cache.json                # AV engine news cache
-├── news_cache_claude.json         # Claude engine synthesis cache
-├── archive/                       # AV engine daily archives
-└── archive_claude/                # Claude engine daily archives
+├── market_data_engine.py      # Engine (port 5000)
+├── trader_dashboard.html      # Dashboard
+├── inspect_news_cache.py      # Debug: view cache entries for a ticker
+├── inspect_alpha_vantage.py   # Debug: raw AV news response
+├── tickers.json               # Watchlist
+├── market_data.json           # Live prices
+├── actionable_moves.json      # Triggered cards
+├── news_cache.json            # News cache
+├── macro_regime.json          # Latest macro briefing
+├── archive/                   # Daily archives
+└── scratch/                   # Retired/experimental files
 ```
 
 ---
@@ -215,14 +195,14 @@ project/
 
 - Pre-market detection and separate badge status
 - Weekend-aware midnight reset preserving Friday's moves through the weekend
-- Claude search catching social media catalysts Alpha Vantage misses (e.g. Trump tweet driving INTC +10%)
-- Alpha Vantage producing higher-quality, more succinct synthesis on well-covered stocks
+- Claude search fallback catching catalysts Alpha Vantage misses
 - Token-aware rate limiting preventing 429 errors on burst triggers
-- Test mode (`--test` flag) for after-hours debugging using last two trading session closes
-- Options data panel in detail view showing exact ATM strike, put premium, expiration, IV, put wall, and call wall at time of trigger
+- Test mode (`--test` flag) for after-hours debugging
+- Live macro regime panel (Gemini + Google Search) updating on startup and hourly
+- Options data panel in detail view showing ATM strike, put premium, expiration, IV, put wall, and call wall at time of trigger
 
 ## What to Watch
 
 - Alpha Vantage 25 calls/day free tier — adequate for ~15 triggers/day with caching, may constrain larger watchlists
-- Claude search token costs — ETFs and high-coverage names can consume 30,000+ tokens per call; XLK was the worst observed case
-- Anthropic Tier 1 TPM ceiling (50,000) — single large calls can approach this; semaphore at 2 concurrent calls provides a reasonable buffer
+- Claude search token costs — ETFs and high-coverage names can consume 30,000+ tokens per call
+- Anthropic Tier 1 TPM ceiling (50,000) — single large calls can approach this; semaphore at 2 concurrent fallback calls provides a reasonable buffer

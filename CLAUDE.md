@@ -2,44 +2,38 @@
 
 ## Project Overview
 
-A real-time stock watchlist dashboard with two parallel engines for A/B comparison:
-- **AV Engine** (`market_data_engine.py`) — Alpha Vantage news + Claude synthesis, port 5000
-- **Claude Engine** (`market_data_engine_claude.py`) — Claude web search + synthesis, port 5001
+A real-time stock watchlist dashboard that monitors a user-defined ticker list, identifies outsized price moves relative to the nearest-term ATM put premium, and triggers AI-powered news synthesis to explain the catalyst.
 
-Both engines share `tickers.json` and write to separate JSON data files. Two HTML dashboards (`trader_dashboard.html`, `trader_dashboard_claude.html`) poll their respective engines every 10 seconds.
+- **Engine** (`market_data_engine.py`) — Alpha Vantage news + Claude synthesis, with Claude web search fallback. Port 5000.
+- **Dashboard** (`trader_dashboard.html`) — polls the engine every 10 seconds.
 
 ---
 
 ## Before Making Any Code Changes
 
 1. **Always read the file before editing it** — never edit from memory or a prior session's view
-2. **Always verify Python syntax** after editing either engine:
+2. **Always verify Python syntax** after editing the engine:
    ```bash
    python3 -c "import ast; ast.parse(open('market_data_engine.py').read())" && echo "OK"
-   python3 -c "import ast; ast.parse(open('market_data_engine_claude.py').read())" && echo "OK"
    ```
-3. **Changes to dashboard logic apply to both HTML files** — `trader_dashboard_claude.html` mirrors `trader_dashboard.html` except for port (5001 vs 5000) and the CLAUDE SEARCH header badge
-4. **Never hardcode API keys** — placeholders only:
+3. **Never hardcode API keys** — placeholders only:
    - `ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE"`
    - `ALPHA_VANTAGE_KEY = "YOUR_ALPHA_VANTAGE_KEY_HERE"`
+   - `GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"`
 
 ---
 
 ## Running the Project
 
 ```bash
-# Terminal 1 — serve dashboards
+# Terminal 1 — serve dashboard
 python3 -m http.server 8000
 
-# Terminal 2 — AV engine
+# Terminal 2 — engine
 python3 market_data_engine.py
-
-# Terminal 3 — Claude engine
-python3 market_data_engine_claude.py
 
 # Test mode (bypasses market hours, uses last two trading session closes)
 python3 market_data_engine.py --test
-python3 market_data_engine_claude.py --test
 ```
 
 ---
@@ -47,26 +41,28 @@ python3 market_data_engine_claude.py --test
 ## Architecture — Critical Design Decisions
 
 ### Thread Safety
-All writes to `actionable_moves.json` (and `_claude` variant) go through `patch_actionable_move()` — a lock-protected read-modify-write. **Never do a whole-file blind overwrite** from the main loop or background threads. This fixed a race condition where the main loop's end-of-pass write clobbered background thread patches.
+All writes to `actionable_moves.json` go through `patch_actionable_move()` — a lock-protected read-modify-write. **Never do a whole-file blind overwrite** from the main loop or background threads. This fixed a race condition where the main loop's end-of-pass write clobbered background thread patches.
 
-### Cache Prefill Pattern (Claude Engine)
+### Cache Prefill Pattern
 Before writing a placeholder card, `fetch_loop` checks the cache first. If a valid cached synthesis exists, it writes the real fields directly — no background thread needed. This prevents a race where a fast cache-hit background thread patches the file, then a subsequent ticker's `patch_actionable_move` overwrites it during its own read-modify-write.
 
 ### Cache Lifecycle
-- **AV engine cache** (`news_cache.json`) — stores raw news text, cleared at midnight weekday rollovers only (NOT on restart)
-- **Claude engine cache** (`news_cache_claude.json`) — stores full `{why, structure, impact}` synthesis output, same clear schedule
+- **News cache** (`news_cache.json`) — stores raw news text, cleared at midnight weekday rollovers only (NOT on restart)
 - **Never cache failed synthesis** — check `why` field against failure phrases before writing to cache
 - **Restart intentionally preserves today's cache** — only midnight rollover clears it
 
-### Token Architecture (Claude Engine)
+### Token Architecture (Claude Search Fallback)
 - Turn 1: web search, expensive (5,000-47,000 tokens depending on ticker/ETF)
 - Turn 2: synthesis only — **strip raw search blocks** before passing Turn 1 context forward, keeping only `type: "text"` blocks. This dropped per-ticker usage from ~50,000 to ~5,000-15,000 tokens
-- `synthesis_semaphore = threading.Semaphore(2)` — caps concurrent calls to prevent TPM bursts
+- `fallback_semaphore = threading.Semaphore(2)` — caps concurrent fallback calls to prevent TPM bursts
 - Rate limiter tracks both RPM (45/min) and TPM (45,000/min) in rolling windows
 - Oversized single calls (> TPM ceiling) bypass the limiter rather than loop forever
 
 ### ETF Detection
-`stock.info['quoteType'] == 'ETF'` determines prompt branching. ETFs get a macro/sector-focused search prompt; individual stocks get company-specific catalyst prompts. Detected at trigger time in `fetch_loop`, passed through to `run_synthesis_in_background` and `search_and_synthesize`.
+`stock.info['quoteType'] == 'ETF'` determines prompt branching. ETFs get a macro/sector-focused search prompt; individual stocks get company-specific catalyst prompts.
+
+### Macro Regime Panel
+`generate_macro_regime()` fetches ^TNX and ^VIX via yfinance, calls Gemini 2.5 Flash with Google Search grounding, and writes `macro_regime.json`. `macro_loop()` fires once at startup then hourly during pre-market/open hours. The dashboard polls `/get_macro_regime` every 10 minutes.
 
 ### Market Hours (ET)
 ```
@@ -83,21 +79,17 @@ Midnight clear fires Mon-Fri rollovers and Sun→Mon. Skips Fri→Sat and Sat→
 
 ```
 project/
-├── market_data_engine.py          # AV engine (port 5000)
-├── market_data_engine_claude.py   # Claude engine (port 5001)
-├── trader_dashboard.html          # AV dashboard
-├── trader_dashboard_claude.html   # Claude dashboard (port 5001, violet badge)
-├── inspect_news_cache.py          # Debug: view cache entries for a ticker
-├── inspect_alpha_vantage.py       # Debug: raw AV news response
-├── tickers.json                   # Shared watchlist (both engines read this)
-├── market_data.json               # AV engine live prices
-├── market_data_claude.json        # Claude engine live prices
-├── actionable_moves.json          # AV engine triggered cards
-├── actionable_moves_claude.json   # Claude engine triggered cards
-├── news_cache.json                # AV engine news cache
-├── news_cache_claude.json         # Claude engine synthesis cache
-├── archive/                       # AV engine daily archives
-└── archive_claude/                # Claude engine daily archives
+├── market_data_engine.py      # Engine (port 5000)
+├── trader_dashboard.html      # Dashboard
+├── inspect_news_cache.py      # Debug: view cache entries for a ticker
+├── inspect_alpha_vantage.py   # Debug: raw AV news response
+├── tickers.json               # Watchlist
+├── market_data.json           # Live prices
+├── actionable_moves.json      # Triggered cards
+├── news_cache.json            # News cache
+├── macro_regime.json          # Latest macro briefing
+├── archive/                   # Daily archives
+└── scratch/                   # Retired/experimental files
 ```
 
 ---
@@ -109,13 +101,13 @@ project/
 python3 -c "
 import json
 from datetime import date
-with open('news_cache_claude.json') as f:
+with open('news_cache.json') as f:
     cache = json.load(f)
 key = f'{date.today().isoformat()}:TICKER'
 if key in cache:
     del cache[key]
     print(f'Removed {key}')
-with open('news_cache_claude.json', 'w') as f:
+with open('news_cache.json', 'w') as f:
     json.dump(cache, f)
 "
 ```
@@ -124,11 +116,11 @@ with open('news_cache_claude.json', 'w') as f:
 ```bash
 python3 -c "
 import json
-with open('news_cache_claude.json') as f:
+with open('news_cache.json') as f:
     cache = json.load(f)
 before = len(cache)
 cache = {k: v for k, v in cache.items() if 'unavailable' not in v.get('why', '').lower()}
-with open('news_cache_claude.json', 'w') as f:
+with open('news_cache.json', 'w') as f:
     json.dump(cache, f, indent=2)
 print(f'Removed {before - len(cache)} bad entries.')
 "
@@ -151,7 +143,7 @@ python3 inspect_alpha_vantage.py INTC
 
 Two conditions must both pass for an article to be included:
 1. Relevance score ≥ 0.5 for the specific ticker
-2. No other ticker in the same article scores ≥ 0.4 (prevents sector/comparison articles like "AMD vs INTC" from being treated as single-company news)
+2. No other ticker in the same article scores within 0.05 of the primary ticker's relevance score (prevents sector/comparison articles like "AMD vs INTC" from being treated as single-company news)
 
 ---
 

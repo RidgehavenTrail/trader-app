@@ -22,36 +22,90 @@ ACTIONABLE_FILE = 'actionable_moves.json'
 ARCHIVE_DIR = 'archive'
 NEWS_CACHE_FILE = 'news_cache.json'
 
-# --- Claude Rate Limiter (conservative default for Tier 1: 50 RPM) ---
+# --- Claude Rate Limiter (token-aware, Tier 1: 50 RPM / 50k TPM) ---
 class RateLimiter:
-    def __init__(self, max_calls, period_seconds):
+    def __init__(self, max_calls, max_tokens_per_min, period_seconds=60):
         self.max_calls = max_calls
+        self.max_tokens = max_tokens_per_min
         self.period = period_seconds
-        self.call_times = deque()
+        self.call_times = deque()     # timestamps of recent calls
+        self.token_log = deque()      # (timestamp, token_count) of recent calls
         self.lock = threading.Lock()
 
-    def wait_for_slot(self):
-        """Blocks only as long as needed to stay under the limit, then records the call."""
+    def _prune(self, now):
+        """Drop entries older than the rolling window."""
+        while self.call_times and now - self.call_times[0] >= self.period:
+            self.call_times.popleft()
+        while self.token_log and now - self.token_log[0][0] >= self.period:
+            self.token_log.popleft()
+
+    def tokens_in_window(self):
+        """Return total tokens consumed in the current rolling window."""
         with self.lock:
             now = time.time()
+            self._prune(now)
+            return sum(t for _, t in self.token_log)
 
-            # Drop timestamps older than the rolling window
-            while self.call_times and now - self.call_times[0] >= self.period:
-                self.call_times.popleft()
-
-            if len(self.call_times) >= self.max_calls:
-                # Wait only until the oldest call in the window expires
-                sleep_time = self.period - (now - self.call_times[0]) + 0.1  # small buffer
-                if sleep_time > 0:
-                    print(f"[RATE LIMITER] At capacity ({self.max_calls}/{self.period}s). Waiting {sleep_time:.1f}s...")
-                    time.sleep(sleep_time)
+    def wait_for_slot(self, estimated_tokens=8000):
+        """Block until both RPM and TPM limits allow this call, then reserve a slot.
+        estimated_tokens is a conservative upfront guess; call record_usage() after
+        the real call completes to log actual token counts."""
+        with self.lock:
+            while True:
                 now = time.time()
-                while self.call_times and now - self.call_times[0] >= self.period:
-                    self.call_times.popleft()
+                self._prune(now)
 
-            self.call_times.append(time.time())
+                tokens_used = sum(t for _, t in self.token_log)
+                calls_used = len(self.call_times)
 
-claude_limiter = RateLimiter(max_calls=45, period_seconds=60)
+                rpm_ok = calls_used < self.max_calls
+                tpm_ok = (tokens_used + estimated_tokens) <= self.max_tokens
+
+                # If this single call exceeds the TPM ceiling on its own,
+                # no amount of waiting will help — let it through and rely
+                # on the API's own 429 handling if it gets rejected.
+                if estimated_tokens > self.max_tokens:
+                    print(f"[RATE LIMITER] Single call ({estimated_tokens:,} tokens) exceeds TPM ceiling ({self.max_tokens:,}) — proceeding, 429 handler will retry if needed.")
+                    self.call_times.append(now)
+                    self.token_log.append((now, estimated_tokens))
+                    return
+
+                if rpm_ok and tpm_ok:
+                    self.call_times.append(now)
+                    self.token_log.append((now, estimated_tokens))
+                    return
+
+                # Determine how long to wait
+                wait_reason = []
+                sleep_time = 1.0  # minimum poll interval
+
+                if not rpm_ok:
+                    rpm_wait = self.period - (now - self.call_times[0]) + 0.1
+                    sleep_time = max(sleep_time, rpm_wait)
+                    wait_reason.append(f"RPM {calls_used}/{self.max_calls}")
+
+                if not tpm_ok:
+                    tokens_to_free = (tokens_used + estimated_tokens) - self.max_tokens
+                    freed = 0
+                    for ts, tok in self.token_log:
+                        freed += tok
+                        if freed >= tokens_to_free:
+                            tpm_wait = self.period - (now - ts) + 0.1
+                            sleep_time = max(sleep_time, tpm_wait)
+                            break
+                    wait_reason.append(f"TPM {tokens_used:,}+{estimated_tokens:,} > {self.max_tokens:,}")
+
+                print(f"[RATE LIMITER] Waiting {sleep_time:.1f}s ({', '.join(wait_reason)})...")
+                time.sleep(sleep_time)
+
+    def record_usage(self, actual_tokens):
+        """Replace the most recent token reservation with the actual count after a call completes."""
+        with self.lock:
+            if self.token_log:
+                ts, _ = self.token_log[-1]
+                self.token_log[-1] = (ts, actual_tokens)
+
+claude_limiter = RateLimiter(max_calls=45, max_tokens_per_min=45000)  # 45k leaves 5k buffer under 50k TPM
 actionable_file_lock = threading.Lock()
 news_cache_lock = threading.Lock()
 last_clear_lock = threading.Lock()

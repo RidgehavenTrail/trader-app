@@ -2,6 +2,8 @@ import time
 import json
 import os
 import argparse
+from dotenv import load_dotenv
+load_dotenv()
 import yfinance as yf
 import threading
 import requests
@@ -116,10 +118,7 @@ news_cache_lock = threading.Lock()
 # even in a worst-case burst of simultaneous triggers.
 synthesis_semaphore = threading.Semaphore(2)
 
-# ==========================================
-# PASTE YOUR ANTHROPIC (CLAUDE) API KEY HERE - platform.claude.com
-ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE"
-# ==========================================
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 def get_tickers():
     if os.path.exists(TICKERS_FILE):

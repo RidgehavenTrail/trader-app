@@ -214,13 +214,13 @@ def run_synthesis_in_background(ticker, opt_data, pct_change):
                 news_text = fetch_news_via_claude_search(ticker, round(pct_change, 2))
                 news_source = "Claude Search"
 
-            failure_phrases = ("synthesis failed", "timed out", "api error", "n/a", "unavailable")
-            if any(p in (news_text or "").lower() for p in failure_phrases):
-                print(f"[CACHE SKIP] {ticker}: news text contains failure phrase, not caching.")
-            else:
-                set_cached_news(ticker, news_text, news_source)
-
         ai_synthesis = generate_ai_synthesis(ticker, opt_data, news_text, round(pct_change, 2))
+        failure_phrases = ("synthesis failed", "timed out", "api error", "n/a", "unavailable")
+        why = ai_synthesis.get('why', '')
+        if any(p in why.lower() for p in failure_phrases):
+            print(f"[CACHE SKIP] {ticker}: synthesis result looks like a failure, not caching.")
+        else:
+            set_cached_news(ticker, news_text, news_source)
         with last_clear_lock:
             cleared_after_trigger = last_clear_time > triggered_at
         if cleared_after_trigger:

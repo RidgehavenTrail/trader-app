@@ -180,6 +180,8 @@ Limits set at: 45 RPM (buffer under Tier 1's 50 RPM), 45,000 TPM (buffer under 5
 
 **Token bloat (fixed):** Passing Turn 1's full `content` array into Turn 2 included raw `web_search_tool_result` blocks (up to 8,000 tokens each × 3 searches). Stripping to `text` blocks only dropped per-ticker token usage from ~50,000 to ~5,000-15,000.
 
+**Claude search coverage gaps:** Claude search fallback performs well on hard catalyst news (earnings, analyst actions, press releases) but may miss fundamental/valuation analysis pieces that Google surfaces more readily. "Insufficient information" results on declining stocks may reflect search coverage gaps rather than a true absence of relevant content. This is an accepted edge case — the honest "no catalyst found" response is preferable to hallucinating an explanation.
+
 ---
 
 ## Archive

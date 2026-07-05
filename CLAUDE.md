@@ -1,5 +1,5 @@
 # Stock Dashboard — Claude Code Instructions
-# Last updated: 2026-07-04 — see CONTEXT.md (repository copy) for the fast-load session
+# Last updated: 2026-07-05 — see CONTEXT.md (repository copy) for the fast-load session
 # brief and current 3D heatmap status; this file covers engine/dashboard architecture only.
 
 ## Project Overview
@@ -8,10 +8,13 @@ A real-time stock watchlist dashboard that monitors a user-defined ticker list, 
 
 - **Engine** (`market_data_engine.py`) — Alpha Vantage news + Claude synthesis, with Claude web search fallback. Port 5000. Also now serves `/get_price_history/<ticker>` (OHLC + SMA-ready candles, cached) for the chart tab — see `.claude/rules/newsletter-tracker.md`.
 - **Dashboard** (`trader_dashboard.html`) — polls the engine every 10 seconds.
-- **Newsletter tracker UI** (`watchtower.html`) — standalone prototype, not yet merged into the dashboard above. Renamed from `newsletter_mockup.html` 2026-07-05. See `.claude/rules/newsletter-tracker.md`.
+- **Newsletter tracker UI** (`watchtower.html`) — its own left panel (categorized watchlist, macro panel) and Actionable Moves strip/deep-dive are now wired to the real `market_data_engine.py` endpoints, same as `trader_dashboard.html`. The newsletter-specific side (Newsletter Plays strip, weekly digest, dd/nd thesis panes) is still mock data — schema/ingestion/lifecycle storage remain unbuilt. See `.claude/rules/newsletter-tracker.md`.
 
-**Note:** the previous parallel Claude engine (port 5001) is deprecated as of
-2026-07-04 — AV engine only now.
+**Note:** the previous parallel Claude engine (port 5001) was retired 2026-07-04.
+Port 5001 is back in use as of 2026-07-05, but for something unrelated — a sandboxed
+copy of the engine (`watchtower_engine.py`) for in-progress newsletter-ingestion work,
+living in a separate git worktree, not the live `Trader App` folder. Don't confuse the
+two: 5001 no longer means "the old Claude engine."
 
 ---
 
@@ -108,16 +111,24 @@ content back into this file.
 
 ## Planned: Newsletter Tracker
 
-**UI mockup + chart infrastructure built 2026-07-04** (`watchtower.html`,
-plus the new `/get_price_history` endpoint in `market_data_engine.py`). Schema,
-ingestion, and lifecycle storage are still just a brainstorm — confirm with the
+**Left panel (categorized watchlist/macro) and Actionable Moves (strip + deep-dive,
+including full Options Data quadrant) are now wired to real `market_data_engine.py`
+endpoints in `watchtower.html`** (2026-07-05). The newsletter-specific side —
+Newsletter Plays strip, weekly digest, dd/nd thesis panes — is still mock data.
+Schema, ingestion, and lifecycle storage are still just a brainstorm — confirm with the
 user before writing that part. Condenses a weekly market newsletter (stocks,
 options, futures, heavy on pairs trading via composite charts) into structured
 trade cards with lifecycle tracking and a composite ratio/spread chart pipeline.
+
+A git worktree + `feature/newsletter-ingestion` branch and a sandboxed engine copy
+(`watchtower_engine.py`, port 5001) now exist for building this out in isolation from
+the live, stable `market_data_engine.py`/`trader_dashboard.html` — see CONTEXT.md for
+the worktree path and current wiring status.
+
 Full detail — what's built and settled vs. still brainstorm — lives in
 `.claude/rules/newsletter-tracker.md` (path-scoped, auto-loads when Claude
-touches `market_data_engine.py`, `newsletter*.py`, `trader_dashboard.html`, or
-`watchtower.html`). Do not duplicate that content back into this file.
+touches `market_data_engine.py`, `newsletter*.py`, `trader_dashboard.html`,
+`watchtower.html`, or `watchtower_engine.py`). Do not duplicate that content back into this file.
 
 ---
 
@@ -127,7 +138,7 @@ touches `market_data_engine.py`, `newsletter*.py`, `trader_dashboard.html`, or
 project/
 ├── market_data_engine.py      # Engine (port 5000)
 ├── trader_dashboard.html      # Dashboard
-├── watchtower.html      # Newsletter tracker UI (renamed from newsletter_mockup.html) — standalone, not merged in yet
+├── watchtower.html      # Newsletter tracker UI — left panel/Actionable Moves wired to real data; newsletter side (Plays strip, digest, dd/nd thesis) still mock
 ├── price_history_cache.json    # Cache for /get_price_history (TTL 300s, never caches failures)
 ├── heatmap_3d.py               # 3D options OI blanket heatmap — LOCKED (see CONTEXT.md)
 ├── ridgeline.py                 # Catenary ridgeline module — LOCKED, never modify
@@ -268,4 +279,4 @@ file). For broader project status and why v1 was superseded, see `CONTEXT.md`
 - **News cache failure phrases:** Failed synthesis results (`"synthesis failed"`, `"timed out"`, `"api error"`, `"n/a"`, `"unavailable"`) must never be cached. Check the `why` field before calling `set_cached_news()`. The cache prefill path in `fetch_loop` also validates cached entries before writing to the card.
 - **ATM put premium uses mark price, not lastPrice** — `lastPrice` from yfinance is the last trade price, which can be stale by hours for illiquid options. `analyze_options_structure()` computes the mark as `(bid + ask) / 2` when both are available, falling back to `lastPrice` only if bid/ask are missing. This is critical for correctly sizing the expected move threshold — stale lastPrice was causing wide-premium tickers like AVEX to fail to trigger on legitimate moves.
 - **yfinance strike key format:** Options chain strike values from yfinance must be stored as `str(float(strike))` throughout. Use `.values` arrays (not `iterrows()`) to extract strikes — `iterrows()` leaks the DataFrame row index into the keys.
-- **Dashboard actionable card strip scroll:** The strip uses window-level capture phase pointer events for drag-to-scroll (`window.addEventListener('pointerdown', ..., {capture: true})`). Card inner elements have `pointer-events: none` permanently so clicks always land on the outer card div with the `onclick` handler. Do not add `pointer-events` to card children or change the event listener approach — this was hard-won after extensive debugging. The `pointerdown` event does not bubble correctly to the container from child elements in Chrome.
+- **Dashboard actionable card strip scroll:** The strip uses window-level capture phase pointer events for drag-to-scroll (`window.addEventListener('pointerdown', ..., {capture: true})`), plus a `wheel` listener converting vertical scroll to horizontal. Card inner elements have `pointer-events: none` permanently so clicks always land on the outer card div with the `onclick` handler. Do not add `pointer-events` to card children or change the event listener approach — this was hard-won after extensive debugging. The `pointerdown` event does not bubble correctly to the container from child elements in Chrome. This pattern now lives in **both** `trader_dashboard.html` (original) and `watchtower.html` (ported 2026-07-05, was previously missing entirely — its strip had no wheel-scroll at all until this was added) — keep them in sync if this ever changes.

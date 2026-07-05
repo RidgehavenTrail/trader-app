@@ -4,17 +4,65 @@ paths:
   - "newsletter*.py"
   - "trader_dashboard.html"
   - "watchtower.html"
+  - "watchtower_engine.py"
 ---
 
-# Newsletter Tracker — Mockup + Chart Infrastructure Built (2026-07-04)
+# Newsletter Tracker — Left Panel + Actionable Moves Wired to Live Data (2026-07-05)
 
-**Status:** Schema/ingestion/lifecycle-storage are still a brainstorm (see bottom
-half of this file) — none of that backend logic exists. But the **UI mockup and
-a real, working price-history + charting layer were built and tested this
-session**. Read this top section first before touching `watchtower.html`
+**Status:** Left panel (categorized watchlist, macro panel) and Actionable Moves
+(strip + dd-dive, including the full Options Data quadrant) are now wired to real
+`market_data_engine.py` endpoints — see "Live wiring" section below. Newsletter-side
+schema/ingestion/lifecycle-storage are still just a brainstorm (see bottom half of
+this file) — none of that backend logic exists yet, and a git worktree +
+`feature/newsletter-ingestion` branch with a sandboxed engine copy
+(`watchtower_engine.py`, port 5001) now exist specifically for building that out
+without touching the live, stable `market_data_engine.py`/`trader_dashboard.html`.
+Read this top section first before touching `watchtower.html`, `watchtower_engine.py`,
 or adding to `market_data_engine.py`.
 
-## What exists now
+## Live wiring (2026-07-05)
+
+`watchtower.html`'s left panel and Actionable Moves are now real, not mock, mirroring
+`trader_dashboard.html`'s existing implementation exactly:
+
+- **Left panel** — ticker input/category dropdown → `addStock()`/`/add_ticker`;
+  sidebar accordion (Watchlist/Portfolio/Dividends, sorted by day's % change) →
+  `renderDashboard()` off `/get_market_data`, polled 10s; macro panel →
+  `fetchMacroRegime()` off `/get_macro_regime`, polled 10min. Category grouping is a
+  client-side `localStorage('userStocks')` construct layered on top of the flat
+  `tickers.json` list server-side — same as `trader_dashboard.html`, not a separate
+  backend concept. `syncTickersWithBackend()` pushes the list to `/sync_tickers` on load.
+- **Actionable Moves strip + dd-dive** — `fetchActionableMoves()` off
+  `/get_actionable_moves`, same empty-state message and scroll-position preservation
+  as `trader_dashboard.html`. `updateContext(ticker)` now populates every dd-dive field
+  including `dd-sigma` and the full Options Data quadrant (ATM strike/put
+  premium/expiration/IV/put+call wall) — previously dead markup under `TICKER_MOCK`.
+  **Known simplifications, not yet resolved:** `asset_class` is hardcoded to
+  `'equity'` for every Actionable Moves card (safe today since only equities/ETFs
+  trigger these — see "Futures/forex Actionable-Moves triggering" below — but revisit
+  if that ever changes); the Trigger Checklist always shows only `1-sigma` as hit,
+  since `actionable_moves.json` doesn't tag which specific trigger(s) fired.
+- **Drag-to-scroll + wheel-to-horizontal** — `watchtower.html`'s Actionable Moves strip
+  had no interaction layer at all before this (only `overflow-x: scroll` with nothing
+  converting a mouse wheel gesture into horizontal movement). Ported verbatim from
+  `trader_dashboard.html` — see CLAUDE.md's Known Pitfalls entry, now updated to
+  reflect both files share this pattern.
+
+## Layout — settled, don't re-litigate without reason (updated 2026-07-05)
+
+- **dd-pane-narrative row 2 swapped**: was Options Structure & Impact (left) / Trigger
+  Checklist (right); now **Trigger Checklist (left) / Options Structure & Impact
+  (right)**. Reason: the left column was stacking two dense-text blocks (Why → 
+  Structure & Impact) while the right column stacked two compact-stat blocks (Options
+  Data → Triggers) — swapping row 2 makes each column alternate text/compact instead
+  of one column reading as a wall of narrative. IDs unchanged (`dd-triggers`,
+  `dd-structure`, `dd-impact`), so `updateContext()` needed no JS changes for this.
+- **Trigger Checklist border no longer stretches to match its sibling column** —
+  `#dd-triggers` previously had `flex-1`, which grew the bordered box to match
+  "Options Structure & Impact"'s taller paragraph stack, leaving empty bordered space
+  below the actual checklist items. `flex-1` removed so the border sizes to content
+  (verified: box height dropped from matching a ~282px sibling to ~109px for 3 items).
+  Do not re-add `flex-1` here without re-checking this specific visual complaint.
 
 **File:** `watchtower.html` (renamed from `newsletter_mockup.html` on 2026-07-05
 once the UI was solid enough to get its own identity, distinct from

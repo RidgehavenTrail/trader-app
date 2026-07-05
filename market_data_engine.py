@@ -22,6 +22,18 @@ ACTIONABLE_FILE = 'actionable_moves.json'
 ARCHIVE_DIR = 'archive'
 NEWS_CACHE_FILE = 'news_cache.json'
 MACRO_FILE = 'macro_regime.json'
+PRICE_HISTORY_CACHE_FILE = 'price_history_cache.json'
+
+# How long a cached OHLC pull stays fresh before we hit yfinance again.
+# Charts are opened on demand (not continuously polled like the trigger loop),
+# so a short TTL is fine — this just prevents a burst of re-fetches if someone
+# flips between tabs/tickers quickly.
+PRICE_HISTORY_TTL_SECONDS = 300
+
+# Minimum absolute % move required to post a card, on top of the expected-move
+# breach. Prevents low-IV mega-caps and ETFs (tight ATM put premium) from
+# triggering on moves that are statistically significant but not tradeable-sized.
+MIN_ABSOLUTE_TRIGGER_PCT = 2.0
 
 # --- Claude Rate Limiter (token-aware, Tier 1: 50 RPM / 50k TPM) ---
 class RateLimiter:
@@ -109,6 +121,7 @@ class RateLimiter:
 claude_limiter = RateLimiter(max_calls=45, max_tokens_per_min=45000)  # 45k leaves 5k buffer under 50k TPM
 actionable_file_lock = threading.Lock()
 news_cache_lock = threading.Lock()
+price_history_lock = threading.Lock()
 last_clear_lock = threading.Lock()
 last_clear_time = 0.0
 fallback_semaphore = threading.Semaphore(2)
@@ -131,10 +144,11 @@ def generate_macro_regime():
         tnx = yf.Ticker("^TNX")
         vix = yf.Ticker("^VIX")
 
-        tnx_hist = tnx.history(period="5d")
-        vix_hist = vix.history(period="5d")
+        tnx_hist = tnx.history(period="1mo")
+        vix_hist = vix.history(period="1mo")
 
         if len(tnx_hist) < 2 or len(vix_hist) < 2:
+            print(f"[MACRO] Insufficient yfinance history — TNX rows: {len(tnx_hist)}, VIX rows: {len(vix_hist)}. Skipping.")
             return
 
         tnx_price = round(float(tnx_hist['Close'].iloc[-1]), 2)
@@ -695,6 +709,10 @@ def analyze_options_structure(ticker_symbol, current_price):
             return None
 
         atm_put_price = float(atm_put['lastPrice'].values[0])
+        bid = float(atm_put['bid'].values[0]) if 'bid' in atm_put.columns else 0
+        ask = float(atm_put['ask'].values[0]) if 'ask' in atm_put.columns else 0
+        if bid > 0 and ask > 0:
+            atm_put_price = (bid + ask) / 2  # use mark price — lastPrice is stale
         
         # Calculate what percentage of the stock price that premium represents
         expected_move_pct = (atm_put_price / current_price) * 100
@@ -719,7 +737,127 @@ def analyze_options_structure(ticker_symbol, current_price):
         print(f"Debug: Options analysis failed for {ticker_symbol}: {e}")
         return None
 
+# --- Price History (for chart tab) ---
+
+def get_asset_class(ticker_symbol):
+    """
+    Classifies a yfinance-style ticker into 'equity', 'future', or 'forex'.
+    ETFs count as 'equity' — they have real listed options chains, same as
+    single-name stocks, and share the same suffix-less ticker format.
+    Only genuine futures (=F) and forex (=X) tickers get their own bucket,
+    since those are the only asset classes without an options chain to trade.
+    """
+    t = ticker_symbol.upper()
+    if t.endswith('=F'):
+        return 'future'
+    if t.endswith('=X'):
+        return 'forex'
+    return 'equity'
+
+
+def load_price_history_cache():
+    if os.path.exists(PRICE_HISTORY_CACHE_FILE):
+        try:
+            with open(PRICE_HISTORY_CACHE_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_price_history_cache(cache):
+    with open(PRICE_HISTORY_CACHE_FILE, 'w') as f:
+        json.dump(cache, f)
+
+
+def fetch_price_history(ticker_symbol, range_key):
+    """
+    Pulls OHLC candles for a ticker via yfinance and shapes them for
+    lightweight-charts (time/open/high/low/close, time as 'YYYY-MM-DD').
+
+    Data source note: this always uses yfinance today. Per the settled
+    Schwab integration plan, equities may eventually route through Schwab
+    instead — but futures/forex stay on yfinance permanently since Schwab
+    doesn't cover those asset classes. Keeping this as its own function
+    (rather than inlining the yf call in the endpoint) is what makes that
+    later swap a one-function change instead of a route rewrite.
+    """
+    period_map = {
+        '1mo': '1mo', '3mo': '3mo', '6mo': '6mo', '1y': '1y', '2y': '2y', '5y': '5y',
+    }
+    period = period_map.get(range_key, '3mo')
+    hist = yf.Ticker(ticker_symbol).history(period=period)
+    if hist is None or hist.empty:
+        return []
+    candles = []
+    for idx, row in hist.iterrows():
+        candles.append({
+            "time": idx.strftime('%Y-%m-%d'),
+            "open": round(float(row['Open']), 4),
+            "high": round(float(row['High']), 4),
+            "low": round(float(row['Low']), 4),
+            "close": round(float(row['Close']), 4),
+        })
+    return candles
+
+
 # --- Endpoints ---
+@app.route('/get_price_history/<ticker>', methods=['GET'])
+def get_price_history(ticker):
+    ticker_symbol = ticker.upper()
+    range_key = request.args.get('range', '3mo')
+    cache_key = f"{ticker_symbol}:{range_key}"
+    asset_class = get_asset_class(ticker_symbol)
+
+    with price_history_lock:
+        cache = load_price_history_cache()
+        entry = cache.get(cache_key)
+        now = time.time()
+
+        if entry and (now - entry.get('fetched_at', 0)) < PRICE_HISTORY_TTL_SECONDS:
+            return jsonify({
+                "ticker": ticker_symbol,
+                "asset_class": asset_class,
+                "range": range_key,
+                "candles": entry['candles'],
+                "cached": True,
+            })
+
+        try:
+            candles = fetch_price_history(ticker_symbol, range_key)
+        except Exception as e:
+            print(f"[PRICE HISTORY] Fetch failed for {ticker_symbol}: {e}")
+            # Never cache a failure — same principle as news_cache. Serve stale
+            # data if we have it rather than an empty chart; otherwise empty.
+            if entry:
+                return jsonify({
+                    "ticker": ticker_symbol,
+                    "asset_class": asset_class,
+                    "range": range_key,
+                    "candles": entry['candles'],
+                    "cached": True,
+                    "stale": True,
+                })
+            return jsonify({
+                "ticker": ticker_symbol,
+                "asset_class": asset_class,
+                "range": range_key,
+                "candles": [],
+                "error": "fetch_failed",
+            })
+
+        cache[cache_key] = {"candles": candles, "fetched_at": now}
+        save_price_history_cache(cache)
+
+        return jsonify({
+            "ticker": ticker_symbol,
+            "asset_class": asset_class,
+            "range": range_key,
+            "candles": candles,
+            "cached": False,
+        })
+
+
 @app.route('/get_market_data', methods=['GET'])
 def get_market_data():
     if os.path.exists(DATA_FILE):
@@ -873,7 +1011,9 @@ def fetch_loop(test_mode=False):
                         prev_close    = float(hist['Close'].iloc[-2])
                         session_label = "test"
                     elif state == "pre_market":
-                        pre_price = getattr(stock.fast_info, 'pre_market_price', None)
+                        # fast_info.pre_market_price doesn't exist in yfinance 1.4.x —
+                        # use stock.info['preMarketPrice'] instead
+                        pre_price = stock.info.get('preMarketPrice', None)
                         if pre_price is None:
                             market_data[ticker] = {
                                 "price": f"${float(hist['Close'].iloc[-1]):,.2f}",
@@ -883,7 +1023,18 @@ def fetch_loop(test_mode=False):
                             }
                             continue
                         current_price = float(pre_price)
-                        prev_close    = float(hist['Close'].iloc[-1])
+                        # Use clean regular-session history for prev close —
+                        # prepost=True hist can contain pre-market bars as iloc[-1]
+                        clean_hist = stock.history(period="5d", prepost=False)
+                        if clean_hist.empty:
+                            market_data[ticker] = {
+                                "price": f"${current_price:,.2f}",
+                                "change": "pre-mkt",
+                                "is_positive": None,
+                                "session": state
+                            }
+                            continue
+                        prev_close    = float(clean_hist['Close'].iloc[-1])
                         session_label = state
                     else:
                         current_price = float(hist['Close'].iloc[-1])
@@ -901,7 +1052,7 @@ def fetch_loop(test_mode=False):
 
                     opt_data = analyze_options_structure(ticker, current_price)
 
-                    if opt_data and abs(pct_change) > opt_data['expected_move_pct']:
+                    if opt_data and abs(pct_change) > opt_data['expected_move_pct'] and abs(pct_change) >= MIN_ABSOLUTE_TRIGGER_PCT:
                         with actionable_file_lock:
                             current = get_actionable_moves_local()
                             already_triggered = ticker in current

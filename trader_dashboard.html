@@ -6,213 +6,238 @@
     <title>Information Culling Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a; /* Slate 900 */
-            color: #f8fafc; /* Slate 50 */
+            background-color: #0f172a;
+            color: #f8fafc;
         }
-        
-        /* Custom scrollbar for dark mode */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #1e293b;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #475569;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #64748b;
-        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
         .glass-panel {
             background: rgba(30, 41, 59, 0.7);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(71, 85, 105, 0.4);
         }
-        
-        .pulse-red {
-            animation: pulse-red 2s infinite;
-        }
-        
+
+        .pulse-red { animation: pulse-red 2s infinite; }
         @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-            70% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+            0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70%  { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
 
-        /* Hides the default HTML disclosure arrow for the sidebar */
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.3; }
+        }
+        .animate-pulse-dot { animation: pulse-dot 2s infinite; }
+
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
+
+        /* Remove price column from sidebar rows to save space */
+        #sidebar-lists .price-col { display: none; }
+
+        /* Horizontal card scroll strip */
+        #actionable-container {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            overflow-x: scroll;
+            padding: 10px 12px;
+            height: 100%;
+            align-items: stretch;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #actionable-container.is-dragging {
+            cursor: grabbing;
+        }
+        #actionable-container > div * {
+            pointer-events: none;
+        }
+        #actionable-container::-webkit-scrollbar { height: 10px; }
+        #actionable-container::-webkit-scrollbar-track { background: #1e293b; border-radius: 5px; }
+        #actionable-container::-webkit-scrollbar-thumb { background: #64748b; border-radius: 5px; border: 2px solid #1e293b; }
+        #actionable-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        #actionable-container > div {
+            min-width: 200px;
+            max-width: 240px;
+            flex-shrink: 0;
+        }
+        /* Compact card styles inside the strip */
+        #actionable-container .glass-panel { padding: 10px !important; }
+        #actionable-container h3 { font-size: 0.95rem !important; }
+        #actionable-container .text-xl { font-size: 0.95rem !important; }
+        #actionable-container .text-sm { font-size: 0.7rem !important; }
+        #actionable-container .mt-3 { margin-top: 6px !important; }
+        #actionable-container .p-3 { padding: 6px !important; }
+        #actionable-container .line-clamp-3 {
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
     </style>
 </head>
-<body class="h-screen flex flex-col overflow-hidden selection:bg-indigo-500 selection:text-white">
+<body class="h-screen flex overflow-hidden selection:bg-indigo-500 selection:text-white">
 
-    <!-- Header -->
-    <header class="glass-panel border-b border-slate-700 px-6 py-4 flex justify-between items-center z-10 shrink-0">
-        <div class="flex items-center gap-3">
-            <div class="w-3 h-3 bg-indigo-500 rounded-full animate-pulse"></div>
-            <h1 class="text-xl font-semibold tracking-tight">Culling Engine <span class="text-slate-400 text-sm font-normal ml-2">v1.1.0</span></h1>
-        </div>
-        <div class="flex items-center gap-4 text-sm font-medium">
-            <span class="text-slate-400">System Status:</span>
-            <span class="text-emerald-400 flex items-center gap-1">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                API Connected
-            </span>
-        </div>
-    </header>
-
-    <!-- Main Dashboard Area (3 Columns) -->
+    <!-- Main: 2 columns, full viewport height -->
     <main class="flex-1 flex overflow-hidden">
-        
-        <!-- COLUMN 1: Dynamic "My Lists" Sidebar -->
-        <aside class="w-72 glass-panel border-r border-slate-700 flex flex-col h-full shrink-0">
-            <!-- Add Stock Controls -->
-            <div class="p-4 border-b border-slate-700 bg-slate-800/50">
-                <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Manage Tracking</h2>
+
+        <!-- LEFT COLUMN: 240px fixed -->
+        <aside class="w-[360px] flex flex-col h-full border-r border-slate-700 bg-slate-800/50 shrink-0">
+
+            <!-- Left column header -->
+            <div class="px-3 py-2 border-b border-slate-700 shrink-0 flex items-center gap-2">
+                <div class="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse"></div>
+                <span class="text-sm font-semibold tracking-tight">Culling Engine</span>
+                <span class="text-slate-500 text-xs font-normal">v1.2.0</span>
+            </div>
+
+            <!-- Add Ticker Input -->
+            <div class="p-3 border-b border-slate-700 shrink-0">
                 <div class="flex flex-col gap-2">
-                    <input id="ticker-input" placeholder="Ticker (e.g. AAPL)" class="p-2 text-sm bg-slate-900 rounded border border-slate-700 text-white w-full focus:outline-none focus:border-indigo-500 transition-colors">
+                    <input id="ticker-input" placeholder="Ticker (e.g. AAPL)" class="p-2 text-xs bg-slate-900 rounded border border-slate-700 text-white w-full focus:outline-none focus:border-indigo-500 transition-colors">
                     <div class="flex gap-2">
-                        <select id="category-input" class="p-2 text-sm bg-slate-900 rounded border border-slate-700 text-white w-full focus:outline-none focus:border-indigo-500 transition-colors">
+                        <select id="category-input" class="p-2 text-xs bg-slate-900 rounded border border-slate-700 text-white w-full focus:outline-none focus:border-indigo-500 transition-colors">
                             <option value="Watchlist">Watchlist</option>
                             <option value="Portfolio">Portfolio</option>
                             <option value="Dividends">Dividends</option>
                         </select>
-                        <button onclick="addStock()" class="bg-indigo-600 px-4 py-2 rounded text-sm font-bold hover:bg-indigo-500 transition-colors shadow-md">Add</button>
+                        <button onclick="addStock()" class="bg-indigo-600 px-3 py-2 rounded text-xs font-bold hover:bg-indigo-500 transition-colors shadow-md">Add</button>
                     </div>
                 </div>
             </div>
-            
-            <!-- Dynamic Lists Container -->
-            <div id="sidebar-lists" class="flex-1 overflow-y-auto p-3 space-y-3">
-                <!-- JS will populate <details> tags here -->
+
+            <!-- Macro Regime Panel -->
+            <div class="p-3 border-b border-slate-700 shrink-0">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse-dot shrink-0"></span>
+                    <span class="text-xs font-bold text-amber-500 tracking-wider uppercase">Live Macro Regime</span>
+                </div>
+                <p id="macro-headline" class="text-sm font-medium text-slate-100 leading-snug mb-1">Fetching market briefing...</p>
+                <p id="macro-summary" class="text-xs text-slate-400 leading-relaxed mb-2"></p>
+                <div class="flex gap-2 mb-1">
+                    <span id="macro-tnx" class="bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full border border-amber-500/30 text-xs font-mono">10Y: --</span>
+                    <span id="macro-vix" class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full border border-red-500/30 text-xs font-mono">VIX: --</span>
+                </div>
+                <p id="macro-updated" class="text-xs text-slate-500 text-right"></p>
+            </div>
+
+            <!-- Watchlist -->
+            <div id="sidebar-lists" class="flex-1 overflow-y-auto p-2 space-y-2">
+                <!-- JS populates <details> groups here -->
             </div>
         </aside>
 
-        <!-- COLUMN 2: Actionable Moves -->
-        <div class="w-[400px] flex flex-col p-4 border-r border-slate-700 shrink-0 bg-slate-900/50">
-            <div class="flex justify-between items-end mb-4">
-                <h2 class="text-lg font-medium text-slate-200">Actionable Moves</h2>
-                <span class="text-xs text-slate-400">Filtered by > 1σ expected move</span>
-            </div>
+        <!-- RIGHT COLUMN -->
+        <div class="flex-1 flex flex-col overflow-hidden">
 
-            <div id="actionable-container" class="flex-1 overflow-y-auto pr-2 space-y-4">
-                <!-- Dynamic cards will be injected here by JavaScript -->
-                <div class="flex flex-col items-center justify-center h-full text-slate-500 text-sm italic">
-                    <div class="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-                    Scanning market for structural breaches...
-                </div>
-            </div>
-        </div>
-
-        <!-- COLUMN 3: Macro Context & Deep Dive -->
-        <div class="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-            
-            <!-- Macro Context Header -->
-            <div class="glass-panel rounded-xl p-5 border border-amber-900/50 bg-gradient-to-r from-slate-800 to-slate-900 relative overflow-hidden shrink-0">
-                <div class="absolute right-0 top-0 w-32 h-32 bg-amber-500/10 blur-3xl rounded-full"></div>
-                <div class="flex justify-between items-start mb-1">
-                    <h2 class="text-sm font-bold text-amber-500 tracking-wider uppercase">Live Macro Regime</h2>
-                    <span id="macro-updated" class="text-xs text-slate-500"></span>
-                </div>
-                <h3 id="macro-headline" class="text-2xl font-semibold mb-2">Fetching market briefing...</h3>
-                <p id="macro-summary" class="text-slate-300 text-sm max-w-3xl"></p>
-                <div class="mt-4 flex gap-4">
-                    <span id="macro-tnx" class="bg-amber-500/20 text-amber-300 px-3 py-1 rounded border border-amber-500/30 text-xs font-mono">10Y Yield: --</span>
-                    <span id="macro-vix" class="bg-red-500/20 text-red-300 px-3 py-1 rounded border border-red-500/30 text-xs font-mono">VIX: --</span>
+            <!-- TOP ROW: Horizontal scrolling cards (~120px) -->
+            <div class="shrink-0 border-b border-slate-700 bg-slate-900/30" style="height: 128px;">
+                <div id="actionable-container">
+                    <div class="flex flex-col items-center justify-center h-full text-slate-500 text-xs italic min-w-full">
+                        <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                        Scanning market for structural breaches...
+                    </div>
                 </div>
             </div>
 
-            <!-- Deep Dive Panel -->
-            <div id="deep-dive-panel" class="glass-panel flex-1 rounded-xl p-6 flex flex-col relative overflow-hidden">
-                
-                <!-- Initial State -->
-                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-                    <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <p>Select a highlighted ticker to view AI context synthesis.</p>
+            <!-- BOTTOM: Detail Panel -->
+            <div id="deep-dive-panel" class="flex-1 overflow-hidden flex flex-col p-4">
+
+                <!-- Empty State -->
+                <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-slate-500">
+                    <svg class="w-14 h-14 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <p class="text-sm">Select a highlighted ticker to view AI context synthesis.</p>
                 </div>
 
                 <!-- Populated State -->
-                <div id="populated-state" class="hidden h-full flex flex-col">
-                    <div class="flex justify-between items-end border-b border-slate-700 pb-4 mb-4 shrink-0">
-                        <div>
-                            <div class="flex items-baseline gap-3">
-                                <h2 id="dd-ticker" class="text-3xl font-bold text-white tracking-tight">ORCL</h2>
-                                <p id="dd-dollar-price" class="text-2xl font-mono text-slate-300">$0.00</p>
-                            </div>
-                            <p id="dd-name" class="text-slate-400">Oracle Corporation</p>
+                <div id="populated-state" class="hidden flex-1 flex flex-col overflow-hidden">
+
+                    <!-- Header row -->
+                    <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-4 shrink-0">
+                        <div class="flex items-baseline gap-3">
+                            <h2 id="dd-ticker" class="text-2xl font-bold text-white tracking-tight">--</h2>
+                            <p id="dd-dollar-price" class="text-xl font-mono text-slate-300">$0.00</p>
+                            <p id="dd-name" class="text-sm text-slate-400"></p>
                         </div>
                         <div class="text-right">
-                            <span id="dd-price" class="text-2xl font-mono text-red-400">-12.4%</span>
+                            <div id="dd-price" class="text-2xl font-mono text-red-400">--</div>
+                            <div id="dd-sigma" class="text-xs text-slate-400"></div>
                         </div>
                     </div>
 
-                    <div class="flex-1 overflow-y-auto pr-2 flex flex-col gap-5">
+                    <!-- Scrollable content -->
+                    <div class="flex-1 overflow-y-auto pr-1 flex flex-col gap-4">
 
-                        <!-- The "Why" -->
-                        <div>
-                            <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
-                                The "Why" (News Synthesis)
-                            </h4>
-                            <p id="dd-why" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                                <!-- Content injected via JS -->
-                            </p>
+                        <!-- ROW 1: Why + Options side by side -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Why -->
+                            <div class="flex flex-col">
+                                <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                                    The "Why" (News Synthesis)
+                                </h4>
+                                <p id="dd-why" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex-1"></p>
+                            </div>
+                            <!-- Options Data -->
+                            <div class="flex flex-col">
+                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Options Data</h4>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
+                                        <p id="dd-atm-strike" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
+                                        <p id="dd-atm-put-price" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Expiration</p>
+                                        <p id="dd-atm-expiration" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
+                                        <p id="dd-atm-iv" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Wall</p>
+                                        <p id="dd-put-wall" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Call Wall</p>
+                                        <p id="dd-call-wall" class="text-sm font-mono text-slate-200">--</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Options Data -->
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
-                                <p id="dd-atm-strike" class="text-sm font-mono text-slate-200">--</p>
+                        <!-- ROW 2: Structure + Impact side by side -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                                    Options Structure
+                                </h4>
+                                <p id="dd-structure" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700"></p>
                             </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
-                                <p id="dd-atm-put-price" class="text-sm font-mono text-slate-200">--</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Expiration</p>
-                                <p id="dd-atm-expiration" class="text-sm font-mono text-slate-200">--</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
-                                <p id="dd-atm-iv" class="text-sm font-mono text-slate-200">--</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Wall</p>
-                                <p id="dd-put-wall" class="text-sm font-mono text-slate-200">--</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Call Wall</p>
-                                <p id="dd-call-wall" class="text-sm font-mono text-slate-200">--</p>
+                            <div>
+                                <h4 class="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">Portfolio Impact Rule</h4>
+                                <div class="bg-indigo-900/30 border border-indigo-500/50 rounded-lg p-4">
+                                    <p id="dd-impact" class="text-slate-300 text-sm"></p>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- The "Structure" -->
-                        <div>
-                            <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
-                                Options Structure & Mechanics
-                            </h4>
-                            <p id="dd-structure" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                                <!-- Content injected via JS -->
-                            </p>
-                        </div>
-
-                        <!-- Actionable Takeaway -->
-                        <div class="mt-auto pt-4 shrink-0">
-                            <div class="bg-indigo-900/30 border border-indigo-500/50 rounded-lg p-4">
-                                <h4 class="text-sm font-bold text-indigo-300 mb-1">Portfolio Impact Rule</h4>
-                                <p id="dd-impact" class="text-slate-300 text-sm">
-                                    <!-- Content injected via JS -->
-                                </p>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -224,7 +249,7 @@
         async function syncTickersWithBackend() {
             let stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
             if (stocks.length === 0) return;
-            
+
             const tickers = stocks.map(s => s.ticker);
             try {
                 await fetch('http://localhost:5000/sync_tickers', {
@@ -244,25 +269,26 @@
         function updateContext(ticker) {
             const data = dynamicContextData[ticker];
             if (!data) return;
-            
+
             document.getElementById('empty-state').classList.add('hidden');
             document.getElementById('populated-state').classList.remove('hidden');
-            
+
             document.getElementById('dd-ticker').innerText = ticker;
             document.getElementById('dd-name').innerText = data.name;
             document.getElementById('dd-dollar-price').innerText = data.price;
-            
+
             const priceEl = document.getElementById('dd-price');
             // Format price string dynamically
             const priceStr = data.price_change > 0 ? `+${data.price_change}%` : `${data.price_change}%`;
             priceEl.innerText = priceStr;
-            
+
             if(data.price_change < 0) {
                 priceEl.className = 'text-2xl font-mono text-red-400';
             } else {
                 priceEl.className = 'text-2xl font-mono text-emerald-400';
             }
 
+            document.getElementById('dd-sigma').innerText = data.expected_move ? '1σ bound: ±' + data.expected_move + '%' : '';
             document.getElementById('dd-why').innerText = data.why || "Awaiting AI synthesis...";
             document.getElementById('dd-structure').innerText = data.structure || "Analyzing options chain...";
             document.getElementById('dd-impact').innerText = data.impact || "Calculating optimal trade mechanics...";
@@ -275,16 +301,26 @@
             document.getElementById('dd-call-wall').innerText = data.call_wall ? `$${data.call_wall}` : '--';
         }
 
+        let lastActionableSnapshot = '';
+
         async function fetchActionableMoves() {
             try {
                 const res = await fetch('http://localhost:5000/get_actionable_moves');
                 const actionableData = await res.json();
-                
+
                 // Store globally for the Deep Dive panel to access
                 dynamicContextData = actionableData;
-                
+
                 const container = document.getElementById('actionable-container');
                 const tickers = Object.keys(actionableData);
+                const snapshot = JSON.stringify(actionableData);
+
+                // Skip full DOM rebuild if data hasn't changed — preserves scroll position
+                if (snapshot === lastActionableSnapshot) return;
+                lastActionableSnapshot = snapshot;
+
+                // Save scroll position before rebuild
+                const scrollLeft = container.scrollLeft;
 
                 if (tickers.length === 0) {
                     container.innerHTML = `
@@ -302,28 +338,22 @@
                     const sign = isPositive ? '+' : '';
 
                     return `
-                        <div class="glass-panel p-4 rounded-xl cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderColor} shadow-lg" onclick="updateContext('${ticker}')">
-                            <div class="flex justify-between items-start mb-2">
-                                <div>
-                                    <div class="flex items-baseline gap-2">
-                                        <h3 class="text-xl font-bold">${ticker}</h3>
-                                        <span class="text-sm font-mono text-slate-300">${data.price}</span>
-                                    </div>
-                                    <p class="text-xs text-slate-400 truncate w-32">${data.name}</p>
-                                </div>
-                                <div class="text-right">
-                                    <p class="text-xl font-bold ${priceColor}">${sign}${data.price_change}%</p>
-                                    <p class="text-xs text-slate-400">1σ Bound: ±${data.expected_move}%</p>
-                                </div>
+                        <div class="glass-panel p-3 rounded-xl cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderColor} shadow-lg flex flex-col gap-1.5" onclick="updateContext('${ticker}')" ondragstart="return false">
+                            <div class="flex justify-between items-baseline">
+                                <span class="text-lg font-bold">${ticker}</span>
+                                <span class="text-lg font-bold ${priceColor}">${sign}${data.price_change}%</span>
                             </div>
-                            <div class="mt-3 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
-                                <p class="text-sm text-slate-300 leading-snug line-clamp-3">
-                                    <span class="font-semibold text-slate-100">AI Synthesis:</span> ${data.why || 'Scanning latest headlines...'}
-                                </p>
+                            <div class="flex justify-between items-baseline">
+                                <span class="text-sm font-mono text-slate-300">${data.price}</span>
+                                <span class="text-xs text-slate-400">±${data.expected_move}%</span>
                             </div>
+                            <p class="text-xs text-slate-300 line-clamp-2">${data.why || 'Scanning latest headlines...'}</p>
                         </div>
                     `;
                 }).join('');
+
+                // Restore scroll position after rebuild
+                container.scrollLeft = scrollLeft;
 
             } catch (err) {
                 console.error("Error fetching actionable moves:", err);
@@ -333,7 +363,7 @@
         // --- 2. DYNAMIC LISTS LOGIC (Sidebar) ---
         const categories = ["Watchlist", "Portfolio", "Dividends"];
         const openStates = {};
-        
+
         function saveState(cat) {
             const el = document.getElementById(`details-${cat}`);
             if(el) { openStates[cat] = el.open; }
@@ -348,7 +378,7 @@
             let stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
             stocks = stocks.filter(s => s.ticker !== ticker);
             localStorage.setItem('userStocks', JSON.stringify(stocks));
-            
+
             await syncTickersWithBackend(); // Added sync trigger
             renderDashboard();
         }
@@ -358,14 +388,14 @@
 
             const sidebar = document.getElementById('sidebar-lists');
             const stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
-            
+
             try {
                 const res = await fetch('http://localhost:5000/get_market_data');
                 const marketData = await res.json();
 
                 sidebar.innerHTML = categories.map(cat => {
                     const filtered = stocks.filter(s => s.category === cat);
-                    
+
                     filtered.sort((a, b) => {
                         const getChangeVal = (ticker) => {
                             const data = marketData[ticker];
@@ -377,17 +407,17 @@
                     });
 
                     const isOpen = openStates[cat] ? 'open' : '';
-                    
+
                     return `
                         <details id="details-${cat}" class="group glass-panel rounded-lg overflow-hidden" ${isOpen} ontoggle="saveState('${cat}')">
                             <summary class="cursor-pointer font-medium p-3 hover:bg-slate-800/80 transition-colors flex justify-between items-center select-none text-sm border-b border-slate-700/50">
                                 <div>
-                                    <span class="text-slate-300">${cat}</span> 
+                                    <span class="text-slate-300">${cat}</span>
                                     <span class="text-xs font-normal text-slate-500 ml-2 py-0.5 px-2 bg-slate-900 rounded-full">${filtered.length}</span>
                                 </div>
                                 <span class="text-slate-500 group-open:rotate-90 transition-transform duration-200 text-xs">▶</span>
                             </summary>
-                            
+
                             <div class="p-1 space-y-1 bg-slate-900/50">
                                 ${filtered.length === 0 ? '<p class="text-xs text-slate-500 p-2 italic text-center">No tickers added.</p>' : ''}
                                 ${filtered.map(s => {
@@ -395,11 +425,11 @@
                                     let changeColor = 'text-slate-400';
                                     if (data.is_positive === true) changeColor = 'text-emerald-400';
                                     if (data.is_positive === false) changeColor = 'text-red-400';
-                                    
+
                                     return `
                                     <div class="py-1 px-2 rounded flex items-center group/item hover:bg-slate-800 transition-colors">
                                         <span class="font-bold text-slate-200 w-12 shrink-0 text-xs">${s.ticker}</span>
-                                        <span class="text-xs font-mono text-slate-300 flex-1 text-right">${data.price}</span>
+                                        <span class="text-xs font-mono text-slate-300 flex-1 text-right price-col">${data.price}</span>
                                         <span class="text-[10px] font-mono ${changeColor} font-medium bg-slate-950/50 px-1.5 py-0.5 rounded ml-2 w-12 text-right shrink-0">${data.change}</span>
                                         <button onclick="deleteStock('${s.ticker}')" class="text-slate-600 hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition-opacity ml-1 shrink-0 flex items-center justify-center w-5 text-xs" title="Remove">✕</button>
                                     </div>
@@ -431,7 +461,7 @@
             localStorage.setItem('userStocks', JSON.stringify(stocks));
 
             await syncTickersWithBackend(); // Added sync trigger
-            
+
             document.getElementById('ticker-input').value = '';
             openStates[category] = true;
             renderDashboard();
@@ -444,15 +474,61 @@
                 if (!data.headline) return;
                 document.getElementById('macro-headline').innerText = data.headline;
                 document.getElementById('macro-summary').innerText = data.summary;
-                document.getElementById('macro-updated').innerText = data.updated_at ? `Updated ${data.updated_at}` : '';
-                const tnxSign = data.tnx_change >= 0 ? '+' : '';
-                const vixSign = data.vix_change >= 0 ? '+' : '';
-                document.getElementById('macro-tnx').innerText = `10Y Yield: ${data.tnx}% (${tnxSign}${data.tnx_change})`;
-                document.getElementById('macro-vix').innerText = `VIX: ${data.vix} (${vixSign}${data.vix_change})`;
+                document.getElementById('macro-updated').innerText =
+                    data.updated_at ? 'Updated ' + data.updated_at : '';
+                document.getElementById('macro-tnx').innerText =
+                    data.tnx ? '10Y: ' + data.tnx + '%' : '10Y: --';
+                document.getElementById('macro-vix').innerText =
+                    data.vix ? 'VIX: ' + data.vix : 'VIX: --';
             } catch(err) {
                 console.error('Error fetching macro regime:', err);
             }
         }
+
+        // --- DRAG-TO-SCROLL for actionable cards strip ---
+        (function() {
+            const el = document.getElementById('actionable-container');
+            let isDown = false;
+            let startX, startScrollLeft;
+            let hasDragged = false;
+
+            // Listen at window capture phase — catches pointerdown before any child handles it
+            window.addEventListener('pointerdown', e => {
+                const rect = el.getBoundingClientRect();
+                const inStrip = e.clientX >= rect.left && e.clientX <= rect.right &&
+                                 e.clientY >= rect.top  && e.clientY <= rect.bottom;
+                if (!inStrip || e.button !== 0) return;
+                isDown = true;
+                hasDragged = false;
+                startX = e.clientX;
+                startScrollLeft = el.scrollLeft;
+                el.classList.add('is-dragging');
+            }, {capture: true});
+
+            window.addEventListener('pointermove', e => {
+                if (!isDown) return;
+                const dx = e.clientX - startX;
+                if (Math.abs(dx) > 4) hasDragged = true;
+                el.scrollLeft = startScrollLeft - dx;
+            }, {capture: true});
+
+            window.addEventListener('pointerup', e => {
+                if (!isDown) return;
+                isDown = false;
+                el.classList.remove('is-dragging');
+                // Suppress click if we actually dragged
+                if (hasDragged) {
+                    window.addEventListener('click', e => e.stopImmediatePropagation(), {capture: true, once: true});
+                }
+                hasDragged = false;
+            }, {capture: true});
+
+            // Wheel scrolls horizontally
+            el.addEventListener('wheel', e => {
+                e.preventDefault();
+                el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+            }, {passive: false});
+        })();
 
         // Initialize loops with the master sync command
         syncTickersWithBackend().then(() => {

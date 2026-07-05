@@ -2,3 +2,12 @@
 *.json
 __pycache__/
 *.pyc
+
+# Generated/scratch — not source
+Archive/
+archive_claude/
+scratch/
+blanket_AMD_latest.html
+impulse_AMD_latest.html
+relief3d_AMD_latest.html
+debug_avex.py

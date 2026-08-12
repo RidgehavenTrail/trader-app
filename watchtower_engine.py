@@ -106,8 +106,28 @@ MATERIALITY_RULES = [
     # promoted it to the earnings tier, where it outranked a real peer earnings
     # report. "guidance" and "outlook" already carry the concept, and a genuine
     # "Company forecasts Q3 revenue above estimates" still matches on "revenue".
-    (4,  "earnings",      r"earnings|quarterly results|\bQ[1-4]\b|beats?\b|misses?\b|"
-                          r"guidance|outlook|revenue|\bEPS\b"),
+    # TIGHTENED 2026-08-12. The old pattern fired on the bare nouns "earnings",
+    # "revenue", "guidance", "outlook" and "EPS", which appear in almost any
+    # company summary. Measured on one live 50-article AMD pool: 72% of the feed
+    # reached this tier while only 6% carried an earnings word in the TITLE, and
+    # NONE of the 36 described an event inside the freshness window (median age of
+    # the underlying report: 14 days, oldest 93). A tier that fires on 72% of a
+    # pool has stopped ranking anything -- everything ties at the top and the sort
+    # silently degenerates into relevance order.
+    #
+    # An ACTION is now required, not a noun: something must be reported, beaten,
+    # missed, raised or cut. This also keeps the old anti-"forecast" property --
+    # an SEO "Stock forecasts" page no longer matches, because `forecast` only
+    # counts alongside a raise/cut verb.
+    (4,  "earnings",      r"\b(reports?|posts?|announces?|delivers?)\b.{0,30}?"
+                          r"\b(results|earnings|profit|loss|revenue)\b|"
+                          r"\bearnings\b.{0,20}?\b(beat|miss|report|results|call|surprise)\b|"
+                          r"\bquarterly results\b|"
+                          r"\bQ[1-4]\b.{0,20}?\b(results|earnings|EPS|revenue)\b|"
+                          r"\b(beats?|misses?|tops?|trails?)\b.{0,25}?"
+                          r"\b(estimates?|expectations?|consensus|views?|street)\b|"
+                          r"\b(raises?|lifts?|cuts?|lowers?|slashes?|reaffirms?|withdraws?)\b"
+                          r".{0,20}?\b(guidance|outlook|forecast)\b"),
     (3,  "corp action",   r"acquisit|merger|to acquire|buyout|takeover|spin-?off|"
                           r"divest|tender offer|"
                           # a divestiture is often phrased as a sale of a business,
@@ -120,7 +140,13 @@ MATERIALITY_RULES = [
     # business ABOVE analyst (user, 2026-08-10): a contract win or a product launch
     # is a real catalyst in a way a price-target tweak is not.
     (2,  "business",      r"contract|partnership|launch|unveil|collaborat|deal with"),
-    (1,  "analyst",       r"upgrade|downgrade|price target|initiat\w+ coverage|reiterat"),
+    # WIDENED 2026-08-12: a preferred/conviction/focus-list add is a real broker
+    # action and was scoring 0. Observed live -- the GF Securities preferred-list
+    # note was the ONLY article in AMD's 50-item feed that was actually about AMD,
+    # and the one plausible explanation of its +3%; it ranked 39th of 50.
+    (1,  "analyst",       r"upgrade|downgrade|price target|initiat\w+ coverage|reiterat|"
+                          r"preferred list|conviction list|focus list|buy list|top pick|"
+                          r"added to .{0,20}?list|resumes? coverage"),
 ]
 # Matched against the TITLE only — the title is what an article is *about*.
 # "CEO sells $36M ahead of earnings" is an insider-sale story, not an earnings one.
@@ -150,10 +176,54 @@ MATERIALITY_DEMOTIONS = [
     # insider BUYING remains undemoted.
     (-2, "routine filing", r"form 144|10b5-1|insider (sell|sale)|"
                            r"\b(sell\w*|sold)\b.{0,45}?\b(shares|stock|stake)\b"),
-    (-3, "13F/stake",      r"\b13F\b|stake in|boosts? (its )?(stake|holdings|position)|"
-                           r"trims? (its )?(stake|holdings|position)|"
-                           r"(increases?|reduces?) (its )?(stake|position|holdings)"),
 ]
+
+# --- Institutional holdings changes (the old -3 "13F/stake" rule, rebuilt) -------
+# The regex it replaces failed three independent ways, all observed live on
+# 2026-08-12 in a single 50-article pool where 34 filings slipped through:
+#   VOCABULARY  it knew boosts/trims/increases/reduces, but the headlines said
+#               "Lowers", "Decreases", "Acquires", "Has", "Invests".
+#   ADJACENCY   `reduces? (its )?(position)` needs the noun next to the verb, so
+#               "Lowers STOCK Position" missed. The -2 rule above already learned
+#               this and uses `.{0,45}?`; this rule never inherited the fix.
+#   WORD ORDER  it assumed verb-then-noun, so the passive forms "Shares Sold by
+#               Insight Wealth" and "Holdings Lowered by Wedge Capital" sailed past.
+#
+# THE ACTOR TEST IS THE POINT, not the verb list. "Buys ... shares" is noise from a
+# fund and a signal from an officer, and the settled rule is that insider BUYING is
+# never demoted. So the subject decides:
+#   a PERSON  (CEO/CFO/Director/...) -> never demoted here. Insider SALES are still
+#             caught by the -2 routine-filing rule above; insider BUYING survives.
+#   a FIRM    (LLC/LP/Advisors/Capital/Management/...) -> demoted, it is a 13F.
+#   UNKNOWN   -> left alone. A demotion that cannot identify its subject should not
+#             fire, and a false negative here merely lets noise rank, while a false
+#             positive would delete a real signal.
+# The person test runs FIRST and wins outright, so "Goldman Sachs GROUP CEO Buys
+# 5,000 Shares" is read as an insider story despite the firm token in the employer's
+# name -- the same "demotions win outright" doctrine used above.
+_HOLD_VERB = (r"(buys?|bought|sell\w*|sold|acquires?|purchases?|lowers?|decreases?|"
+              r"increases?|reduces?|boosts?|trims?|raises?|cuts?|adds? to|grows?|"
+              r"offloads?|invests?|has|have|holds?|owns?|maintains?)")
+_HOLD_NOUN = r"(stake|position|holdings|shares|investment)"
+HOLDINGS_SHAPE = (rf"\b13F\b|{_HOLD_VERB}\W+(\w+\W+){{0,4}}?{_HOLD_NOUN}\b|"
+                  rf"{_HOLD_NOUN}\W+(\w+\W+){{0,3}}?{_HOLD_VERB}\b")
+ACTOR_PERSON = r"\b(CEO|CFO|COO|CTO|President|Director|Chairman|Chair|EVP|SVP|VP|" \
+               r"officer|founder|insider)\b"
+ACTOR_FIRM = (r"\b(LLC|L\.?L\.?C|LP|L\.?P|Inc|Ltd|PLC|Corp|Corporation|Advisors?|"
+              r"Advisory|Capital|Management|Partners|Fonder|Trust|Bancorp|Bank|Asset|"
+              r"Wealth\w*|Group|Fund|Investments?|Securities|Associates|Strategies|"
+              r"Vanguard|BlackRock|State Street|Berkshire|Norges)\b")
+
+
+def _is_institutional_holdings(title):
+    """True for a fund's position change — a backward-looking quarter-end snapshot
+    filed on a 45-day lag, which can never explain today's move."""
+    t = title or ""
+    if not re.search(HOLDINGS_SHAPE, t, re.I):
+        return False
+    if re.search(ACTOR_PERSON, t, re.I):
+        return False
+    return bool(re.search(ACTOR_FIRM, t, re.I))
 # MACRO_FILE moved to engine/macro.py (split phase 3).
 # PRICE_HISTORY_* config moved to engine/price_history.py (split phase 2).
 
@@ -535,6 +605,106 @@ def _av_pace():
         _av_last_call[0] = time.time()
 
 
+# --- Alpha Vantage daily budget -------------------------------------------------
+# The free tier allows 25 calls/day and the measured median usage is 24, so the
+# engine runs at the wall most days. Before this existed there was NO counter: the
+# pacer above tracks the last call's TIMESTAMP, not a count, and it dies with the
+# process — so the day's usage could only be reverse-engineered from news_cache
+# entries and card states after the fact.
+#
+# THE FAILURE THIS PREVENTS. A quota-exhausted call returns an "Information"/"Note"
+# body, which the old code turned into `None` — indistinguishable from "the call
+# succeeded and there was nothing fresh." `_advance_after_empty()` then wrote
+# "No news surfaced today." onto the card. A billing failure was permanently
+# recorded as a statement about the market. That string is the number being counted
+# to answer how often a flagged move never gets a story (2026-08-11), so poisoning
+# it corrupts the measurement as well as the card.
+#
+# So an unavailable call now returns AV_UNAVAILABLE, NOT None, and the card is left
+# in its current state to be retried rather than being closed out with a false
+# answer. `None` keeps its original meaning: asked, and nothing was there.
+# Weight bonus for an article whose HEADLINE names our ticker. Applied to weight, not
+# to tier, so it can lift a demoted item into view for situational awareness without
+# ever making it eligible to be a CAUSE — the band is decided by tier alone.
+NAMED_BONUS = 3
+
+# Backoff when a pull could not be MADE (AV_UNAVAILABLE). An unavailable attempt keeps
+# the card's state but must push its due time out, or the card stays perpetually due and
+# every 60s loop pass spends another call. Capped as well as delayed: after
+# MAX_TRIES the card stops retrying for the day rather than grinding at the budget.
+NEWS_UNAVAILABLE_BACKOFF_MIN = 20
+NEWS_UNAVAILABLE_MAX_TRIES = 3
+
+AV_DAILY_LIMIT = 25
+AV_USAGE_FILE = 'av_usage.json'
+_av_usage_lock = threading.Lock()
+
+
+class _AVUnavailable:
+    """The call could NOT be made — distinct from 'was made and found nothing'."""
+    __slots__ = ()
+
+    def __repr__(self):
+        return "<AV_UNAVAILABLE>"
+
+
+AV_UNAVAILABLE = _AVUnavailable()
+
+
+def _av_usage_today():
+    """The usage record for today, rolling over automatically at the ET date change.
+    Callers hold _av_usage_lock."""
+    try:
+        with open(AV_USAGE_FILE, encoding='utf-8') as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    today = datetime.now(ET).date().isoformat()
+    if d.get('date') != today:
+        d = {"date": today, "calls": 0}
+    return d
+
+
+def av_calls_used():
+    with _av_usage_lock:
+        return int(_av_usage_today().get('calls', 0))
+
+
+def av_calls_remaining():
+    return max(0, AV_DAILY_LIMIT - av_calls_used())
+
+
+def _av_count_call():
+    """Record one Alpha Vantage call and return the running total.
+
+    Counted when the request is ISSUED, not when it succeeds — a timeout may still
+    have reached the far end, so counting on success would undercount toward the
+    wall. Erring high is the safe direction for a hard daily cap.
+    """
+    from engine.common import atomic_write_json
+    with _av_usage_lock:
+        d = _av_usage_today()
+        d['calls'] = int(d.get('calls', 0)) + 1
+        d['last_call_at'] = datetime.now(ET).isoformat(timespec='seconds')
+        atomic_write_json(AV_USAGE_FILE, d)
+        return d['calls']
+
+
+def _av_mark_exhausted(reason=""):
+    """Alpha Vantage itself said we are out. It is the authority on our quota, so
+    stop guessing from the local count and pin usage to the limit for the rest of
+    the day — the local tally can be low if calls were made from anywhere else."""
+    from engine.common import atomic_write_json
+    with _av_usage_lock:
+        d = _av_usage_today()
+        d['calls'] = max(int(d.get('calls', 0)), AV_DAILY_LIMIT)
+        d['exhausted_at'] = datetime.now(ET).isoformat(timespec='seconds')
+        if reason:
+            d['exhausted_reason'] = reason[:200]
+        atomic_write_json(AV_USAGE_FILE, d)
+    print(f"[AV BUDGET] Alpha Vantage reports the quota is spent — no further calls today")
+
+
 def _sweep_time_today():
     now = datetime.now(ET)
     return now.replace(hour=NEWS_SWEEP_HOUR_ET, minute=0, second=0, microsecond=0)
@@ -555,6 +725,41 @@ def schedule_news_pull(ticker, delay_min=NEWS_FIRST_PULL_DELAY_MIN):
         "impact": "Levels shown; narrative follows the news pull.",
     })
     print(f"[NEWS SCHED] {ticker}: first pull due {due:%H:%M} ET")
+
+
+def schedule_volume_news_pull(ticker):
+    """A 2x-volume fire earns its OWN pull, once per ticker per day.
+
+    NOT the same rule as schedule_news_pull, which no-ops the moment a ticker has any
+    news state. That idempotence is correct for a second PRICE trigger — the same move
+    does not deserve two looks — and wrong here. Volume usually arrives WITH definitive
+    news (user, 2026-08-12), so a spike is positive evidence that something has printed
+    SINCE the earlier attempt, which for a 1-sigma card was T+30 from the open and
+    often found nothing. Observed live: NVDA pulled at 10:19, crossed 2x volume in the
+    afternoon, and kept its morning narrative because the volume fire no-opped.
+
+    REGRESSION NOTE. This behaviour shipped in `0033699` ("Phase A3b: once/day updated
+    synthesis on 2x-volume") and was lost in `e776b3b`, the T+30/15:00 scheduling
+    rework, which replaced the direct synthesis call with schedule_news_pull() and
+    inherited its guard. `run_synthesis_in_background()` has had no caller since.
+
+    Re-arms the shared state machine rather than running its own synthesis, so the
+    news_loop, the AV budget counter, the banding and the context tiers all apply
+    unchanged. Due NOW, not T+30: the delay exists to let news publish after a price
+    move, and a volume spike that has been accumulating for hours is itself the
+    evidence that it already has.
+    """
+    card = (get_actionable_moves_local() or {}).get(ticker) or {}
+    if card.get('volume_news_pulled'):
+        return
+    prev = card.get('news_state')          # read BEFORE patching; the patch may mutate
+    patch_actionable_move(ticker, {        # the very dict this reference points at
+        "news_state": "pending",
+        "news_due_at": datetime.now(ET).timestamp(),
+        "volume_news_pulled": True,
+    })
+    print(f"[NEWS SCHED] {ticker}: 2x-volume fire — re-arming a fresh pull now "
+          f"(was '{prev}')")
 
 
 def _opt_from_card(card):
@@ -592,6 +797,270 @@ def _advance_after_empty(ticker, now=None):
         print(f"[NEWS NONE] {ticker}: no news surfaced today — closed out")
 
 
+# --- Peer-earnings context (the FALLBACK tier) ----------------------------------
+# WHY THIS EXISTS (2026-08-12). Six semis triggered on one day -- AMD +3.0, NVDA +2.9,
+# MU +6.6, MRVL +5.1, LRCX +5.0, INTC +3.0 -- on one catalyst: SMCI, CRWV and LITE all
+# reported after the prior close. Alpha Vantage put those articles in NVDA's feed and
+# nobody else's, so NVDA got the only correct narrative on the board and the other five
+# got filings about Ford. Verified: AMD's 50-article feed contained ZERO mentions of
+# SMCI or CoreWeave.
+#
+# The fix is not to hunt harder for the article. The earnings calendar STATES the fact,
+# for every ticker at once, for free. yfinance already backs `_next_earnings` in
+# stoplight/events.py; this reads the same source backwards.
+#
+# STRICTLY A FALLBACK. Only consulted when a ticker's own feed yields nothing fresh.
+# Always-on sector context would become the new insider-selling -- a plausible sentence
+# available on every card regardless of whether it explains anything (the audit's own
+# warning, 2026-08-10). An ungrouped ticker gets no context and the tier stays silent,
+# which is the conservative default.
+#
+# Peer sets deliberately include names that are NOT on the watchlist. The company whose
+# results move a sector is frequently not one we track -- that is exactly this session's
+# case -- so a peer list limited to tickers.json would have missed all three drivers.
+PEER_GROUPS = {
+    "ai_semis": ["AMD", "NVDA", "INTC", "MU", "MRVL", "LRCX", "ARM", "XLK", "XNDU",
+                 "AVGO", "TSM", "ASML", "AMAT", "KLAC", "QCOM", "TXN", "ADI", "ON",
+                 "MCHP", "NXPI", "GFS", "CRDO", "SWKS", "TER", "WDC", "STX",
+                 "SMCI", "CRWV", "LITE", "ANET", "DELL", "VRT"],
+    "software":  ["DDOG", "GOOGL", "SNAP", "CRM", "NOW", "SNOW", "MDB", "NET",
+                  "PANW", "CRWD", "ORCL", "MSFT", "META", "ADBE"],
+    "staples":   ["MO", "PM", "KHC", "CAG", "TGT", "PG", "KO", "PEP", "CL", "GIS",
+                  "K", "STZ", "BTI", "KMB"],
+    "energy":    ["XLE", "ENB", "LYB", "XOM", "CVX", "COP", "SLB", "OXY", "PSX",
+                  "VLO", "MPC", "EOG"],
+    "power_ind": ["GEV", "UPS", "ETN", "PWR", "HUBB", "CAT", "HON", "EMR", "FDX"],
+    "health":    ["PFE", "MRK", "LLY", "ABBV", "JNJ", "BMY", "AMGN"],
+    "telecom":   ["VZ", "T", "TMUS", "CMCSA", "CHTR"],
+    "reits":     ["O", "VICI", "SPG", "PLD", "AMT", "WELL"],
+    "retail":    ["SFIX", "AMZN", "M", "KSS", "GPS", "ANF", "URBN", "RL"],
+    "auto_ev":   ["TSLA", "GM", "F", "RIVN", "LCID"],
+}
+# ticker -> its peers (itself excluded). Ungrouped tickers simply never get context.
+TICKER_PEERS = {t: [p for p in members if p != t]
+                for members in PEER_GROUPS.values() for t in members}
+EARNINGS_CAL_FILE = 'earnings_calendar.json'
+_earn_cal_lock = threading.Lock()
+
+
+def _earnings_calendar(tickers):
+    """{ticker: [iso datetime strings]} for `tickers`, cached for the ET day.
+
+    yfinance is ~1s per name and there is no batch endpoint, so the first card in a
+    group pays for its whole peer set and every later card that day is free. Cached to
+    disk rather than memory so an engine restart does not re-pay it. A name that fails
+    to resolve is cached as an empty list -- a missing calendar must not retry all day.
+    """
+    from engine.common import atomic_write_json
+    today = datetime.now(ET).date().isoformat()
+    with _earn_cal_lock:
+        try:
+            with open(EARNINGS_CAL_FILE, encoding='utf-8') as f:
+                cal = json.load(f)
+        except (OSError, ValueError):
+            cal = {}
+        if cal.get('date') != today:
+            cal = {"date": today, "tickers": {}}
+        known = cal.setdefault('tickers', {})
+        missing = [t for t in tickers if t not in known]
+        if missing:
+            print(f"[PEER EARNINGS] building calendar for {len(missing)} name(s)...")
+            for t in missing:
+                try:
+                    df = yf.Ticker(t).get_earnings_dates(limit=8)
+                    known[t] = ([d.astimezone(ET).isoformat() for d in df.index.to_pydatetime()]
+                                if df is not None and len(df) else [])
+                except Exception:
+                    known[t] = []
+            atomic_write_json(EARNINGS_CAL_FILE, cal)
+        return known
+
+
+# --- Macro context (the second FALLBACK tier) -----------------------------------
+# The answer to "why did this move" is frequently already on disk and was never shown
+# to the card synthesis. On 2026-08-12 the hourly briefing read "Markets rally on
+# in-line CPI report and strong AI earnings" and carried the print itself -- CPI +0.1%
+# m/m against +0.1% expected, released 8:30 ET -- while every card on the board was
+# left guessing from institutional filings. The audit's own note: 52% of honest
+# failures already reach for "sector weakness" or "broader market" with NO data.
+#
+# SAME FALLBACK DISCIPLINE as the peer tier, for the same reason: an always-on macro
+# line would make "broader market concerns" the new insider-selling -- a plausible
+# sentence available on every card whether or not it explains anything.
+#
+# Only RELEASED data is included. "NOT RELEASED" and "none scheduled" rows are noise,
+# and a scheduled-but-unreleased print explains nothing, exactly as a future earnings
+# date does not.
+MACRO_CONTEXT_MAX_AGE_MIN = 180
+
+
+def macro_context(now=None):
+    """Market-wide context from the hourly macro briefing, or None.
+
+    Read fresh from disk each time rather than cached here: engine/macro.py owns the
+    file and rewrites it hourly, so anything cached in this module would go stale
+    against it silently.
+    """
+    now = now or datetime.now(ET)
+    try:
+        from engine.macro import MACRO_FILE
+    except Exception:
+        MACRO_FILE = 'macro_regime.json'
+    try:
+        with open(MACRO_FILE, encoding='utf-8') as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(m, dict):
+        return None
+
+    # `data_releases` is MODEL-AUTHORED JSON with no schema enforcement, so its shape
+    # varies between hourly regenerations. Observed live 2026-08-12: a dict at 14:05
+    # ({"CPI (8:30 ET)": "RELEASED ..."}) and a LIST an hour later. Assuming dict cost
+    # five AV calls — see the backoff note in run_due_news_pulls. Normalise anything.
+    dr = m.get('data_releases')
+    if isinstance(dr, dict):
+        rows = [f"{k}: {v}" for k, v in dr.items() if isinstance(v, str)]
+    elif isinstance(dr, list):
+        rows = []
+        for x in dr:
+            if isinstance(x, str):
+                rows.append(x)
+            elif isinstance(x, dict):
+                # e.g. {"name": "CPI", "status": "RELEASED ..."} — join the values in
+                # a stable order rather than guessing at key names.
+                rows.append(": ".join(str(v) for v in x.values() if isinstance(v, (str, int, float))))
+    else:
+        rows = []
+    released = [r for r in rows
+                if "RELEASED" in r.upper() and "NOT RELEASED" not in r.upper()]
+    headline = (m.get('headline') or "").strip()
+    if not released and not headline:
+        return None
+
+    lines = []
+    if released:
+        lines.append("Macro data released today: " + "; ".join(released[:4]))
+    if headline:
+        stamp = (m.get('updated_at') or "").strip()
+        lines.append(f"Market read{f' ({stamp})' if stamp else ''}: {headline}")
+    print(f"[MACRO CONTEXT] supplying {len(released)} released print(s) as fallback context")
+    return (
+        "CONTEXT — MARKET-WIDE, NOT COMPANY NEWS.\n" + "\n".join(lines) + "\n"
+        "NOTE: this describes the whole market, not this company. Offer it only if the "
+        "move is consistent with a broad move, and say so explicitly as a market-wide "
+        "explanation. Never present it as a company-specific catalyst."
+    )
+
+
+def _reported_in_window(ticker, now=None):
+    """Did `ticker` actually report earnings inside the news freshness window?
+
+    The gate behind the earnings tier. An article is published today; the results it
+    describes may be three months old. Using publication time as a proxy for event
+    time is what let a 93-day-old report hold the top tier.
+    """
+    if not ticker:
+        return False
+    now = now or datetime.now(ET)
+    cutoff = _news_cutoff(now)
+    try:
+        cal = _earnings_calendar([ticker])
+    except Exception as e:
+        # Unknown is not the same as No. Failing OPEN here keeps a real earnings story
+        # in PRIMARY when the calendar is unreachable; failing closed would silently
+        # demote every earnings article the moment yfinance hiccuped.
+        print(f"[NEWS BAND] earnings-window check unavailable for {ticker}: "
+              f"{type(e).__name__}: {e}")
+        return True
+    for iso in cal.get(ticker) or []:
+        try:
+            d = datetime.fromisoformat(iso)
+        except ValueError:
+            continue
+        if cutoff <= d <= now:
+            return True
+    return False
+
+
+def peer_earnings_context(ticker, now=None):
+    """A context block naming in-window reporters, or None when there is nothing to say.
+
+    'In-window' uses the SAME cutoff as article freshness, so this answers exactly the
+    question the missing article would have: what happened since the last close that
+    could move this name. Returns text shaped for the synthesis prompt, explicitly
+    labelled as a calendar fact rather than a headline so the model cannot present it
+    as reporting.
+    """
+    # An UNGROUPED ticker still gets its OWN earnings checked. Bailing out here on an
+    # empty peer list -- as this used to -- meant a company with no sensible comparables
+    # could report after the close and the board would never say so. SPCX is the case
+    # that surfaced it (user, 2026-08-12: SpaceX is "very diversified to have a peer",
+    # and BA/LMT would not move it absent a huge contract event) -- a correct decision
+    # to leave it ungrouped that silently disabled the self-check too.
+    peers = TICKER_PEERS.get(ticker) or []
+    now = now or datetime.now(ET)
+    cutoff = _news_cutoff(now)
+    try:
+        cal = _earnings_calendar([ticker] + peers)
+    except Exception as e:
+        print(f"[PEER EARNINGS] calendar unavailable for {ticker}: {type(e).__name__}: {e}")
+        return None
+
+    def reported(tk):
+        out = []
+        for iso in cal.get(tk) or []:
+            try:
+                d = datetime.fromisoformat(iso)
+            except ValueError:
+                continue
+            if cutoff <= d <= now:
+                out.append(d)
+        return out
+
+    self_hits = reported(ticker)
+    peer_hits = [(p, d) for p in peers for d in reported(p)]
+    if not self_hits and not peer_hits:
+        return None
+
+    lines = []
+    if self_hits:
+        # Its OWN earnings, with no article about them, is a stronger and stranger
+        # fact than any peer's -- surface it first and say so plainly.
+        lines.append(f"{ticker} ITSELF reported earnings at "
+                     f"{self_hits[0]:%Y-%m-%d %H:%M} ET, since the prior close.")
+    if peer_hits:
+        peer_hits.sort(key=lambda x: x[1])
+        named = ", ".join(f"{p} ({d:%Y-%m-%d %H:%M} ET)" for p, d in peer_hits[:6])
+        lines.append(f"Sector peers that reported since the prior close: {named}.")
+
+    # The attribution instruction must match WHICH hit fired. Telling the model to
+    # credit "the sector" is right for a peer report and exactly wrong for the
+    # company's own — its own earnings are the definition of a company-specific event.
+    if self_hits and peer_hits:
+        attribution = ("Distinguish this company's OWN report from its peers' when "
+                       "attributing the move. ")
+    elif self_hits:
+        attribution = ("This company's own report is a COMPANY-SPECIFIC event — "
+                       "attribute it to the company, not to the sector. ")
+    else:
+        attribution = ("If a sector-wide move is a plausible reading, say so and "
+                       "attribute it to the sector rather than to this company. ")
+
+    print(f"[PEER EARNINGS] {ticker}: {len(peer_hits)} peer(s), "
+          f"{len(self_hits)} self — supplying fallback context")
+    # Deliberately makes no claim about what else was retrieved. This block used to
+    # open by asserting no article had cleared the filter, which was true when it only
+    # fired on an empty feed and became FALSE once it could run alongside a PRIMARY.
+    return (
+        "CONTEXT — EARNINGS CALENDAR, NOT A NEWS ARTICLE.\n" + "\n".join(lines) + "\n"
+        "NOTE: these are calendar facts, not reporting — no article about them was "
+        "retrieved and their RESULTS are unknown here. " + attribution +
+        "Do NOT state or imply whether those results beat or missed. If this does not "
+        "plausibly explain the move, say the move is unexplained."
+    )
+
+
 def run_due_news_pulls():
     """One pass: execute any card whose next pull is due. Called by news_loop."""
     try:
@@ -606,14 +1075,69 @@ def run_due_news_pulls():
             continue
         if now.timestamp() < float(due):
             continue
+        # Checked BEFORE the pacer: _av_pace() sleeps up to 30s, and doing that only
+        # to discover there is no budget would stall this pass for every due card.
+        # break, not continue -- if the budget is gone it is gone for all of them.
+        if av_calls_remaining() <= 0:
+            print(f"[AV BUDGET] {AV_DAILY_LIMIT}/{AV_DAILY_LIMIT} spent — "
+                  f"deferring due pulls (still waiting: {ticker})")
+            break
         try:
             _av_pace()
-            news_text = fetch_latest_news(ticker)
+            news_text, news_meta = fetch_latest_news(ticker)
+            if news_text is AV_UNAVAILABLE:
+                # Could not ask. The card keeps its STATE — advancing it toward "no news
+                # surfaced today" would assert something we never earned. But it must
+                # NOT stay due, or this becomes a spend loop: news_due_at is already in
+                # the past, so every 60s pass re-selects the card and every attempt
+                # costs an API call.
+                #
+                # THIS EXACT LOOP RAN LIVE (2026-08-12). A crash in the new macro-context
+                # builder propagated to fetch_latest_news' outer handler, which returns
+                # AV_UNAVAILABLE, so TSLA sat in `pending` and burned one call a minute
+                # from 20/25 to 25/25 in five minutes. The original code always advanced
+                # the card, which self-limited by accident; removing the advance removed
+                # the limit with it.
+                # A post-response code fault is DETERMINISTIC — the next attempt crashes
+                # in the same place and spends another call. Stop immediately; there is
+                # nothing to wait for. Only a genuine wire failure earns the backoff.
+                if news_meta.get("retryable") is False:
+                    patch_actionable_move(ticker, {"news_due_at": None})
+                    print(f"[NEWS PULL] {ticker}: failure is not retryable (code fault "
+                          f"after a good response) — stopping, card left in '{state}'")
+                    continue
+
+                tries = int(card.get('news_unavailable_tries') or 0) + 1
+                if tries >= NEWS_UNAVAILABLE_MAX_TRIES:
+                    # Stop retrying today. due=None makes run_due_news_pulls skip it
+                    # (`if ... or not due: continue`) while the state and text stand.
+                    patch_actionable_move(ticker, {"news_due_at": None,
+                                                   "news_unavailable_tries": tries})
+                    print(f"[NEWS PULL] {ticker}: Alpha Vantage unavailable {tries}x — "
+                          f"giving up for today, card left in '{state}'")
+                else:
+                    retry_at = now + timedelta(minutes=NEWS_UNAVAILABLE_BACKOFF_MIN)
+                    patch_actionable_move(ticker, {"news_due_at": retry_at.timestamp(),
+                                                   "news_unavailable_tries": tries})
+                    print(f"[NEWS PULL] {ticker}: Alpha Vantage unavailable "
+                          f"({tries}/{NEWS_UNAVAILABLE_MAX_TRIES}) — backing off to "
+                          f"{retry_at:%H:%M} ET, card left in '{state}'")
+                continue
+
             if news_text is None:
+                # NOT A SUCCESSFUL PULL, and the derived context tiers do not change
+                # that (user, 2026-08-12). Peer-earnings and macro context are built
+                # INSIDE fetch_latest_news and ranked alongside the articles, so they
+                # are colour on a real pull and never a substitute for one: a card with
+                # nothing published against it goes back to the 15:00 sweep for a
+                # second look at the wire rather than being closed out on a calendar
+                # entry.
                 _advance_after_empty(ticker, now)
                 continue
-            set_cached_news(ticker, news_text, "Alpha Vantage")
-            print(f"[NEWS PULL] {ticker}: fresh news found ({state} attempt) — synthesising")
+
+            news_source = "Alpha Vantage"
+            set_cached_news(ticker, news_text, news_source)
+            print(f"[NEWS PULL] {ticker}: {news_source.lower()} ({state} attempt) — synthesising")
             ai = generate_ai_synthesis(ticker, _opt_from_card(card), news_text,
                                        round(float(card.get('price_change') or 0), 2))
             why = ai.get('why', '')
@@ -621,7 +1145,7 @@ def run_due_news_pulls():
                 _advance_after_empty(ticker, now)
                 continue
             patch_actionable_move(ticker, {
-                "news_source": "Alpha Vantage", "why": why,
+                "news_source": news_source, "why": why,
                 "structure": ai.get('structure', ''), "impact": ai.get('impact', ''),
                 "news_state": "done", "news_due_at": None,
             })
@@ -677,8 +1201,16 @@ def run_synthesis_in_background(ticker, opt_data, pct_change, is_update=False):
             news_text = cached
             news_source = "Cached"
         else:
-            news_text = fetch_latest_news(ticker)
+            news_text, _news_meta = fetch_latest_news(ticker)
             news_source = "Alpha Vantage"
+
+            if news_text is AV_UNAVAILABLE:
+                # No call was made, so there is nothing to explain a fallback FROM.
+                # Escalating to the Claude live search here would spend a far more
+                # expensive budget to answer a question Alpha Vantage was never asked.
+                print(f"[NEWS PULL] {ticker}: Alpha Vantage unavailable — leaving the "
+                      f"card unchanged rather than escalating to a live search.")
+                return
 
             if news_text is None:
                 print(f"[NEWS FALLBACK] {ticker}: Alpha Vantage had nothing, using Claude search+synthesize...")
@@ -778,27 +1310,52 @@ def _published_at(item):
         return None
 
 
-def _materiality(title, summary):
+def _materiality(title):
     """(weight, label) for how much this story could plausibly MOVE a stock.
 
-    Demotions are tested against the title alone and win outright, so an article
-    whose subject is an insider sale is not promoted to the earnings tier merely
-    for mentioning earnings in passing. Otherwise the strongest positive match
-    across title+summary wins, defaulting to 0 for ordinary coverage.
+    EVERYTHING is now tested against the TITLE alone (changed 2026-08-12). Demotions
+    always were, on the reasoning that the title is what an article is ABOUT -- but
+    the positive rules read title+summary, and that asymmetry was the single largest
+    ranking defect measured: 33 of 50 articles in one live pool were promoted to the
+    top tier purely by summary boilerplate ("revenue" appeared in 25 summaries, "EPS"
+    in 21) while their titles were institutional filings about other companies.
+    An aggregator's summary recites the covered company's financials as background
+    colour; treating that as evidence of an earnings story is a category error.
+
+    Demotions still win outright, so an insider-sale story is not promoted to the
+    earnings tier for mentioning earnings in passing.
     """
+    t = title or ""
     for weight, label, pattern in MATERIALITY_DEMOTIONS:
-        if re.search(pattern, title or "", re.I):
+        if re.search(pattern, t, re.I):
             return weight, label
-    blob = f"{title or ''} {summary or ''}"
+    if _is_institutional_holdings(t):
+        return -3, "13F/stake"
     best, best_label = 0, "general"
     for weight, label, pattern in MATERIALITY_RULES:
-        if weight > best and re.search(pattern, blob, re.I):
+        if weight > best and re.search(pattern, t, re.I):
             best, best_label = weight, label
     return best, best_label
 
 
 def fetch_latest_news(ticker_symbol):
-    """Returns a string of headlines on success, or None if Alpha Vantage has nothing usable."""
+    """Returns (text, meta).
+
+    text: the banded headline block on success; None if the call was MADE and nothing
+          usable came back; AV_UNAVAILABLE if the call could not be made at all
+          (budget spent, quota message, transport failure). Callers must not treat the
+          last case as an absence of news — see the AV budget block above for why.
+    meta: {"n_primary", "n_background"} — how many of the sent articles may be offered
+          as a CAUSE versus how many are awareness-only, plus n_catalyst: PRIMARIES that
+          earned it on materiality rather than by last-resort aboutness promotion.
+          n_catalyst == 0 is the signal that nothing here explains the move, and is
+          what triggers the peer-earnings fallback."""
+    remaining = av_calls_remaining()
+    if remaining <= 0:
+        print(f"[AV BUDGET] {ticker_symbol}: daily limit of {AV_DAILY_LIMIT} reached — "
+              f"no call made, card left for a later attempt")
+        return AV_UNAVAILABLE, {"retryable": True}
+    got_response = False
     try:
         url = (
             f"https://www.alphavantage.co/query"
@@ -814,18 +1371,25 @@ def fetch_latest_news(ticker_symbol):
             f"&limit={NEWS_FETCH_LIMIT}"
             f"&apikey={ALPHA_VANTAGE_KEY}"
         )
+        used = _av_count_call()
+        print(f"[AV BUDGET] call {used}/{AV_DAILY_LIMIT} — {ticker_symbol} "
+              f"({AV_DAILY_LIMIT - used} left today)")
         resp = requests.get(url, timeout=10)
         data = resp.json()
+        got_response = True      # past this line, any failure is OURS, not the wire's
 
-        # Catch missing/invalid API key or quota exhaustion
+        # Missing/invalid API key or quota exhaustion. NOT None: we never got to ask,
+        # so the card must not be closed out as "no news surfaced today".
         if "Information" in data or "Note" in data:
-            msg = data.get("Information") or data.get("Note")
-            print(f"[NEWS WARNING] Alpha Vantage API issue: {msg}")
-            return None
+            msg = str(data.get("Information") or data.get("Note"))
+            print(f"[NEWS WARNING] Alpha Vantage API issue: {msg[:200]}")
+            if re.search(r"rate limit|call frequency|premium plan|higher API call", msg, re.I):
+                _av_mark_exhausted(msg)
+            return AV_UNAVAILABLE, {"retryable": True}
 
         feed = data.get("feed", [])
         if not feed:
-            return None
+            return None, {"n_primary": 0, "n_catalyst": 0, "n_background": 0, "top_tier": -99}
 
         # Collect every candidate that clears the relevance bar, THEN rank. The old
         # loop broke at the first 3 that passed, which -- because the feed arrives
@@ -869,6 +1433,14 @@ def fetch_latest_news(ticker_symbol):
                 if t.get("ticker") != ticker_symbol and float(t.get("relevance_score", 0)) >= relevance - 0.05
             ]
 
+            # Which company the article is really ABOUT, by AV's own scoring, and how
+            # far behind it we sit. The gap is a continuous aboutness measure (0.00
+            # means we ARE the subject; -0.14 means someone else is) and replaces the
+            # flat co-tag penalty as the tiebreak.
+            _ranked = sorted(((t.get("ticker"), float(t.get("relevance_score", 0)))
+                              for t in ticker_sentiments), key=lambda x: -x[1])
+            top_ticker, top_relevance = _ranked[0] if _ranked else (ticker_symbol, relevance)
+
             if relevance < 0.5:
                 print(f"[NEWS FILTER] {ticker_symbol}: skipped '{title[:60]}...' (relevance {relevance:.2f} < 0.5)")
                 continue
@@ -880,11 +1452,51 @@ def fetch_latest_news(ticker_symbol):
             # 2026-08-10 — 40 of 50 articles discarded as shared, leaving a kept
             # pool of stock-forecast filler and the CEO's share sales, while the
             # discards held AMAT's 11% fall, KLA's outlook and MKSI's earnings.
-            weight, label = _materiality(title, summary)
+            weight, label = _materiality(title)
+
+            # ABOUTNESS. Two distinct signals, both cheap and both stronger than the
+            # relevance score, which is too crude to separate them: on one live pool
+            # seven of the eight HIGHEST-relevance articles were filings about other
+            # companies, and the single top-scoring article (0.82) never mentioned
+            # our ticker at all.
+            #   leads  -- our ticker opens the headline. Only 1 of 50 qualified, so
+            #             this is a scalpel, not a filter, and it is the strongest
+            #             available evidence that a piece is genuinely about us.
+            #   named  -- our ticker appears anywhere in the headline. Used for the
+            #             PRIMARY override below, so a piece plainly about this
+            #             company is never demoted to background merely because its
+            #             wording missed every catalyst keyword.
+            lead_pat = rf"^\W*({re.escape(ticker_symbol)})\b"
+            leads = bool(re.match(lead_pat, title, re.I))
+            named = bool(re.search(rf"\b{re.escape(ticker_symbol)}\b", title, re.I))
+
+            # The shared-coverage penalty is SUPPRESSED when our ticker leads. It
+            # fired on 100% of one measured pool, which makes a flat penalty
+            # arithmetically a no-op -- subtracting the same number from everything
+            # ranks nothing. Suppressing it where aboutness is strongest restores
+            # the discrimination it was meant to provide.
+            penalty = SHARED_COVERAGE_PENALTY if (co_tagged and not leads) else 0
+
+            # NAMED BONUS. Aboutness counts even when an item can NEVER be a cause
+            # (user, 2026-08-12: negative tiers are "useful SA in the absence of
+            # everything else" when the ticker is genuinely called out). "AMD Shares
+            # Sold by Insight Wealth" is a routine filing and stays BACKGROUND — the
+            # band keys off `tier`, which this does not touch — but it is genuinely
+            # ABOUT AMD, which makes it better awareness than a Hold rating on an
+            # unrelated mortgage REIT. Without this it sits at -4.5 and is never seen.
+            #
+            # +3 is chosen so a demoted-but-on-topic item lands level with unrelated
+            # general coverage and the gap/relevance tiebreak decides — it does not leap
+            # over real news. It also lifts POSITIVE named items, which is the same
+            # principle: an article about THIS company should outrank another company's
+            # earnings report, since the latter cannot explain our move either.
+            bonus = NAMED_BONUS if named else 0
             candidates.append({
                 "title": title, "summary": summary, "relevance": relevance,
                 "tier": weight, "label": label, "co_tagged": co_tagged,
-                "weight": weight - (SHARED_COVERAGE_PENALTY if co_tagged else 0),
+                "leads": leads, "named": named, "top_ticker": top_ticker,
+                "gap": round(relevance - top_relevance, 2),
+                "weight": weight - penalty + bonus,
             })
 
         if stale or undated:
@@ -894,16 +1506,83 @@ def fetch_latest_news(ticker_symbol):
                   + f" (of {len(feed)}).")
 
         if not candidates:
-            # Not a failure -- the honest answer is that nothing recent exists. The
-            # caller falls through to a LIVE search, which is better placed to explain
-            # a same-day move than anything Alpha Vantage still had on file.
+            # NO ARTICLES IS NOT A SUCCESSFUL PULL, and the derived context tiers below
+            # do not change that (user, 2026-08-12). They are colour on a real pull,
+            # never a substitute for one -- a card with nothing published against it
+            # must go back to the 15:00 sweep and get a second look at the wire, not be
+            # closed out on an earnings-calendar entry. So this returns BEFORE the
+            # pseudo-candidates are built.
             print(f"[NEWS FRESH] {ticker_symbol}: nothing published since the prior "
-                  f"close — falling through to live search.")
-            return None
+                  f"close — not a successful pull, deferring.")
+            return None, {"n_primary": 0, "n_catalyst": 0, "n_background": 0, "top_tier": -99}
 
-        # Materiality first, relevance as the tiebreak. Nothing is dropped for being
-        # low-materiality -- a routine filing still surfaces when it is all there is.
-        candidates.sort(key=lambda c: (c["weight"], c["relevance"]), reverse=True)
+        # --- DERIVED CONTEXT, RANKED ALONGSIDE THE ARTICLES -------------------
+        # PEER EARNINGS AT TIER 2.5 (user, 2026-08-12: "peer related earnings are
+        # definitely relevant"). Not appended unconditionally -- it COMPETES. Sitting
+        # between business(2) and corp-action/regulatory/dilution(3) means a genuine
+        # company event still outranks it, while an analyst note (1) does not. That is
+        # the whole disagreement from earlier resolved by ranking rather than by a
+        # suppression threshold.
+        # DERIVED CONTEXT MUST NEVER BREAK THE ARTICLE PATH. Both builders read files
+        # and call yfinance, and macro_regime.json in particular is model-authored with
+        # a shape that changes between regenerations. A throw here used to propagate to
+        # this function's outer handler, which returns AV_UNAVAILABLE — so a cosmetic
+        # context failure discarded a PAID, successful article pull and left the card
+        # to be retried a minute later. Context is a bonus; degrade to none.
+        try:
+            peer_block = peer_earnings_context(ticker_symbol)
+        except Exception as e:
+            print(f"[NEWS CONTEXT] {ticker_symbol}: peer-earnings unavailable "
+                  f"({type(e).__name__}: {e}) — continuing without it")
+            peer_block = None
+        if peer_block:
+            candidates.append({
+                "title": f"{ticker_symbol} sector peers reported since the prior close",
+                "summary": "", "relevance": 1.0, "tier": 2.5, "label": "peer earnings",
+                "co_tagged": [], "leads": False, "named": False,
+                "top_ticker": ticker_symbol, "gap": 0.0, "weight": 2.5,
+                "raw": peer_block,
+            })
+
+        # MACRO AT TIER 1 (user, 2026-08-12). Ranked, not gated: it sits above tier-0
+        # filler and the demoted filings, and below business(2), peer earnings(2.5) and
+        # any real company event(3-4).
+        #
+        # THE TIER IS THE KNOB FOR THE HOMOGENEITY RISK, and it is the whole reason it
+        # is not higher: a released macro print is true of every stock on the board at
+        # once, so ranking it up would put the SAME sentence on every card and recreate
+        # the "broader market concerns" failure the audit warned about -- the exact
+        # shape of the insider-selling problem, one level up. At 1 it surfaces only on
+        # cards whose own coverage is weak, which is precisely when a market-wide
+        # explanation is the honest one. Move this number if the balance is wrong; it is
+        # the single lever.
+        #
+        # An earlier draft gated this on "no other candidate at tier >= 0", which in
+        # practice meant never -- tier 0 is the DEFAULT for anything unmatched, and one
+        # live pool carried 15 of them, so CPI would have been suppressed on the very
+        # day the engine's own briefing led with it.
+        try:
+            macro_block = macro_context()
+        except Exception as e:
+            print(f"[NEWS CONTEXT] {ticker_symbol}: macro context unavailable "
+                  f"({type(e).__name__}: {e}) — continuing without it")
+            macro_block = None
+        if macro_block:
+            candidates.append({
+                "title": "Market-wide context", "summary": "", "relevance": 1.0,
+                "tier": 1, "label": "macro", "co_tagged": [], "leads": False,
+                "named": False, "top_ticker": ticker_symbol, "gap": 0.0,
+                "weight": 1, "raw": macro_block,
+            })
+
+        # ABOUTNESS FIRST, then materiality, then how much of the article is really
+        # about us, then relevance. The lead key is gated on tier >= 0 so a demoted
+        # filing that happens to open with our ticker ("AMD Shares Sold by ...")
+        # cannot ride it to the top. Measured: this moves the one genuinely relevant
+        # article in a 50-item pool from 39th to 1st.
+        candidates.sort(key=lambda c: (c["leads"] and c["tier"] >= 0,
+                                       c["weight"], c["gap"], c["relevance"]),
+                        reverse=True)
 
         # DEDUPE. Aggregators reprint the same story, and with only three slots a
         # duplicate is a slot spent saying nothing new. Observed 2026-08-11: DDOG's
@@ -921,43 +1600,145 @@ def fetch_latest_news(ticker_symbol):
             deduped.append(c)
         candidates = deduped
 
-        chosen, dropped = candidates[:3], candidates[3:]
+        # --- BANDS ------------------------------------------------------------
+        # Tiers exist to PRIORITISE by likely price impact, not to delete coverage:
+        # a low-tier item still carries information worth knowing (user, 2026-08-12).
+        # So nothing is cut for being low-tier -- each article is LABELLED instead,
+        # and the prompt is told which band may be offered as a cause. This
+        # generalises a mechanism already in this file: the "routine filing ...
+        # background only" note did exactly this for one case.
+        #
+        #   PRIMARY     may be offered as the cause of the move.
+        #   BACKGROUND  awareness only; never the explanation.
+        #
+        # Two things can make an article PRIMARY. A real, dated catalyst (tier > 0),
+        # or ABOUTNESS -- our ticker opening the headline, which rescues a piece
+        # plainly about this company whose wording missed every catalyst keyword.
+        # A demoted filing is background no matter how it is worded.
+        def _band(c):
+            if c["tier"] < 0:
+                return "BACKGROUND"
+            if c["tier"] > 0:
+                # An earnings claim must be backed by an event INSIDE the window.
+                # Publication freshness is not event freshness: every article in one
+                # measured pool was published today while the results they described
+                # were a median of 14 days old (oldest 93), and one was a notice about
+                # a report still a week in the FUTURE.
+                if c["label"] == "earnings" and not _reported_in_window(c["top_ticker"]):
+                    print(f"[NEWS BAND] {ticker_symbol}: '{c['title'][:45]}...' claims "
+                          f"earnings but {c['top_ticker']} did not report in-window")
+                    return "BACKGROUND"
+                return "PRIMARY"
+            if c["label"] == "macro":
+                # Only ever present when nothing else reached tier 0, so the choice is
+                # this or silence. Usable as an explanation -- but its own NOTE forces
+                # the attribution to be market-wide, never company-specific.
+                return "PRIMARY"
+            # tier 0 is BACKGROUND here. Aboutness can still promote it, but only as a
+            # LAST RESORT -- see the promotion pass below.
+            return "BACKGROUND"
 
         def _why(c):
             """tier + modifier = total, so an effective weight is always traceable
             back to an authored number rather than appearing from nowhere."""
             share = f" shared(-{SHARED_COVERAGE_PENALTY})" if c["co_tagged"] else ""
-            return (f"{c['label']}({c['tier']}){share} = {c['weight']}, "
-                    f"rel={c['relevance']:.2f}")
+            lead = " LEADS" if c["leads"] else ""
+            return (f"{c['label']}({c['tier']}){share}{lead} = {c['weight']}, "
+                    f"rel={c['relevance']:.2f}, gap={c['gap']:+.2f}")
+
+        # Band a bounded slice, then fill the three slots PRIMARY-FIRST. Banding has to
+        # happen BEFORE selection or a high-tier background item -- an "expected to
+        # announce earnings" notice, say -- takes a slot from an article that could
+        # actually explain the move. The slice is bounded because the earnings gate
+        # costs a calendar lookup per candidate; six is enough to fill three slots even
+        # when every leader turns out to be background.
+        BAND_POOL = 6
+        banded = [(c, _band(c)) for c in candidates[:BAND_POOL]]
+
+        # ABOUTNESS PROMOTION — last resort only. An article whose headline OPENS with
+        # our ticker is plainly about this company, and dropping it to background just
+        # because its wording missed every catalyst keyword would lose the one piece
+        # actually on topic. But promoting it unconditionally lets SEO filler
+        # ("AMD Stock: 3 Things To Watch This Week") be offered as a cause, so it only
+        # applies when nothing else earned PRIMARY on its own merits.
+        if not any(b == "PRIMARY" for _, b in banded):
+            promoted = [(c, "PRIMARY" if (c["leads"] and c["tier"] >= 0) else b)
+                        for c, b in banded]
+            if any(b == "PRIMARY" for _, b in promoted):
+                print(f"[NEWS BAND] {ticker_symbol}: no catalyst found — promoting a "
+                      f"headline that leads with the ticker")
+                banded = promoted
+
+        ordered = ([x for x in banded if x[1] == "PRIMARY"] +
+                   [x for x in banded if x[1] == "BACKGROUND"])
+        chosen = ordered[:3]
+        dropped = [c for c, _ in ordered[len(chosen):]] + candidates[BAND_POOL:]
 
         for c in dropped:
             print(f"[NEWS RANK] {ticker_symbol}: below the cut '{c['title'][:55]}...' [{_why(c)}]")
 
-        headlines = []
-        for c in chosen:
-            print(f"[NEWS RANK] {ticker_symbol}: chose '{c['title'][:55]}...' [{_why(c)}]")
+        headlines, n_primary, n_catalyst, top_tier = [], 0, 0, -99
+        for c, band in chosen:
+            n_primary += (band == "PRIMARY")
+            # A CATALYST is a PRIMARY that earned it on materiality, not one promoted
+            # by aboutness as a last resort. The peer-earnings fallback keys off this
+            # rather than n_primary, so a "3 Things To Watch" piece cannot suppress a
+            # genuine sector explanation just by leading with the ticker.
+            n_catalyst += (band == "PRIMARY" and c["tier"] > 0)
+            if band == "PRIMARY":
+                top_tier = max(top_tier, c["tier"])
+            print(f"[NEWS RANK] {ticker_symbol}: chose [{band}] '{c['title'][:50]}...' [{_why(c)}]")
             notes = []
             if c["co_tagged"]:
                 peers = ", ".join(tk for tk, _ in c["co_tagged"][:5] if tk)
-                notes.append(f"SECTOR/SHARED COVERAGE — also covers {peers}. This may "
-                             f"explain a sector-wide move rather than a company-specific one.")
-            # Flag a demoted item so the synthesis does not present a routine filing
-            # as a catalyst. This is the DDOG failure in one line: an 18.7% earnings
-            # gap explained as "insider selling ... triggered the selloff".
+                notes.append(f"Also covers {peers} — may indicate a sector-wide move "
+                             f"rather than a company-specific one.")
             if c["tier"] < 0:
-                notes.append("Routine filing/position disclosure — background only, "
-                             "not a plausible cause of a large move.")
+                notes.append("Routine filing/position disclosure.")
+            if band == "BACKGROUND":
+                notes.append("BACKGROUND ONLY — informational context. Do NOT present "
+                             "this as the cause of the move.")
             note = ("\nNOTE: " + " ".join(notes)) if notes else ""
-            headlines.append(
-                f"Headline: {c['title']}\nSummary: {c['summary']}\n"
-                f"Relevance: {c['relevance']:.2f}{note}"
-            )
+            if c.get("raw"):
+                # A derived context block carries its own framing and guard text; it is
+                # not an article and must not be dressed as one with a Relevance line.
+                headlines.append(f"[{band}] {c['raw']}")
+            else:
+                headlines.append(
+                    f"[{band}] Headline: {c['title']}\nSummary: {c['summary']}\n"
+                    f"Relevance: {c['relevance']:.2f}{note}"
+                )
 
-        return "\n---\n".join(headlines)
+        if not headlines:
+            return None, {"n_primary": 0, "n_catalyst": 0, "n_background": 0, "top_tier": -99}
+        return "\n---\n".join(headlines), {
+            "n_primary": n_primary, "n_catalyst": n_catalyst, "top_tier": top_tier,
+            "n_background": len(headlines) - n_primary}
 
     except Exception as e:
-        print(f"[NEWS ERROR] Alpha Vantage fetch failed for {ticker_symbol}: {e}")
-        return None
+        # WHERE the failure happened decides whether retrying is sane.
+        #
+        # AFTER a successful response, this is OUR bug: the call was spent, real
+        # articles came back, and we crashed formatting them. It is deterministic —
+        # retrying crashes identically and spends another call every time. That is
+        # exactly what drained the budget on 2026-08-12: a macro-context crash was
+        # reported as "Alpha Vantage unavailable" and retried once a minute.
+        # Not retryable; surface it loudly as the code fault it is.
+        #
+        # BEFORE a response (timeout, DNS, connection reset), the wire genuinely failed
+        # and a later attempt may well succeed. Retryable, with backoff.
+        #
+        # Neither case returns None: writing "no news surfaced today" off a failure
+        # would be a false statement about the market and would pollute the count of
+        # that string.
+        if got_response:
+            print(f"[NEWS BUG] {ticker_symbol}: crashed AFTER a good Alpha Vantage "
+                  f"response — {type(e).__name__}: {e}. Call spent, articles discarded. "
+                  f"NOT retryable (it would fail the same way); fix the code path.")
+            return AV_UNAVAILABLE, {"retryable": False}
+        print(f"[NEWS ERROR] Alpha Vantage fetch failed for {ticker_symbol} before any "
+              f"response: {type(e).__name__}: {e}")
+        return AV_UNAVAILABLE, {"retryable": True}
 
 def search_and_synthesize_fallback(ticker, opt_data, pct_change):
     """
@@ -1109,8 +1890,28 @@ def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
     # opt_data is None for a volume-triggered name with no listed options chain —
     # drop the options mechanics from the prompt rather than indexing fields that
     # don't exist (would crash a volume-only synthesis on a micro-cap).
+    # DIRECTION MUST BE STATED, NOT INFERRED (2026-08-12). `pct_change` is signed, but
+    # a POSITIVE value rendered as "has just moved 3.01%" — a sentence containing no
+    # directional word at all — leaving the model to infer up-or-down from the tone of
+    # whatever article it was handed. The asymmetry was measured on one day's board:
+    # all three DOWN moves were narrated correctly, because the minus sign carried the
+    # direction; of six UP moves, four refused to state a direction and the one that
+    # committed got it BACKWARDS. INTC's card read "Intel's 4.6% decline is directly
+    # driven by the $20 billion capital raise" on a +3.01% day, having inherited
+    # "Slips" from its top headline. Naming the direction removes the inference.
+    direction = "RISEN" if pct_change >= 0 else "FALLEN"
+    magnitude = abs(pct_change)
+
     if opt_data:
-        move_line = f"The stock {ticker} has just moved {pct_change}%, exceeding its nearest-term ATM put premium of {opt_data['expected_move_pct']}%."
+        # The put-premium relationship is deliberately NOT stated here (user,
+        # 2026-08-12). The 1-sigma breach is a FILTER for deciding what is worth
+        # looking at, not content for the narrative — the premium is already on the
+        # card. Asserting it was also becoming false: the clause was hardcoded as
+        # "exceeding", but a card keeps its trigger while the price drifts back, so
+        # AMD's prompt claimed 3.03% "exceeded" a 3.48% premium. PM, KHC and DDOG were
+        # all in the same state that day. The move and its direction are what the
+        # synthesis needs; whether it still exceeds is not the model's question.
+        move_line = f"The stock {ticker} has just {direction} {magnitude}%."
         options_block = (
             "\nOptions Structure Data:\n"
             f"- Put Wall (Highest OI): {opt_data['put_wall']}\n"
@@ -1119,7 +1920,7 @@ def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
         )
         structure_key = '"structure": A 1-2 sentence explanation of the options mechanics.'
     else:
-        move_line = f"The stock {ticker} has just moved {pct_change}% on a volume spike and has no listed options chain."
+        move_line = f"The stock {ticker} has just {direction} {magnitude}% on a volume spike and has no listed options chain."
         options_block = ""
         structure_key = '"structure": A 1-2 sentence explanation of what the volume/price action implies (no options data available).'
 
@@ -1129,8 +1930,15 @@ def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
 Latest News:
 {news_text}
 
+Each item is tagged [PRIMARY] or [BACKGROUND]. ONLY a [PRIMARY] item may be offered as
+the cause of the move. [BACKGROUND] items are context you may mention for awareness —
+never as the explanation. An item marked as a routine filing or position disclosure is
+never a cause. If a CONTEXT block from the earnings calendar is present, it states only
+THAT a company reported, never how: do not assert or imply results you were not given.
+If nothing here can explain the move, say so plainly.
+
 Synthesize this data and return ONLY a valid JSON object with EXACTLY these three keys, and nothing else - no preamble, no markdown fences:
-"why": A 2-3 sentence fundamental or news-driven reason for the move based on the headlines. If the news above does not contain enough information to explain the move, say so plainly rather than speculating.
+"why": A 2-3 sentence fundamental or news-driven reason for the move, drawn from the [PRIMARY] items. If there are none, or they do not account for the move, say so plainly rather than speculating.
 {structure_key}
 "impact": A strict 1-2 sentence actionable trading rule or portfolio impact warning."""
 
@@ -1656,12 +2464,13 @@ def fetch_loop(test_mode=False):
                                 print(f"[TRIGGER] {ticker} volume {volume_ratio_val}x 50-day avg ({session_label}).")
                             patch_actionable_move(ticker, vol_patch)
 
-                            # Volume confirms AFTER news prints as often as before it, so a
-                            # volume fire just schedules the same T+30 pull. schedule_news_pull
-                            # is idempotent -- if 1-sigma already scheduled this ticker today,
-                            # the clock is NOT reset. The old volume_synth_ran budget flag went
-                            # with the retired weak-synthesis re-scan (2026-08-11).
-                            schedule_news_pull(ticker)
+                            # A volume fire ALWAYS earns a fresh look, once per ticker per
+                            # day — it is not folded into whatever the 1-sigma card already
+                            # pulled. Volume usually arrives with definitive news, so the
+                            # spike is evidence something printed after the morning attempt.
+                            # schedule_news_pull() would have no-opped here; its guard is
+                            # right for a repeat price trigger and wrong for this one.
+                            schedule_volume_news_pull(ticker)
 
                         # --- Turtle: 55-day breakout, gated for the day ----------
                         # Fires ONCE and persists via existing_conditions — re-entering

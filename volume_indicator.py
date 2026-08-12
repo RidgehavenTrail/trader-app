@@ -78,6 +78,31 @@ def compute_volume_ratio(stock):
         intraday = stock.history(period="1d", interval="1m", prepost=False)
         if intraday.empty or 'Volume' not in intraday:
             return None
+
+        # period="1d" is a REQUEST, not a guarantee. yfinance serves 1-minute data out
+        # of a rolling ~7-day window and has been observed returning SEVERAL sessions
+        # for this call. Summing them turns "volume so far today" into a multi-day
+        # total and inflates the ratio by however many sessions came back.
+        #
+        # Observed live 2026-08-12: NVDA reported 3.2x and TSLA 3.5x in the same sweep,
+        # on a day both traded BELOW average (true ratios 0.64x and 0.60x). The implied
+        # cumulatives were ~4.4 and ~5.4 full days — i.e. about five sessions each.
+        # Both fired 1-sigma-plus-volume cards and one burned a news pull.
+        #
+        # Keep only the LAST session present. Slicing on the last date rather than on
+        # the wall clock also means stale data fails SAFE: an all-yesterday response
+        # yields yesterday's full volume (~1x, no trigger) instead of a false spike.
+        try:
+            bar_dates = intraday.index.date
+            last_session = bar_dates[-1]
+            n_sessions = len(set(bar_dates))
+            if n_sessions > 1:
+                intraday = intraday[bar_dates == last_session]
+                print(f"[VOLUME] 1m fetch returned {n_sessions} sessions for a period='1d' "
+                      f"request — trimmed to {last_session} ({len(intraday)} bars)")
+        except Exception:
+            pass          # no usable index -> fall through and sum what we have
+
         cumulative_today = float(intraday['Volume'].sum())
 
         return volume_ratio_from_data(baseline_vols, cumulative_today)

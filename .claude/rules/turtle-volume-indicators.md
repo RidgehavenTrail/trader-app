@@ -38,6 +38,24 @@ SHIPPED behavior, not a future target.)
 
 ## 2x Volume Indicator (priority 2)
 
+> **TWO CORRECTIONS, session 43 (2026-08-12) — read before touching this.**
+> **(1) The 1m fetch must be trimmed to ONE session.** `compute_volume_ratio` summed
+> `stock.history(period="1d", interval="1m")` and trusted the period. yfinance serves 1-minute
+> data from a rolling ~7-day window and sometimes returns SEVERAL sessions, turning "volume so
+> far today" into a multi-day total. Observed live: NVDA reported **3.2x** and TSLA **3.5x** in
+> the same sweep on a day both traded BELOW average (true **0.64x** / **0.60x**) — implied
+> cumulatives of ~4.4 and ~5.4 days, about five sessions each. Now trimmed to the last session
+> present in the DATA (not the wall clock, so stale data fails safe at ~1x rather than as a
+> false spike). Commit `1f52dfb`.
+> **(2) A volume hit ALWAYS earns its own news pull, once/day/ticker.** This shipped in
+> `0033699` and was silently lost in `e776b3b`, which replaced the direct synthesis call with
+> `schedule_news_pull()` and inherited that function's no-op-if-already-pulled guard — correct
+> for a repeat PRICE trigger, wrong here. Volume usually arrives WITH definitive news, so a
+> spike is evidence something printed since the morning attempt. Restored as
+> `schedule_volume_news_pull()`, which re-arms the SHARED state machine (so the budget counter,
+> banding and context tiers all apply) rather than running a private path.
+> `run_synthesis_in_background()` has had NO CALLER since `e776b3b` — it is dead code.
+
 - **Baseline:** 50-day average daily volume (full-day totals).
 - **Trigger:** raw cumulative volume-so-far-today exceeds 2x the 50-day average.
   Deliberately NOT pro-rated for time-of-day — realistically a mid-afternoon-or-

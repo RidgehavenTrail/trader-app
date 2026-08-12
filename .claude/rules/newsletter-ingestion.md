@@ -55,7 +55,11 @@ rather than split out, so phase 5 is unaffected: **`engine/strategy.py`** (Rocke
 `GET /get_strategy_dial`, the Fed Dial B state + portfolios), **`engine/qqq_system.py`** (the QQQ
 system's live state behind a CONTRACT dict; `_adapt_full_system()` is the only strategy-aware
 function, and it imports the canonical backtests from `Documents/Macro Newsletters/backtests/`
-— OUTSIDE the repo and unversioned, an open policy item), and **`engine/news_archive.py`**
+— **RESOLVED session 43 (2026-08-12): `backtests/live/` is now its OWN git repo gated by
+`_assert_blessed()`, and `strategy_config.py` joined it — the dial's series/thresholds, the
+regime->allocation map, the warning rule, the profit target and the sleeve names all live
+there and are read back through `engine/live_config.py`. They had to leave because `master`
+is a PUBLIC remote; it was pushed clean the same day.**), and **`engine/news_archive.py`**
 (`GET /get_news_archive/<ticker>`, reads `archive/*.json` + the live card, no new capture).
 The per-ticker NEWS PATH in `watchtower_engine.py` was also overhauled (freshness cutoff,
 materiality ranking, T+30/15:00 scheduling via `news_loop`) — that code is part of the

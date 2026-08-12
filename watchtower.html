@@ -33,6 +33,229 @@
 
     #sidebar-lists .price-col { display: none; }
 
+    /* --- Shared collapse caret (any <details> section) --- */
+    .sec-caret { color:#64748b; font-size:11px; display:inline-block; width:10px; }
+    details[open] > summary .sec-caret::before { content:'\25BE'; }        /* down triangle */
+    details:not([open]) > summary .sec-caret::before { content:'\25B8'; }  /* right triangle */
+    #macro-section > summary { cursor:pointer; }
+    /* Headline survives collapse: full when open, first two lines when collapsed. */
+    #macro-section:not([open]) .macro-headline {
+        display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+    }
+
+    /* --- AI Bubble Stoplight (pixel contract: AI Stoplight/stoplight_mockup.html) --- */
+    #stoplight-section summary { cursor: pointer; }
+    .sl-caret { color:#64748b; font-size:11px; display:inline-block; width:10px; }
+    #stoplight-section[open] .sl-caret::before { content:'\25BE'; }
+    #stoplight-section:not([open]) .sl-caret::before { content:'\25B8'; }
+    .sl-lbl { font-size:11px; font-weight:500; color:#e2e8f0; letter-spacing:.06em; text-transform:uppercase; flex-shrink:0; }
+    .sl-hdr-nm { font-size:11px; color:#e2e8f0; white-space:nowrap; }
+    .sl-hdr-val { font-family:ui-monospace,monospace; font-size:11px; color:#4ade80; }
+    .sl-hdr-when { font-size:10px; color:#64748b; margin-left:auto; }
+    .sl-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; display:inline-block; }
+    .sl-g { background:#4ade80; } .sl-y { background:#facc15; } .sl-r { background:#f87171; }
+    .sl-o { background:#fb923c; } .sl-x { background:#475569; }
+    .sl-rows { margin:8px auto 0; width:fit-content; display:flex; flex-direction:column; font-size:11px; line-height:1; }
+    .sl-row { display:flex; align-items:center; padding:3px 4px; }
+    .sl-rk { flex:0 0 15px; text-align:right; color:#64748b; font-size:10px; }
+    .sl-gl { flex:0 0 12px; text-align:right; color:#cbd5e1; font-weight:700; font-size:11px; }
+    .sl-row .sl-dot { margin-left:5px; }
+    .sl-nm { color:#e2e8f0; flex:0 0 118px; padding-left:6px; }
+    .sl-dim { color:#475569; }
+    .sl-mt { font-family:ui-monospace,monospace; color:#94a3b8; flex:0 0 72px; }
+    .sl-cat { font-family:ui-monospace,monospace; color:#64748b; font-size:10px; flex:0 0 38px;
+              text-align:right; cursor:default; }
+    .sl-row-new { background:rgba(74,222,128,.08); border:1px solid rgba(74,222,128,.3); border-radius:3px; }
+    .sl-row-new .sl-nm, .sl-row-new .sl-mt { color:#f1f5f9; font-weight:500; }
+    .sl-row-flip { outline:1px solid rgba(250,204,21,.4); border-radius:3px; }
+    .sl-badge-stale { font-size:9px; font-weight:500; color:#fbbf24; background:rgba(251,191,36,.12);
+                      border:1px solid rgba(251,191,36,.35); border-radius:4px; padding:0 4px;
+                      text-transform:uppercase; margin-left:4px; }
+    .sl-badge-refine { font-size:9px; color:#94a3b8; background:rgba(148,163,184,.12);
+                       border:1px solid rgba(148,163,184,.3); border-radius:4px; padding:0 3px;
+                       margin-left:4px; cursor:help; }
+    .sl-module { position:relative; margin-top:12px; padding-top:12px; border-top:1px solid rgba(51,65,85,.7); }
+    .sl-corner { position:absolute; right:4px; top:13px; font-size:10px; font-family:ui-monospace,monospace; }
+    .sl-odo { display:flex; flex-direction:column; align-items:center; gap:5px; }
+    .sl-drums { display:flex; align-items:center; gap:2px; }
+    .sl-unit { color:#64748b; font-family:ui-monospace,monospace; font-size:12px; margin-right:1px; }
+    .sl-unit-b { color:#94a3b8; font-family:ui-monospace,monospace; font-size:12px; font-weight:700; margin-left:1px; }
+    .sl-drum { width:16px; height:22px; background:linear-gradient(#ffffff,#e2e5ea); border:1px solid #0f172a;
+               border-radius:2px; display:flex; align-items:center; justify-content:center;
+               font-family:ui-monospace,monospace; font-size:14px; font-weight:700; color:#0b0b0b;
+               box-shadow:inset 0 3px 3px -2px rgba(0,0,0,.38), inset 0 -3px 3px -2px rgba(0,0,0,.38); }
+    .sl-plate { font-size:10px; font-weight:700; color:#bef264; text-transform:uppercase; letter-spacing:.16em;
+                text-shadow:0 0 6px rgba(132,204,22,.9), 0 0 12px rgba(132,204,22,.5); }
+    @keyframes sl-roll { 0% { transform:translateY(-6px); opacity:.2; } 100% { transform:translateY(0); opacity:1; } }
+    .sl-roll .sl-drum { animation:sl-roll .3s ease-out; }
+
+    /* --- ROCKET STRATEGY — Fed Dial rotation + the QQQ system -------------------
+       Collapse grammar shared with #macro-section / #stoplight-section (.sec-caret).
+       The summary pins BOTH strategies' current state so it survives collapse, the
+       same way the macro headline and the stoplight header do.
+       Regime colors are the DIAL'S OWN convention, matched to stoplight/charts.py
+       REGIME_COLOR so the box and the Fed-dial chart can never disagree:
+         tightening #f87171 · easing #34d399 · hold #94a3b8.
+       FULLY LIVE as of 2026-08-10 via GET /get_strategy_dial (engine/strategy.py).
+       Nothing in this section is placeholder any more: the dial, the three
+       portfolios, every holding's price / day move / era / gap / depth, AND the QQQ
+       system's own state (engine/qqq_system.py, adapted from the canonical
+       backtests/system_plus_flush.py). The selected holding's rows are driven by
+       that module's CONTRACT dict — state_tier, not state names, decides the State
+       color, so a different strategy needs no change here. */
+    #strategy-section > summary { cursor:pointer; }
+    .str-lbl { font-size:11px; font-weight:500; color:#e2e8f0; letter-spacing:.06em;
+               text-transform:uppercase; flex-shrink:0; }
+    .str-pill { font-family:ui-monospace,monospace; font-size:10px; padding:0 5px;
+                border-radius:3px; white-space:nowrap; border:1px solid transparent; }
+    /* Proximity ring — the dial is sitting within STR_NEAR_PP of a regime threshold,
+       i.e. this is a judgment period rather than a settled state. Deliberately a RING
+       and not a recolor: the pill's own color must keep conveying the ACTUAL state
+       (user, 2026-08-10). Implemented as box-shadow rather than border because each
+       pill's border-color is set inline per state and would win on specificity.
+       The near-threshold band was tightened from my looser first guess (user,
+       2026-08-10 — the original was ~40% of the way across the deadband and fired far
+       too early; the current value is the last 20%). It is `near_pp` in the strategy
+       repo's config, not a value in this file — the server sends `near` already
+       decided. */
+    .str-pill.str-near { box-shadow:0 0 0 1px rgba(251,191,36,.85),
+                                    0 0 7px rgba(251,191,36,.3); }
+    .str-proto { font-size:9px; color:#f59e0b; background:rgba(245,158,11,.1);
+                 border:1px solid rgba(245,158,11,.3); border-radius:3px; padding:0 4px;
+                 text-transform:uppercase; letter-spacing:.04em; margin-left:auto; }
+    .str-blk { margin-top:9px; }
+    .str-blk + .str-blk { padding-top:9px; border-top:1px solid rgba(51,65,85,.7); }
+    .str-blk-hd { display:flex; align-items:baseline; gap:7px; margin-bottom:4px; }
+    .str-blk-nm { font-size:10px; font-weight:700; color:#cbd5e1; letter-spacing:.08em;
+                  text-transform:uppercase; }
+    .str-state { font-family:ui-monospace,monospace; font-size:11px; font-weight:700; }
+    .str-when { font-size:9px; color:#64748b; margin-left:auto; white-space:nowrap; }
+    .str-row { display:flex; align-items:baseline; font-size:11px; line-height:1.6; }
+    /* Row labels carry the AI Bubble section's weight (.sl-nm / .sl-lbl are #e2e8f0
+       at 500) — at #64748b they read as disabled rather than as labels
+       (user, 2026-08-10). */
+    .str-k { color:#e2e8f0; font-weight:500; flex:0 0 96px; padding-left:8px; }
+    /* Fixed value column so every footnote starts at the SAME x. Footnotes used to
+       be nested inside .str-v and inherited its variable width, which left them
+       ragged down the block (user, 2026-08-10). Label / value / footnote are now
+       three siblings, two of them fixed-width. */
+    .str-v { font-family:ui-monospace,monospace; color:#cbd5e1; flex:0 0 66px; }
+    .str-dim { color:#64748b; }
+    .str-up { color:#4ade80; } .str-dn { color:#f87171; }
+    /* Footnotes lifted #475569 -> #94a3b8 (the stoplight's own .sl-mt): still clearly
+       secondary, but legible rather than nearly invisible on #0f172a. */
+    .str-sub { font-size:9px; color:#94a3b8; margin-left:5px; font-family:inherit; }
+    .str-badge { font-size:9px; border-radius:4px; padding:0 4px; text-transform:uppercase;
+                 letter-spacing:.03em; }
+    .str-badge-ok { color:#64748b; background:rgba(148,163,184,.1);
+                    border:1px solid rgba(148,163,184,.25); }
+    .str-badge-warn { color:#fbbf24; background:rgba(251,191,36,.12);
+                      border:1px solid rgba(251,191,36,.35); }
+    /* Caveats that must travel with the numbers (Ground Control / Rocket Man): the
+       QQQ system is in-sample on ~2 observations; the dial's deadband is unoptimized
+       and the strategy trades a 1-MONTH LAG behind the live reading shown here. */
+    .str-note { font-size:9px; color:#475569; line-height:1.45; margin-top:5px; }
+    /* .str-row/.str-k/.str-v are no longer used by the left panel (the numeric rows
+       moved to the detail panel, 2026-08-10) — kept because the detail panel wants
+       exactly this row grammar. Delete if that lands differently. */
+
+    /* --- Allocation: three portfolios side by side ---------------------------
+       One COLUMN per regime, one ROW per holding within it. The LIVE column sits
+       left, in the regime's own color, carrying weights; the two alternates sit
+       right, greyed and weightless, so they read as "what you'd hold instead"
+       rather than competing for attention (user, 2026-08-10). Column order for the
+       alternates is rate-direction (easing -> tightening), set server-side. */
+    .str-alloc { display:grid; grid-template-columns:1fr auto auto; gap:0 10px;
+                 align-items:start; margin-top:8px; }
+    .str-col-hd { font-size:9px; text-transform:uppercase; letter-spacing:.07em;
+                  margin-bottom:4px; white-space:nowrap; }
+    .str-hold { display:flex; align-items:center; gap:5px; line-height:1.5;
+                margin-bottom:3px; }
+    /* Each holding's own strategy state rides ON its allocation row — the panel
+       previously listed QQQ/MO/PM twice, once for weights and again for state,
+       which is not compact (user, 2026-08-10). One row per holding, both facts. */
+    .str-wt { font-family:ui-monospace,monospace; font-size:10px; color:#64748b; }
+    .str-st { font-size:9px; color:#94a3b8; }
+    .str-st-off { font-size:9px; color:#94a3b8; font-style:italic; }
+
+    /* Ticker pills — colored PER INSTRUMENT (server-side TICKER_COLOR) so a name
+       looks the same in every column. Styled as clickable ahead of the strategy
+       detail panel; today a click only resolves for tickers Actionable Moves has
+       data for, and is inert otherwise. */
+    .str-tpill { font-family:ui-monospace,monospace; font-size:10px; font-weight:700;
+                 padding:1px 6px; border-radius:999px; border:1px solid transparent;
+                 cursor:pointer; transition:filter .12s ease, box-shadow .12s ease;
+                 letter-spacing:.02em; }
+    .str-tpill:hover { filter:brightness(1.25); }
+    /* Live holdings get a bigger pill carrying the ticker AND today's move. Three
+       independent signals share it without colliding: TEXT color = the instrument's
+       identity, BORDER = today's direction (green up / red down), background = a
+       tint of the identity color. The border is the only thing that changes
+       day to day, so a glance down the column reads as today's tape. */
+    .str-tpill-lg { font-size:11px; padding:2px 8px; display:inline-flex;
+                    align-items:baseline; gap:5px; }
+    .str-tp-pct { font-size:10px; font-weight:600; }
+    /* Selected holding — the one whose strategy block is showing below. A left bar
+       rather than another border color, because the border is already spoken for by
+       today's direction and must not be overloaded. */
+    .str-tpill-sel { box-shadow:inset 3px 0 0 0 currentColor; padding-left:10px; }
+    /* A live row can carry pill + weight + strategy state; let it wrap rather than
+       overflow when the sidebar is narrow. */
+    .str-col-live .str-hold { flex-wrap:wrap; margin-bottom:5px; }
+    /* Alternates: the ticker keeps its identity color but drops to a flat, low-alpha
+       outline so the live column stays dominant without the board going grey. */
+    .str-col-alt .str-col-hd { color:#475569; }
+    .str-col-alt .str-hold { justify-content:flex-end; }
+    .str-col-alt .str-tpill { background:transparent !important; opacity:.5;
+                              font-weight:500; }
+
+    /* --- News archive: master-detail INSIDE the "Why" box ----------------------
+       The Why box is stretched by flex-1 to match the six-tile Trade Data grid
+       beside it and rarely fills that height (user, 2026-08-10), so the history
+       lives in that dead space rather than taking a tab of its own.
+       Left: slim scrollable dated cards. Right: the selected narrative.
+       Data: GET /get_news_archive/<ticker> (engine/news_archive.py) — a read across
+       archive/*.json plus today's live card. Nothing new is captured. */
+    /* #dd-why is only the flex ROW — the two children are the cards. overflow:hidden
+       + min-height:0 keep a long list (AMD has 31 entries) from growing the section
+       vertically; scrolling happens inside the narrow card instead. */
+    #dd-why { display:flex; gap:10px; overflow:hidden; min-height:0; }
+    /* The sleek card: date + % move only. No headline preview — the narrative is one
+       click away in the card beside it, and a clip made the list bulky.
+       max-height is what ACTUALLY makes this scroll. overflow on the flex row alone
+       does nothing, because the row's parent has no definite height, so the list kept
+       growing the grid row and pushing Trigger Checklist down the pane. A definite
+       px cap gives the scroll container something to resolve against. */
+    .na-list { flex:0 0 108px; max-height:200px; overflow-y:auto; display:flex;
+               flex-direction:column; gap:3px; padding:6px; }
+    .na-card { display:flex; align-items:baseline; justify-content:space-between;
+               gap:5px; padding:3px 6px; border-radius:4px; cursor:pointer;
+               border:1px solid rgba(71,85,105,.5); background:rgba(15,23,42,.45);
+               transition:border-color .12s ease, background .12s ease; }
+    .na-card:hover { border-color:rgba(148,163,184,.65); }
+    .na-card.sel { border-color:#818cf8; background:rgba(99,102,241,.15); }
+    /* Today's live card gets a green left edge — same inset-bar idiom the strategy
+       panel uses for its selected holding, so it reads without costing a row. */
+    .na-card.live { box-shadow:inset 2px 0 0 0 #4ade80; }
+    .na-d { font-family:ui-monospace,monospace; font-size:10px; color:#e2e8f0; }
+    /* The newest entry reads as a label, not a date, and carries no % — today's
+       price already sits in the detail panel header above this box. */
+    .na-cur { text-transform:uppercase; letter-spacing:.07em; font-size:9px;
+              color:#cbd5e1; }
+    .na-chg { font-family:ui-monospace,monospace; font-size:10px; }
+    /* Turtle-only days are no longer listed at all — this is a NEWS archive, not an
+       alert archive (user, 2026-08-10). A ticker with no synthesis on record shows
+       the empty placeholder instead of a list of mechanical one-liners. */
+    /* The fatter card: the selected day's narrative. Same cap as the list so the
+       pair keeps a stable height and nothing below shifts when you click around. */
+    .na-body { flex:1; min-width:0; max-height:200px; overflow-y:auto;
+               padding:12px 14px; }
+    .na-meta { font-size:10px; color:#64748b; margin-bottom:5px; }
+    .na-why { font-size:13px; line-height:1.55; color:#e2e8f0; }
+    .na-extra { font-size:11px; line-height:1.5; color:#94a3b8; margin-top:8px;
+                padding-top:8px; border-top:1px solid rgba(51,65,85,.7); }
+    .na-empty { font-size:12px; color:#64748b; font-style:italic; }
+
     #actionable-container {
         display: flex;
         flex-direction: row;
@@ -55,30 +278,74 @@
     #actionable-container::-webkit-scrollbar-track { background: #1e293b; border-radius: 5px; }
     #actionable-container::-webkit-scrollbar-thumb { background: #64748b; border-radius: 5px; border: 2px solid #1e293b; }
     #actionable-container .glass-panel { padding: 8px 10px !important; }
+    /* Re-enable pointer events on the dismiss button (card children are set to
+       pointer-events:none above so clicks resolve to the card). Higher specificity
+       (#id .class) beats the '> div *' rule, so the ✕ stays clickable. */
+    #actionable-container .dismiss-btn { pointer-events: auto; }
     #actionable-container h3 { font-size: 0.95rem !important; }
     #actionable-container .line-clamp-2 {
         overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
     }
 
+    /* A.5 — same drag/wheel-to-horizontal interaction as #actionable-container,
+       generalized via initHorizontalScrollStrip(). Plain overflow-x-scroll alone
+       doesn't respond to a vertical mouse-wheel roll. */
+    #newsletter-container {
+        cursor: grab;
+        user-select: none;
+    }
+    #newsletter-container.is-dragging {
+        cursor: grabbing;
+    }
+    #newsletter-container > div * {
+        pointer-events: none;
+    }
+
     /* --- NEW: newsletter accent (violet) --- */
     .border-l-violet { border-left-color: #8b5cf6 !important; }
-    .conviction-pill {
+
+    /* Conviction: 5-dot strength scale (replaces momentum-word pill —
+       schema's conviction field is {scale,max_scale}, a snapshot strength
+       rating, not a week-over-week trend word). */
+    .conviction-dots { display: flex; align-items: center; gap: 3px; }
+    .conviction-dot {
+        width: 6px; height: 6px; border-radius: 9999px; background: #334155;
+        border: 1px solid rgba(148,163,184,0.3);
+    }
+    .conviction-dot.filled { background: #8b5cf6; border-color: #8b5cf6; }
+    .conviction-label-only {
         font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
         padding: 2px 8px; border-radius: 9999px;
+        background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.35);
     }
-    .conviction-new        { background: rgba(139,92,246,0.18); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.4); }
-    .conviction-reiterated { background: rgba(56,189,248,0.15); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.35); }
-    .conviction-increasing { background: rgba(52,211,153,0.15); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.35); }
-    .conviction-fading     { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.35); }
 
+    .status-dot-new      { background: #a78bfa; }
     .status-dot-watching { background: #94a3b8; }
     .status-dot-active   { background: #8b5cf6; }
     .status-dot-resolved { background: #34d399; }
 
+    .stale-badge {
+        font-size: 9px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+        color: #fbbf24; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.35);
+        border-radius: 4px; padding: 0 4px;
+    }
+
+    /* Heatmap dashboard hook — placeholder only, see
+       .claude/rules/heatmap-dashboard-hook.md. Not clickable yet on purpose. */
+    .heatmap-hook-placeholder {
+        width: 100%; font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+        color: #64748b; background: rgba(100,116,139,0.08);
+        border: 1px dashed rgba(100,116,139,0.4); border-radius: 8px;
+        padding: 6px 0; cursor: not-allowed;
+    }
+
     #digest-strip { transition: max-height 0.25s ease; }
 
     /* --- NEW: view tabs (Narrative/Thesis · Chart · Options) --- */
-    .view-tabs { display: flex; gap: 4px; }
+    .view-tabs { display: flex; gap: 4px; align-items: center; }
+    /* Pin the options underlying-equity chip to the far right of the tab row (C.6),
+       robust against loadTradeQuote() resetting the element's className. */
+    #nd-underlying { margin-left: auto; }
     .view-tab {
         font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase;
         padding: 5px 12px; border-radius: 6px; cursor: pointer; color: #94a3b8;
@@ -87,8 +354,111 @@
     .view-tab:hover { color: #e2e8f0; background: rgba(148,163,184,0.08); }
     .view-tab.active { color: #f8fafc; background: rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.4); }
     .view-tab.active.violet { background: rgba(139,92,246,0.18); border-color: rgba(139,92,246,0.4); }
-    .chart-container { width: 100%; height: 320px; }
+
+    /* AI Bubble detail — trigger button + content styles. The panel itself rides the
+       shared deep-dive area (#ai-bubble-dive), so no modal container here. */
+    .sl-detail-btn { flex-shrink:0; font-size:10px; color:#64748b; background:rgba(148,163,184,0.1);
+                     border:1px solid rgba(148,163,184,0.25); border-radius:4px; padding:1px 6px;
+                     cursor:pointer; letter-spacing:.04em; text-transform:uppercase; }
+    .sl-detail-btn:hover { color:#e2e8f0; background:rgba(148,163,184,0.18); }
+    .ab-tally { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:4px; }
+    .ab-tally .n { font-family:ui-monospace,monospace; font-size:20px; font-weight:600; }
+    .ab-verdict { color:#cbd5e1; font-size:12px; font-style:italic; }
+    /* Update banner — billed-pull authorization affordance (part 3). */
+    .ab-upd { margin-top:12px; background:rgba(129,140,248,0.08); border:1px solid rgba(129,140,248,0.3);
+              border-radius:8px; padding:9px 11px; }
+    .ab-upd-hd { display:flex; align-items:center; gap:10px; }
+    .ab-upd-ttl { font-size:12px; font-weight:600; color:#c7d2fe; }
+    .ab-upd-btn { margin-left:auto; font-size:11px; font-weight:600; color:#fff; background:#6366f1;
+                  border:none; border-radius:5px; padding:3px 13px; cursor:pointer; }
+    .ab-upd-btn:hover { background:#818cf8; }
+    .ab-upd-btn:disabled { opacity:0.6; cursor:default; }
+    .ab-upd-item { display:flex; gap:8px; margin-top:5px; font-size:11px; }
+    .ab-upd-f { color:#e2e8f0; }
+    .ab-upd-t { color:#94a3b8; }
+    .ab-upd-note { margin-top:6px; font-size:10px; color:#64748b; }
+    /* A queued pull that already RAN and returned nothing usable. It stays queued
+       (only a successful pull clears it) — this is the alert so it can't pass for
+       an untried update. */
+    .ab-upd-warn { background:rgba(251,191,36,0.08); border-color:rgba(251,191,36,0.35); }
+    .ab-upd-fail { margin-top:4px; font-size:10px; color:#fbbf24; line-height:1.4; }
+    .ab-upd-clear { margin-left:6px; font-size:9px; font-weight:600; color:#fbbf24;
+                    background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.4);
+                    border-radius:4px; padding:0 5px; cursor:pointer; vertical-align:baseline; }
+    .ab-upd-clear:hover { background:rgba(251,191,36,0.22); color:#fde68a; }
+    .ab-upd-clear:disabled { opacity:0.6; cursor:default; }
+    .ab-upd-snz { color:#94a3b8; font-style:italic; }
+    .ab-upd-run { color:#c7d2fe; font-size:12px; }
+    .ab-upd-done { background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.3); color:#86efac; font-size:12px; }
+    .ab-sec { margin-top:16px; }
+    .ab-sec:first-child { margin-top:0; }
+    .ab-sec h5 { font-size:11px; font-weight:600; color:#818cf8; letter-spacing:.08em; text-transform:uppercase;
+                 margin-bottom:7px; }
+    /* Boxed sections — same grammar as the ticker deep-dive's bg-slate-800/50 boxes. */
+    .ab-box { background:rgba(30,41,59,0.5); border:1px solid #334155; border-radius:8px; padding:11px 13px; }
+    .ab-thesis p { color:#cbd5e1; font-size:13px; line-height:1.55; margin-bottom:9px; }
+    .ab-thesis p:last-child { margin-bottom:0; }
+    .ab-thesis strong { color:#e2e8f0; }
+    .ab-dur { display:flex; align-items:baseline; gap:10px; }
+    .ab-dur .v { font-family:ui-monospace,monospace; font-size:22px; color:#bef264; font-weight:600; }
+    .ab-dur .d { font-size:12px; color:#94a3b8; }
+    /* Charts tab (3rd tab) — SMALL MULTIPLES: a 2-across x 3-down matrix so all six
+       read in one view (user, 2026-07-28), scales locked (no pan/zoom) so nothing
+       drifts out of frame while eyeballing. Box-free: title row + plot, separated
+       by grid gap not borders (the panel is already box-heavy). */
+    .ab-rt-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 18px; }
+    .ab-rt-hd { display:flex; align-items:baseline; gap:8px; }
+    .ab-rt-ttl { font-size:10px; font-weight:600; color:#818cf8; letter-spacing:.07em; text-transform:uppercase; }
+    .ab-rt-val { margin-left:auto; font-family:ui-monospace,monospace; font-size:11px; color:#e2e8f0; white-space:nowrap; }
+    .ab-rt-sub { font-size:10px; color:#64748b; margin:2px 0 4px; line-height:1.35; }
+    .ab-rt-chart { width:100%; height:132px; }
+    .ab-rt-leg { display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; font-size:9px; color:#94a3b8; }
+    .ab-rt-leg i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+    .ab-rt-err { font-size:10px; color:#fca5a5; padding:8px 0; }
+    /* "today" value tag, pinned inside the plot (a chart marker's own text is
+       centered on its bar — the last bar sits at the right edge, so it clipped).
+       Right-aligned to the END of the plot: the `right` inset below is a fallback
+       only; JS overwrites it with the live price-axis width so the tag's right edge
+       lands exactly on the plot edge, not over the axis. */
+    .ab-rt-today { position:absolute; right:40px; top:2px; z-index:2; pointer-events:none;
+                   white-space:nowrap; font-family:ui-monospace,monospace; font-size:9px; color:#f87171; }
+    .ab-rt-tbd { height:132px; display:flex; align-items:center; justify-content:center;
+                 border:1px dashed #334155; border-radius:8px; background:rgba(30,41,59,0.25);
+                 color:#475569; font-size:10px; font-weight:600; letter-spacing:.12em; }
+    /* Narrow panel (or a docked/half-width window): fall back to one column so the
+       plots never squeeze below readable width. */
+    @media (max-width: 820px) { .ab-rt-grid { grid-template-columns:1fr; } }
+    .ab-rt-foot { font-size:10px; color:#475569; margin-top:14px; }
+    /* Prose ~half (left); calendar sizes to its OWN content and is pushed to the FAR
+       RIGHT (margin-left:auto) as a side reference — the middle is free for future content. */
+    .ab-cols { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-top:14px; }
+    .ab-col-prose { flex:0 1 50%; min-width:300px; }
+    .ab-col-cal { flex:0 0 auto; margin-left:auto; }
+    /* Calendar: content-sized grid; rows are SUBGRID so each is a real box (still aligned
+       to the parent columns) that can carry the this-week highlight. */
+    .ab-cal { display:grid; grid-template-columns:auto auto auto auto; column-gap:14px; row-gap:2px; }
+    .ab-cal-row { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; align-items:baseline;
+                  padding:3px 6px; border:1px solid transparent; border-radius:4px; }
+    .ab-cal-row.this-week { background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.3); }
+    .ab-cal .ab-tbd { grid-column:1 / -1; }
+    .ab-cal-date { font-family:ui-monospace,monospace; font-size:11px; color:#e2e8f0; }
+    .ab-cal-lbl { font-size:11px; color:#cbd5e1; }
+    .ab-cal-fac { font-size:10px; color:#64748b; }
+    .ab-cal-cd { font-family:ui-monospace,monospace; font-size:10px; color:#94a3b8; text-align:right; }
+    .ab-tbd { color:#64748b; font-size:13px; text-align:center; padding:40px 0; }
+    /* Chart FILLS its pane rather than a fixed 320px (2026-07-21). The :not(.hidden)
+       guard is load-bearing: switchTab only toggles `hidden`, so this must not fight
+       display:none. min-height is a floor so the chart can never collapse to nothing
+       if it's ever rendered outside a flex parent. autoSize:true makes the chart
+       follow the container, so no JS change is needed. */
+    #dd-pane-chart:not(.hidden), #nd-pane-chart:not(.hidden) {
+        height: 100%; display: flex; flex-direction: column;
+    }
+    .chart-container { width: 100%; flex: 1 1 auto; min-height: 240px; }
     .chart-loading { color: #64748b; font-size: 12px; text-align: center; padding-top: 140px; }
+    .chart-controls { display: flex; justify-content: flex-end; margin-bottom: 4px; flex-shrink: 0; }
+    .invert-btn { font-size: 11px; color: #94a3b8; background: rgba(30,41,59,0.6); border: 1px solid #334155; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .invert-btn:hover { color: #e2e8f0; border-color: #475569; }
 
     /* --- NEW: trigger checklist (dd Trigger Checklist quadrant) --- */
     .trigger-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -100,6 +470,39 @@
         font-size: 10px; font-weight: 700; line-height: 1;
     }
     .trigger-dot.hit { background: #10b981; border-color: #10b981; color: #052e1f; }
+
+    /* --- Newsletter Import / Past Editions dropdown (step 4) --- */
+    .newsletter-dropdown {
+        position: fixed; z-index: 60; min-width: 220px; max-width: 340px;
+        max-height: 320px; overflow-y: auto;
+        background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.55); padding: 4px;
+    }
+    .nl-dd-title {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+        color: #a78bfa; padding: 6px 8px 4px;
+    }
+    .nl-dd-msg { font-size: 12px; color: #64748b; font-style: italic; padding: 6px 8px 8px; }
+    .nl-dd-item {
+        display: flex; flex-direction: column; gap: 1px;
+        font-size: 12px; color: #e2e8f0; padding: 7px 8px; border-radius: 6px;
+        cursor: pointer; transition: background 0.12s ease;
+    }
+    .nl-dd-item:hover { background: rgba(139,92,246,0.16); }
+    .nl-dd-item .nl-dd-sub { font-size: 10px; color: #64748b; font-family: ui-monospace, monospace; }
+    .nl-dd-item .nl-dd-tag {
+        font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        color: #64748b; margin-left: 8px;
+    }
+    .nl-dd-done { color: #64748b; cursor: default; }
+    .nl-dd-done:hover { background: transparent; }
+    .nl-dd-busy { cursor: wait; color: #a78bfa; }
+    .nl-dd-spin {
+        display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle;
+        border: 2px solid rgba(167,139,250,0.35); border-top-color: #a78bfa; border-radius: 9999px;
+        animation: nl-dd-spin 0.7s linear infinite;
+    }
+    @keyframes nl-dd-spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body class="h-screen flex overflow-hidden selection:bg-indigo-500 selection:text-white">
@@ -129,20 +532,112 @@
             </div>
         </div>
 
-        <!-- Macro Regime Panel (unchanged) -->
-        <div class="p-3 border-b border-slate-700 shrink-0">
-            <div class="flex items-center gap-2 mb-2">
-                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse-dot shrink-0"></span>
-                <span class="text-xs font-bold text-amber-500 tracking-wider uppercase">Live Macro Regime</span>
-            </div>
-            <p id="macro-headline" class="text-sm font-medium text-slate-100 leading-snug mb-1">Fetching market briefing...</p>
-            <p id="macro-summary" class="text-xs text-slate-400 leading-relaxed mb-2"></p>
+        <!-- Live Macro Regime — collapsible (collapse grammar shared with AI Bubble).
+             The headline lives in <summary> so it SURVIVES collapse: full when open,
+             clamped to its first two lines when collapsed (user, 2026-07-19). The
+             summary text, 10Y/VIX pills, and timestamp collapse into the body. -->
+        <details id="macro-section" class="p-3 border-b border-slate-700 shrink-0" open>
+            <summary>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="sec-caret"></span>
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse-dot shrink-0"></span>
+                    <span class="text-xs font-bold text-amber-500 tracking-wider uppercase">Live Macro Regime</span>
+                </div>
+                <p id="macro-headline" class="text-sm font-medium text-slate-100 leading-snug macro-headline">Fetching market briefing...</p>
+            </summary>
+            <p id="macro-summary" class="text-xs text-slate-400 leading-relaxed mb-2 mt-1"></p>
             <div class="flex gap-2 mb-1">
                 <span id="macro-tnx" class="bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full border border-amber-500/30 text-xs font-mono">10Y: --</span>
                 <span id="macro-vix" class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full border border-red-500/30 text-xs font-mono">VIX: --</span>
             </div>
             <p id="macro-updated" class="text-xs text-slate-500 text-right"></p>
-        </div>
+        </details>
+
+        <!-- ROCKET STRATEGY — the Fed Dial rotation + the QQQ system.
+             LIVE since 2026-08-10, served by /get_strategy_dial. Sits between Live
+             Macro and AI Bubble by request (2026-08-09).
+
+             Sourcing:
+               FED DIAL  = "Dial B". Its series, lookback and thresholds are NOT in
+                           this repository — they live in the strategy repo and reach
+                           the page through engine/strategy.py. SAME source the
+                           Charts-tab dial reads, so the two cannot disagree. NOT the
+                           three-pillar override switch, which never drove the
+                           rotation backtest.
+               QQQ       = the canonical backtest in the strategy repo, adapted by
+                           engine/qqq_system.py. Current state is that script's own
+                           last trade; the adapter reimplements nothing.
+             See engine/live_config.py for why the values sit outside this repo.
+
+             Deliberately over-detailed — cut rows toward the detail panel from here. -->
+        <details id="strategy-section" class="px-3 py-2 border-b border-slate-700 shrink-0" open>
+            <summary class="flex items-center gap-2">
+                <span class="sec-caret"></span>
+                <span class="str-lbl">Rocket Strategy</span>
+                <span id="str-dial-pill" class="str-pill"
+                      style="color:#94a3b8; background:rgba(148,163,184,.12);
+                             border-color:rgba(148,163,184,.3);">DIAL&nbsp;—</span>
+                <!-- The live portfolio mix, so a COLLAPSED section still answers
+                     "what am I holding". Tracks the regime — it re-renders to
+                     GC on easing, QQQ·XLE on tightening. -->
+                <span id="str-hold-pill" class="str-pill"
+                      style="color:#94a3b8; background:rgba(148,163,184,.12);
+                             border-color:rgba(148,163,184,.3);">—</span>
+            </summary>
+
+            <!-- Left panel carries ONLY the dial state, the allocation, and each
+                 holding's own strategy state. Everything numeric — rate, 6-month
+                 change, distance to a flip, the latch counter, the caveats — moved
+                 to the detail panel (user, 2026-08-10). The amber ring on the pill
+                 above is the distilled form of the old "to flip" row: it is the one
+                 edge cue that survives here. -->
+            <div class="str-blk">
+                <div class="str-blk-hd">
+                    <span class="str-blk-nm">Fed Dial</span>
+                    <span id="str-dial-state" class="str-state" style="color:#64748b;">—</span>
+                    <!-- How long this state has run, in TRADING days — same unit as
+                         the 5-day latch, so the two numbers are comparable. -->
+                    <span id="str-dial-days" class="str-sub"></span>
+                    <span id="str-dial-latched" class="str-when"></span>
+                </div>
+
+                <!-- Live portfolio left (colored ticker pills + weight + that
+                     holding's own strategy state, all on one row) and the two
+                     alternates dimmed to the right. -->
+                <div id="str-alloc" class="str-alloc"></div>
+            </div>
+
+            <!-- ---------- Selected holding ----------
+                 Driven by which ticker pill is clicked above (user, 2026-08-10):
+                 this space shows ONE holding's strategy info, not a fixed QQQ block.
+                 Rendered by strategy.js.
+
+                 Era / gap / depth / 200 SMA are REAL and generic — computed the same
+                 way for every name, so they mean something for MO or GC too. The
+                 strategy rows (State, entry, target, P&L, era P&L) are QQQ-only and
+                 still INVENTED placeholders; that block carries its own prototype
+                 badge so the two are never confused. -->
+            <div id="str-stock" class="str-blk"></div>
+        </details>
+
+        <!-- AI Bubble Stoplight — visual contract: AI Stoplight/stoplight_mockup.html
+             + STOPLIGHT_DESIGN.md. Data: GET /get_stoplight, rendered by
+             static/js/stoplight.js. Collapsed header carries the freshest print
+             (header-pin rule computed server-side). -->
+        <details id="stoplight-section" class="px-3 py-2 border-b border-slate-700 shrink-0" open>
+            <summary class="flex items-center gap-2">
+                <span class="sl-caret"></span>
+                <span class="sl-lbl">AI Bubble</span>
+                <span id="stoplight-hdr" class="flex items-center gap-2 flex-1 min-w-0"></span>
+                <!-- Detail-panel trigger. stop/prevent so the click opens the deep-dive
+                     panel instead of toggling the <details>. Future: factor rows will
+                     call openBubbleDetail(factorId) to deep-link into the same panel. -->
+                <button class="sl-detail-btn" title="AI bubble thesis — full detail"
+                        onclick="event.stopPropagation(); event.preventDefault(); openBubbleDetail();">detail</button>
+            </summary>
+            <div id="stoplight-rows" class="sl-rows"></div>
+            <div id="stoplight-module" class="sl-module" style="display:none"></div>
+        </details>
 
         <div id="sidebar-lists" class="flex-1 overflow-y-auto p-2 space-y-2">
             <!-- JS populates <details> groups here via renderDashboard() -->
@@ -152,25 +647,14 @@
     <!-- RIGHT COLUMN -->
     <div class="flex-1 flex flex-col overflow-hidden">
 
-        <!-- NEW: Weekly Digest Strip -->
+        <!-- Weekly Digest Strip — populated by renderDigestStrip() from NEWSLETTER_ISSUE -->
         <div class="shrink-0 border-b border-slate-700 bg-slate-900/40 px-4 py-2 cursor-pointer" onclick="toggleDigest()">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-2 h-2 rounded-full bg-violet-400 shrink-0"></span>
-                    <span class="text-xs font-bold text-violet-300 uppercase tracking-wider shrink-0">Newsletter · Jul 1 issue</span>
-                    <span class="text-xs text-slate-400 truncate">Fed pause reversal · Energy vs Financials rotation</span>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    <span class="text-[10px] font-mono text-violet-300 bg-violet-500/10 border border-violet-500/30 rounded-full px-2 py-0.5">2 new</span>
-                    <span class="text-[10px] font-mono text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded-full px-2 py-0.5">1 reiterated</span>
-                    <span id="digest-caret" class="text-slate-500 text-xs transition-transform">▶</span>
-                </div>
+            <div id="digest-header" class="flex items-center justify-between">
+                <!-- JS populates: date, themes, trade-count pills -->
             </div>
             <div id="digest-strip" class="max-h-0 overflow-hidden">
-                <div class="pt-2 mt-2 border-t border-slate-800 text-xs text-slate-400 leading-relaxed">
-                    Energy/Financials ratio thesis reiterated from the 6/24 issue with tightened levels (support 1.42 / resistance 1.58).
-                    New: NVDA outright watch ahead of the 7/15 print. CL front-month conviction upgraded to "increasing" as
-                    OPEC meeting approaches. SPY put wall thesis from three issues ago hit target on 6/29 — archived.
+                <div id="digest-body" class="pt-2 mt-2 border-t border-slate-800 text-xs text-slate-300 leading-relaxed flex flex-col gap-3">
+                    <!-- JS populates: trade summary, playbooks, analysis_features -->
                 </div>
             </div>
         </div>
@@ -185,75 +669,14 @@
             </div>
         </div>
 
-        <!-- NEW: Newsletter Plays strip — Watching first, then Active, then Resolved/Closed -->
+        <!-- NEW: Newsletter Plays strip — Watching first, then Active, then Closed -->
         <div class="shrink-0 border-b border-slate-700 bg-slate-900/20" style="height: 112px;">
             <div class="px-4 pt-1.5 pb-0.5 flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
                 <span class="text-[10px] font-bold text-violet-300 uppercase tracking-widest">Newsletter Plays</span>
             </div>
             <div id="newsletter-container" class="flex flex-row gap-2.5 overflow-x-scroll px-3 pb-2" style="height: calc(100% - 22px);">
-
-                <!-- WATCHING -->
-                <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 border-l-slate-400 shadow-lg flex flex-col gap-1 shrink-0" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('xle-xlf')">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full status-dot-watching"></span>Watching</span>
-                        <span class="conviction-pill conviction-new">New</span>
-                    </div>
-                    <div class="flex justify-between items-baseline">
-                        <span class="text-sm font-bold">XLE / XLF</span>
-                        <span class="text-xs font-mono text-slate-300">1.44</span>
-                    </div>
-                    <div class="text-[10px] font-mono flex items-center gap-1.5">
-                        <span class="text-slate-500">Entry</span><span class="text-slate-300">1.42</span>
-                    </div>
-                </div>
-
-                <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 border-l-slate-400 shadow-lg flex flex-col gap-1 shrink-0" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('nvda')">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full status-dot-watching"></span>Watching</span>
-                        <span class="conviction-pill conviction-reiterated">Reiterated</span>
-                    </div>
-                    <div class="flex justify-between items-baseline">
-                        <span class="text-sm font-bold">NVDA outright</span>
-                        <span class="text-xs font-mono text-slate-300">$118.20</span>
-                    </div>
-                    <div class="text-[10px] font-mono flex items-center gap-1.5">
-                        <span class="text-slate-500">Entry</span><span class="text-slate-300">$112.00</span>
-                    </div>
-                </div>
-
-                <!-- ACTIVE -->
-                <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 border-l-violet shadow-lg flex flex-col gap-1 shrink-0" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('cl-front')">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold text-violet-300 uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full status-dot-active"></span>Active</span>
-                        <span class="conviction-pill conviction-increasing">Increasing</span>
-                    </div>
-                    <div class="flex justify-between items-baseline">
-                        <span class="text-sm font-bold">CL1!</span>
-                        <span class="text-xs font-mono text-slate-300">$78.60</span>
-                    </div>
-                    <div class="text-[10px] font-mono flex items-center gap-1.5">
-                        <span class="text-slate-500">Tgt</span><span class="text-emerald-400">$82.00</span>
-                        <span class="text-slate-700">·</span>
-                        <span class="text-slate-500">Stop</span><span class="text-red-400">$74.50</span>
-                    </div>
-                </div>
-
-                <!-- RESOLVED / CLOSED -->
-                <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 border-l-emerald-500 shadow-lg flex flex-col gap-1 shrink-0 opacity-60" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('spy-put')">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full status-dot-resolved"></span>Resolved</span>
-                        <span class="conviction-pill conviction-fading">Hit target</span>
-                    </div>
-                    <div class="flex justify-between items-baseline">
-                        <span class="text-sm font-bold line-through decoration-slate-500">SPY put wall</span>
-                        <span class="text-xs font-mono text-slate-300">$542.10</span>
-                    </div>
-                    <div class="text-[10px] font-mono flex items-center gap-1.5">
-                        <span class="text-slate-500">Exit</span><span class="text-emerald-400">$542.00</span>
-                    </div>
-                </div>
-
+                <!-- Populated by renderNewsletterStrip() from NEWSLETTER_TRADES (real schema shape) -->
             </div>
         </div>
 
@@ -288,35 +711,57 @@
                         <div class="grid grid-cols-2 gap-4">
                             <div class="flex flex-col">
                                 <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">The "Why" (News Synthesis)</h4>
-                                <p id="dd-why" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex-1">Upgraded on AI accelerator roadmap ahead of earnings; desk flow skewing bullish into the print.</p>
+                                <!-- Master-detail. #dd-why was a single <p> that
+                                     updateContext() wrote innerText into; it is now a
+                                     container and news-archive.js owns both halves. -->
+                                <!-- TWO cards inside the Why section (user, 2026-08-10):
+                                     a sleek narrow archive list and a fatter narrative
+                                     card beside it. #dd-why is just the flex row now —
+                                     the card styling lives on each child. -->
+                                <div id="dd-why" class="flex-1">
+                                    <div id="dd-why-list" class="na-list bg-slate-800/50 rounded-lg border border-slate-700"></div>
+                                    <div id="dd-why-body" class="na-body bg-slate-800/50 rounded-lg border border-slate-700"></div>
+                                </div>
                             </div>
                             <div id="dd-options-data" class="flex flex-col">
-                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Options Data</h4>
-                                <div class="grid grid-cols-3 gap-2 text-center">
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
-                                        <p id="dd-atm-strike" class="text-sm font-mono text-slate-200">--</p>
+                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Trade Data</h4>
+                                <!-- "Trade Data" is a PRIORITY STACK of pluggable sections. Turtle Setup
+                                     (JS-rendered into #dd-td-turtle when a Turtle breakout is on the card)
+                                     takes precedence; Options Data is suppressed while Turtle is present.
+                                     To STACK instead of swap later (options BELOW turtle), just stop hiding
+                                     #dd-td-options in setTradeDataQuadrant(). New data types drop in the
+                                     same way — a section div + a branch in that function. -->
+                                <div id="dd-td-turtle" class="hidden"></div>
+                                <div id="dd-td-options">
+                                    <div class="grid grid-cols-3 gap-2 text-center">
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
+                                            <p id="dd-atm-strike" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
+                                            <p id="dd-atm-put-price" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Expiration</p>
+                                            <p id="dd-atm-expiration" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
+                                            <p id="dd-atm-iv" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Wall</p>
+                                            <p id="dd-put-wall" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
+                                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                            <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Call Wall</p>
+                                            <p id="dd-call-wall" class="text-sm font-mono text-slate-200">--</p>
+                                        </div>
                                     </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
-                                        <p id="dd-atm-put-price" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Expiration</p>
-                                        <p id="dd-atm-expiration" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
-                                        <p id="dd-atm-iv" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Wall</p>
-                                        <p id="dd-put-wall" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Call Wall</p>
-                                        <p id="dd-call-wall" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
+                                    <button class="heatmap-hook-placeholder mt-2" title="3D OI heatmap — coming soon (daily snapshot, equity/ETF only)" disabled>
+                                        🗻 3D Heatmap — Coming Soon
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -333,23 +778,29 @@
                         </div>
                     </div>
                     <div id="dd-pane-chart" class="view-pane hidden">
+                        <div id="dd-chart-controls" class="chart-controls hidden">
+                            <button id="dd-invert-btn" class="invert-btn" onclick="toggleRatioInvert('dd')" title="Flip the ratio (view 1/x). Display only.">⇄ <span id="dd-invert-label"></span></button>
+                        </div>
                         <div id="dd-chart-container" class="chart-container"></div>
                     </div>
                     <div id="dd-pane-options" class="view-pane hidden">
                         <div class="grid grid-cols-3 gap-2 text-center">
                             <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                                 <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
-                                <p class="text-sm font-mono text-slate-200">$142.50</p>
+                                <p id="dd-opt-atm-strike" class="text-sm font-mono text-slate-200">--</p>
                             </div>
                             <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                                 <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
-                                <p class="text-sm font-mono text-slate-200">$3.15</p>
+                                <p id="dd-opt-put-premium" class="text-sm font-mono text-slate-200">--</p>
                             </div>
                             <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                                 <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
-                                <p class="text-sm font-mono text-slate-200">42.8%</p>
+                                <p id="dd-opt-iv" class="text-sm font-mono text-slate-200">--</p>
                             </div>
                         </div>
+                        <button class="heatmap-hook-placeholder mt-3" title="3D OI heatmap — coming soon (daily snapshot, equity/ETF only)" disabled>
+                            🗻 3D Heatmap — Coming Soon
+                        </button>
                     </div>
                 </div>
             </div>
@@ -361,17 +812,22 @@
                         <span class="text-[10px] font-bold text-violet-300 uppercase tracking-widest bg-violet-500/10 border border-violet-500/30 rounded-full px-2 py-0.5">Newsletter Thesis</span>
                         <h2 id="nd-legs" class="text-2xl font-bold text-white tracking-tight">XLE / XLF</h2>
                         <p id="nd-ratio" class="text-xl font-mono text-slate-300">1.44 (ratio)</p>
+                        <!-- Trading-structure live quote (section E), in the header next to
+                             the trade tag: spread mark (options) / underlying price (outright)
+                             / ratio (basket). Populated by loadTradeQuote() for planned/open;
+                             blank for closed or expired-leg options. -->
+                        <span id="nd-quote" class="hidden text-sm font-mono"></span>
                     </div>
                     <div class="flex items-center gap-4">
-                        <div class="flex flex-col items-center text-center px-4 border-l border-r border-slate-700/50">
-                            <p class="text-[10px] text-slate-500 uppercase tracking-widest">Support</p>
-                            <p id="nd-support" class="text-sm font-mono text-slate-200">1.42</p>
-                            <p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Resistance</p>
-                            <p id="nd-resistance" class="text-sm font-mono text-slate-200">1.58</p>
+                        <div id="nd-levels" class="flex flex-col items-center text-center px-4 border-l border-r border-slate-700/50 font-mono text-sm">
+                            <!-- Populated by renderLevelsRow(): Entry-only (new/watching), Tgt+Stop (active), or P&L (resolved) -->
                         </div>
                         <div class="text-right">
-                            <span id="nd-conviction" class="conviction-pill conviction-new">New</span>
-                            <div class="text-xs text-slate-400 mt-1">Status: <span id="nd-status" class="text-slate-300 font-medium">Watching</span></div>
+                            <div id="nd-conviction" class="conviction-dots justify-end"></div>
+                            <div class="text-xs text-slate-400 mt-1">
+                                Status: <span id="nd-status" class="text-slate-300 font-medium">Watching</span>
+                                <span id="nd-stale-badge" class="stale-badge hidden ml-1">Stale</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -380,85 +836,137 @@
                     <button class="view-tab active violet" data-view="narrative" onclick="switchTab('nd', 'narrative')">Thesis</button>
                     <button class="view-tab" data-view="chart" onclick="switchTab('nd', 'chart')">Chart</button>
                     <button class="view-tab" data-view="options" data-requires="equity" onclick="switchTab('nd', 'options')">Options</button>
+                    <!-- Underlying equity price for an OPTIONS trade (C.6 final): tab-row
+                         far-right, pinned via the #nd-underlying CSS rule. Non-redundant
+                         with the spread card tag and stays live after the legs expire.
+                         Populated by loadTradeQuote() only when the backend returns
+                         underlying_price (options trades). -->
+                    <span id="nd-underlying" class="hidden text-sm font-mono"></span>
                 </div>
 
                 <div class="flex-1 overflow-y-auto pr-1">
-                    <div id="nd-pane-narrative" class="view-pane flex flex-col gap-4">
-                        <div class="grid grid-cols-2 gap-4">
+                    <!-- TWO INDEPENDENT COLUMNS (fix, 2026-07-11): each column stacks its own
+                         sections by its own content height — NOT CSS Grid/table rows pairing
+                         corresponding sections as height-matched siblings. A prior attempt kept
+                         Thesis/Options-Structure and Key-Dates/Status-History as paired grid rows
+                         (with `items-start` to stop the SHORTER column from padding out to match
+                         the taller one) — that fixed wasted padding WITHIN a column, but the row
+                         itself, and therefore everything stacked below it, was still held down by
+                         whichever column was tallest (inherent to a shared-row layout, not fixable
+                         via alignment properties). User's explicit call: no shared rows at all —
+                         two flex-column containers side by side, each independently stacking
+                         whatever sections belong in it. -->
+                    <div id="nd-pane-narrative" class="view-pane grid grid-cols-2 gap-4 items-start">
+                        <!-- COLUMN 1 (user, 2026-07-11): Thesis → Key Dates → Status History.
+                             The trade's "story" (what it is, its calendar, how it has played
+                             out) — kept together, separate from the "mechanics" column. -->
+                        <div class="flex flex-col gap-4">
                             <div class="flex flex-col">
                                 <h4 class="text-xs font-bold text-violet-300 uppercase tracking-widest mb-2">Thesis</h4>
-                                <p id="nd-thesis" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex-1">
+                                <p id="nd-thesis" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700">
                                     Long energy vs. financials on the view that OPEC supply discipline outlasts rate-cut-driven bank
                                     strength. Reiterated from the 6/24 issue with tightened levels.
                                 </p>
                             </div>
-                            <div id="nd-options-data" class="flex flex-col">
-                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Options Data</h4>
-                                <div class="grid grid-cols-3 gap-2 text-center">
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
-                                        <p id="nd-atm-strike" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
-                                        <p id="nd-atm-put-price" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Expiration</p>
-                                        <p id="nd-atm-expiration" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
-                                        <p id="nd-atm-iv" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Wall</p>
-                                        <p id="nd-put-wall" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
-                                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                        <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Call Wall</p>
-                                        <p id="nd-call-wall" class="text-sm font-mono text-slate-200">--</p>
-                                    </div>
+
+                            <div>
+                                <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Key Dates</h4>
+                                <div id="nd-dates" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col gap-1.5">
+                                    <!-- Populated from trade.key_dates[] -->
+                                </div>
+                            </div>
+
+                            <div>
+                                <h4 class="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">Status History</h4>
+                                <div id="nd-status-history" class="bg-indigo-900/30 border border-indigo-500/50 rounded-lg p-4 flex flex-col gap-1.5">
+                                    <!-- Populated from trade.status_history[] -->
                                 </div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Key Dates</h4>
-                                <p id="nd-dates" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                                    OPEC meeting — Jul 15, 2026
-                                </p>
+                        <!-- COLUMN 2 (user, 2026-07-11): Trade Structure → Trigger/Invalidation
+                             (if present) → Scaled Entries (if present). The trade's "mechanics"
+                             (structure, entry/exit conditions, scale-in plan) — kept together. -->
+                        <div class="flex flex-col gap-4">
+                            <div id="nd-options-data" class="flex flex-col">
+                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Trade Structure</h4>
+                                <div id="nd-structure" class="flex-1">
+                                    <!-- Populated by renderOptionsStructureHTML(): the trade's own
+                                         newsletter-specified legs + reference values (static, always
+                                         available), not live-chain data (which has no endpoint for
+                                         newsletter trades). -->
+                                </div>
+                                <button class="heatmap-hook-placeholder mt-2" title="3D OI heatmap — coming soon (daily snapshot, equity/ETF only)" disabled>
+                                    🗻 3D Heatmap — Coming Soon
+                                </button>
                             </div>
-                            <div>
-                                <h4 class="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">Conviction History</h4>
-                                <div class="bg-indigo-900/30 border border-indigo-500/50 rounded-lg p-4">
-                                    <p class="text-slate-300 text-sm">Introduced 6/24 issue → reiterated 7/1 issue with tighter levels. No change in direction across issues.</p>
+
+                            <!-- Trigger / invalidation notes (fix, 2026-07-11): entry.note and
+                                 stop.note hold the qualifying/conditional language behind a level
+                                 (e.g. a pair's second-leg confirmation condition) — per
+                                 newsletter-schema.md's B.1 rule, this is "detail-panel content
+                                 only, never on the card." Previously entry.note only surfaced as
+                                 a side-effect of the tranches block (invisible for any trade
+                                 without tranches) and stop.note was never rendered anywhere.
+                                 Hidden when both notes are null. -->
+                            <div id="nd-trigger-notes-section" class="hidden">
+                                <h4 class="text-xs font-bold text-amber-300 uppercase tracking-widest mb-2">Trigger / Invalidation</h4>
+                                <div id="nd-trigger-notes" class="text-slate-300 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col gap-1.5">
+                                    <!-- Populated from trade.entry.note / trade.stop.note -->
+                                </div>
+                            </div>
+
+                            <!-- Scaled-entry / planned-add levels (A.8). Hidden unless the
+                                 trade carries tranches; populated from trade.tranches[]. -->
+                            <div id="nd-tranches-section" class="hidden">
+                                <h4 class="text-xs font-bold text-amber-300 uppercase tracking-widest mb-2">Scaled Entries / Adds</h4>
+                                <div id="nd-tranches" class="text-slate-200 text-sm leading-relaxed p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col gap-1.5">
+                                    <!-- Populated from trade.tranches[] -->
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div id="nd-pane-chart" class="view-pane hidden">
+                        <div id="nd-chart-controls" class="chart-controls hidden">
+                            <button id="nd-invert-btn" class="invert-btn" onclick="toggleRatioInvert('nd')" title="Flip the ratio (view 1/x). Display only — the long/short orientation and header quote are unchanged.">⇄ <span id="nd-invert-label"></span></button>
+                        </div>
                         <div id="nd-chart-container" class="chart-container"></div>
                     </div>
 
                     <div id="nd-pane-options" class="view-pane hidden">
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">ATM Strike</p>
-                                <p class="text-sm font-mono text-slate-200">$115.00</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Put Premium</p>
-                                <p class="text-sm font-mono text-slate-200">$4.20</p>
-                            </div>
-                            <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                                <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">IV</p>
-                                <p class="text-sm font-mono text-slate-200">51.2%</p>
-                            </div>
+                        <div id="nd-options-unavailable" class="text-center text-slate-500 text-sm italic p-6 bg-slate-800/50 rounded-lg border border-slate-700">
+                            No live options-chain endpoint exists for newsletter trades yet — the price-history
+                            endpoint covers the Chart tab, but ATM strike/premium/IV would need a new backend
+                            lookup keyed off this trade's ticker rather than <code>actionable_moves.json</code>.
                         </div>
+                        <button class="heatmap-hook-placeholder mt-3" title="3D OI heatmap — coming soon (daily snapshot, equity/ETF only)" disabled>
+                            🗻 3D Heatmap — Coming Soon
+                        </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- AI Bubble detail — rides the SAME shared deep-dive panel as the ticker
+                 and newsletter dives (a toggled sibling, not a modal). Opened by
+                 openBubbleDetail(); factorId reserved for a future factor-row deep-link.
+                 Tabs mirror the deep-dive pattern (view id "ab"). -->
+            <div id="ai-bubble-dive" class="hidden flex-1 flex-col overflow-hidden">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-3 shrink-0">
+                    <div class="flex items-baseline gap-3">
+                        <span class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2 py-0.5">AI Bubble</span>
+                        <h2 class="text-2xl font-bold text-white tracking-tight">Tracker</h2>
+                    </div>
+                </div>
+                <div class="view-tabs shrink-0 mb-3" id="ab-tabs">
+                    <button class="view-tab active" data-view="overview" onclick="switchBubbleTab('overview')">Overview</button>
+                    <button class="view-tab" data-view="tbd1" onclick="switchBubbleTab('tbd1')">TBD</button>
+                    <button class="view-tab" data-view="charts" onclick="switchBubbleTab('charts')">Charts</button>
+                </div>
+                <div class="flex-1 overflow-y-auto pr-1">
+                    <div id="ab-pane-overview" class="view-pane"><div id="ab-overview-body"></div></div>
+                    <div id="ab-pane-tbd1" class="view-pane hidden"><div class="ab-tbd">TBD</div></div>
+                    <div id="ab-pane-charts" class="view-pane hidden"><div id="ab-charts-body"></div></div>
                 </div>
             </div>
 
@@ -466,556 +974,24 @@
     </div>
 </main>
 
-<script>
-    const API_BASE = 'http://localhost:5000';
-
-    // --- LEFT PANEL: Watchlist/Portfolio/Dividends lists + macro panel ---
-    // Ported verbatim from trader_dashboard.html so both dashboards share the
-    // same localStorage('userStocks') category construct and the same
-    // backend endpoints (tickers.json itself is a flat list server-side —
-    // the Watchlist/Portfolio/Dividends split is a client-side grouping
-    // layered on top via the 'category' field stored per-entry in localStorage).
-    const categories = ["Watchlist", "Portfolio", "Dividends"];
-    const openStates = {};
-
-    async function syncTickersWithBackend() {
-        let stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
-        if (stocks.length === 0) return;
-        const tickers = stocks.map(s => s.ticker);
-        try {
-            await fetch(`${API_BASE}/sync_tickers`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tickers })
-            });
-        } catch (err) {
-            console.error("Failed to sync tickers with backend", err);
-        }
-    }
-
-    function saveState(cat) {
-        const el = document.getElementById(`details-${cat}`);
-        if (el) { openStates[cat] = el.open; }
-    }
-
-    async function deleteStock(ticker) {
-        await fetch(`${API_BASE}/delete_ticker`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticker })
-        });
-        let stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
-        stocks = stocks.filter(s => s.ticker !== ticker);
-        localStorage.setItem('userStocks', JSON.stringify(stocks));
-        await syncTickersWithBackend();
-        renderDashboard();
-    }
-
-    async function addStock() {
-        const ticker = document.getElementById('ticker-input').value.toUpperCase();
-        const category = document.getElementById('category-input').value;
-        if (!ticker) return;
-
-        await fetch(`${API_BASE}/add_ticker`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticker })
-        });
-
-        let stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
-        stocks = stocks.filter(s => s.ticker !== ticker);
-        stocks.push({ ticker, category });
-        localStorage.setItem('userStocks', JSON.stringify(stocks));
-
-        await syncTickersWithBackend();
-        document.getElementById('ticker-input').value = '';
-        openStates[category] = true;
-        renderDashboard();
-    }
-
-    async function renderDashboard() {
-        categories.forEach(saveState);
-        const sidebar = document.getElementById('sidebar-lists');
-        const stocks = JSON.parse(localStorage.getItem('userStocks')) || [];
-
-        try {
-            const res = await fetch(`${API_BASE}/get_market_data`);
-            const marketData = await res.json();
-
-            sidebar.innerHTML = categories.map(cat => {
-                const filtered = stocks.filter(s => s.category === cat);
-
-                filtered.sort((a, b) => {
-                    const getChangeVal = (ticker) => {
-                        const data = marketData[ticker];
-                        if (!data || !data.change || data.change === "--" || data.change === "...") return -Infinity;
-                        const val = parseFloat(data.change);
-                        return isNaN(val) ? -Infinity : val;
-                    };
-                    return getChangeVal(b.ticker) - getChangeVal(a.ticker);
-                });
-
-                const isOpen = openStates[cat] ? 'open' : '';
-
-                return `
-                    <details id="details-${cat}" class="group glass-panel rounded-lg overflow-hidden" ${isOpen} ontoggle="saveState('${cat}')">
-                        <summary class="cursor-pointer font-medium p-3 hover:bg-slate-800/80 transition-colors flex justify-between items-center select-none text-sm border-b border-slate-700/50">
-                            <div>
-                                <span class="text-slate-300">${cat}</span>
-                                <span class="text-xs font-normal text-slate-500 ml-2 py-0.5 px-2 bg-slate-900 rounded-full">${filtered.length}</span>
-                            </div>
-                            <span class="text-slate-500 group-open:rotate-90 transition-transform duration-200 text-xs">▶</span>
-                        </summary>
-                        <div class="p-1 space-y-1 bg-slate-900/50">
-                            ${filtered.length === 0 ? '<p class="text-xs text-slate-500 p-2 italic text-center">No tickers added.</p>' : ''}
-                            ${filtered.map(s => {
-                                const data = marketData[s.ticker] || { price: "...", change: "..." };
-                                let changeColor = 'text-slate-400';
-                                if (data.is_positive === true) changeColor = 'text-emerald-400';
-                                if (data.is_positive === false) changeColor = 'text-red-400';
-                                return `
-                                <div class="py-1 px-2 rounded flex items-center group/item hover:bg-slate-800 transition-colors">
-                                    <span class="font-bold text-slate-200 w-12 shrink-0 text-xs">${s.ticker}</span>
-                                    <span class="text-xs font-mono text-slate-300 flex-1 text-right price-col">${data.price}</span>
-                                    <span class="text-[10px] font-mono ${changeColor} font-medium bg-slate-950/50 px-1.5 py-0.5 rounded ml-2 w-12 text-right shrink-0">${data.change}</span>
-                                    <button onclick="deleteStock('${s.ticker}')" class="text-slate-600 hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition-opacity ml-1 shrink-0 flex items-center justify-center w-5 text-xs" title="Remove">✕</button>
-                                </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </details>
-                `;
-            }).join('');
-        } catch (err) {
-            console.error("Error fetching data:", err);
-        }
-    }
-
-    async function fetchMacroRegime() {
-        try {
-            const res = await fetch(`${API_BASE}/get_macro_regime`);
-            const data = await res.json();
-            if (!data.headline) return;
-            document.getElementById('macro-headline').innerText = data.headline;
-            document.getElementById('macro-summary').innerText = data.summary;
-            document.getElementById('macro-updated').innerText =
-                data.updated_at ? 'Updated ' + data.updated_at : '';
-            document.getElementById('macro-tnx').innerText =
-                data.tnx ? '10Y: ' + data.tnx + '%' : '10Y: --';
-            document.getElementById('macro-vix').innerText =
-                data.vix ? 'VIX: ' + data.vix : 'VIX: --';
-        } catch (err) {
-            console.error('Error fetching macro regime:', err);
-        }
-    }
-
-    // --- Actionable Moves: real data from /get_actionable_moves, replacing
-    // the old TICKER_MOCK. Every entry here is currently guaranteed
-    // asset_class 'equity' — per .claude/rules/newsletter-tracker.md, only
-    // equities/ETFs trigger Actionable Moves today (futures/forex are
-    // deferred to Newsletter Plays only), so it's safe to inject that here
-    // rather than guess from a suffix the engine doesn't send. ---
-    let dynamicContextData = {};
-    let lastActionableSnapshot = '';
-
-    async function fetchActionableMoves() {
-        try {
-            const res = await fetch(`${API_BASE}/get_actionable_moves`);
-            const actionableData = await res.json();
-            dynamicContextData = actionableData;
-
-            const container = document.getElementById('actionable-container');
-            const tickers = Object.keys(actionableData);
-            const snapshot = JSON.stringify(actionableData);
-
-            // Skip full DOM rebuild if data hasn't changed — preserves scroll position
-            if (snapshot === lastActionableSnapshot) return;
-            lastActionableSnapshot = snapshot;
-            const scrollLeft = container.scrollLeft;
-
-            if (tickers.length === 0) {
-                container.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-slate-500 text-xs italic text-center p-2 min-w-full">
-                        No stocks have exceeded their 1σ expected move yet.<br>Monitoring active lists...
-                    </div>`;
-                return;
-            }
-
-            container.innerHTML = tickers.map(ticker => {
-                const data = actionableData[ticker];
-                const isPositive = data.price_change > 0;
-                const borderColor = isPositive ? 'border-l-emerald-500' : 'border-l-red-500';
-                const priceColor = isPositive ? 'text-emerald-400' : 'text-red-400';
-                const sign = isPositive ? '+' : '';
-                return `
-                    <div class="glass-panel rounded-xl cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderColor} shadow-lg flex flex-col gap-0.5" onclick="updateContext('${ticker}')" ondragstart="return false">
-                        <div class="flex justify-between items-baseline">
-                            <span class="text-base font-bold">${ticker}</span>
-                            <span class="text-base font-bold ${priceColor}">${sign}${data.price_change}%</span>
-                        </div>
-                        <div class="flex justify-between items-baseline">
-                            <span class="text-xs font-mono text-slate-300">${data.price}</span>
-                            <span class="text-xs text-slate-400">±${data.expected_move}%</span>
-                        </div>
-                        <p class="text-[10px] text-slate-400 line-clamp-2">${data.why || 'Scanning latest headlines...'}</p>
-                    </div>
-                `;
-            }).join('');
-            container.scrollLeft = scrollLeft;
-        } catch (err) {
-            console.error("Error fetching actionable moves:", err);
-        }
-    }
-
-    // --- DRAG-TO-SCROLL + WHEEL-TO-HORIZONTAL for the actionable cards strip ---
-    // Ported verbatim from trader_dashboard.html. Per CLAUDE.md's Known
-    // Pitfalls: uses window-level capture-phase pointer events, and card
-    // children have pointer-events:none (see CSS) so pointerdown always
-    // resolves to the outer card div's onclick — the pointerdown event does
-    // not bubble correctly from child elements to the container in Chrome.
-    // Do not change this approach; it was hard-won after extensive debugging
-    // on the original strip and applies identically here.
-    (function() {
-        const el = document.getElementById('actionable-container');
-        let isDown = false;
-        let startX, startScrollLeft;
-        let hasDragged = false;
-
-        window.addEventListener('pointerdown', e => {
-            const rect = el.getBoundingClientRect();
-            const inStrip = e.clientX >= rect.left && e.clientX <= rect.right &&
-                             e.clientY >= rect.top  && e.clientY <= rect.bottom;
-            if (!inStrip || e.button !== 0) return;
-            isDown = true;
-            hasDragged = false;
-            startX = e.clientX;
-            startScrollLeft = el.scrollLeft;
-            el.classList.add('is-dragging');
-        }, {capture: true});
-
-        window.addEventListener('pointermove', e => {
-            if (!isDown) return;
-            const dx = e.clientX - startX;
-            if (Math.abs(dx) > 4) hasDragged = true;
-            el.scrollLeft = startScrollLeft - dx;
-        }, {capture: true});
-
-        window.addEventListener('pointerup', e => {
-            if (!isDown) return;
-            isDown = false;
-            el.classList.remove('is-dragging');
-            if (hasDragged) {
-                window.addEventListener('click', e => e.stopImmediatePropagation(), {capture: true, once: true});
-            }
-            hasDragged = false;
-        }, {capture: true});
-
-        // Wheel scrolls horizontally
-        el.addEventListener('wheel', e => {
-            e.preventDefault();
-            el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
-        }, {passive: false});
-    })();
-
-    // Extensible trigger checklist - add new triggers here as they're defined.
-    // 'id' must be unique; 'label' is what's shown next to the check circle.
-    const TRIGGER_DEFS = [
-        { id: '1-sigma', label: '1σ Move' },
-        { id: '2x-volume', label: '2x Volume' },
-        { id: 'turtle-trade', label: 'Turtle Trade' }
-    ];
-
-    function renderTriggers(view, hitList) {
-        const container = document.getElementById(view + '-triggers');
-        if (!container) return;
-        const hits = hitList || [];
-        container.innerHTML = TRIGGER_DEFS.map(t => {
-            const hit = hits.includes(t.id);
-            return '<div class="trigger-row ' + (hit ? 'hit' : 'not-hit') + '">' +
-                       '<span class="trigger-dot' + (hit ? ' hit' : '') + '">' + (hit ? '✓' : '') + '</span>' +
-                       t.label +
-                   '</div>';
-        }).join('');
-    }
-
-    const NEWSLETTER_MOCK = {
-        'xle-xlf':  { asset_class: 'pair', legs: ['XLE', 'XLF'], legsLabel: 'XLE / XLF', ratio: '1.44 (ratio)',
-                      conviction: 'new', convictionLabel: 'New', status: 'Watching' },
-        'cl-front': { asset_class: 'future', ticker: 'CL=F', legsLabel: 'CL1!', ratio: '$78.60',
-                      conviction: 'increasing', convictionLabel: 'Increasing', status: 'Active' },
-        'nvda':     { asset_class: 'equity', ticker: 'NVDA', legsLabel: 'NVDA', ratio: '$118.20',
-                      conviction: 'reiterated', convictionLabel: 'Reiterated', status: 'Watching' },
-        'spy-put':  { asset_class: 'equity', ticker: 'SPY', legsLabel: 'SPY', ratio: '$542.10',
-                      conviction: 'fading', convictionLabel: 'Hit target', status: 'Resolved' }
-    };
-
-    // Per-view state: which entity is active, and the chart instance (so we
-    // don't recreate it on every tab click — only when the entity changes).
-    const viewState = {
-        dd: { entity: null, chart: null, series: null, loadedFor: null },
-        nd: { entity: null, chart: null, series: null, loadedFor: null }
-    };
-
-    function setTabsForAssetClass(view, assetClass) {
-        const tabsEl = document.getElementById(view + '-tabs');
-        tabsEl.querySelectorAll('.view-tab').forEach(btn => {
-            if (btn.dataset.requires === 'equity' && assetClass !== 'equity') {
-                btn.style.display = 'none';
-            } else {
-                btn.style.display = '';
-            }
-        });
-    }
-
-    // Options Data quadrant (ATM Strike/Put Premium/Expiration/IV/Put Wall/Call Wall)
-    // only makes sense for single-name equities - futures, forex, and pairs trades
-    // have no single options chain to show here, so the quadrant stays blank.
-    function setOptionsDataVisibility(view, assetClass) {
-        const el = document.getElementById(view + '-options-data');
-        if (el) el.style.visibility = (assetClass === 'equity') ? 'visible' : 'hidden';
-    }
-
-    function switchTab(view, tabName) {
-        const tabsEl = document.getElementById(view + '-tabs');
-        tabsEl.querySelectorAll('.view-tab').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === tabName);
-        });
-        ['narrative', 'chart', 'options'].forEach(name => {
-            const pane = document.getElementById(view + '-pane-' + name);
-            if (pane) pane.classList.toggle('hidden', name !== tabName);
-        });
-        if (tabName === 'chart') loadChart(view);
-    }
-
-    function resetToNarrativeTab(view) {
-        switchTab(view, 'narrative');
-    }
-
-    // --- SMA helper: computes trailing simple moving average over a series
-    // of {time, value} points. Returns only points where the window is full
-    // (no partial/misleading SMA values at the very start of the series). ---
-    function calcSMA(points, period) {
-        const out = [];
-        let sum = 0;
-        for (let i = 0; i < points.length; i++) {
-            sum += points[i].value;
-            if (i >= period) sum -= points[i - period].value;
-            if (i >= period - 1) out.push({ time: points[i].time, value: sum / period });
-        }
-        return out;
-    }
-
-    // Trims a {time, value}-shaped series to the last `months` calendar
-    // months. Used to display 6mo daily candles while still fetching a much
-    // longer lookback (2y) so the 200-day SMA is fully seeded before the
-    // visible window even starts — otherwise the SMA line would be missing
-    // or wrong for its first ~200 days on screen.
-    function trimToMonths(points, months) {
-        const cutoff = new Date();
-        cutoff.setMonth(cutoff.getMonth() - months);
-        const cutoffStr = cutoff.toISOString().slice(0, 10);
-        return points.filter(p => p.time >= cutoffStr);
-    }
-
-    // --- Chart loading against the real /get_price_history endpoint ---
-    async function loadChart(view) {
-        const state = viewState[view];
-        const entity = state.entity;
-        if (!entity) return;
-
-        const entityKey = entity.asset_class === 'pair' ? entity.legs.join('+') : entity.ticker;
-        if (state.loadedFor === entityKey) return; // already loaded for this entity
-
-        const container = document.getElementById(view + '-chart-container');
-        container.innerHTML = '<div class="chart-loading">Loading price history…</div>';
-
-        try {
-            if (entity.asset_class === 'pair') {
-                const [a, b] = entity.legs;
-                const [histA, histB] = await Promise.all([
-                    fetch(`${API_BASE}/get_price_history/${a}?range=2y`).then(r => r.json()),
-                    fetch(`${API_BASE}/get_price_history/${b}?range=2y`).then(r => r.json())
-                ]);
-                const mapB = Object.fromEntries(histB.candles.map(c => [c.time, c.close]));
-                const fullRatio = histA.candles
-                    .filter(c => mapB[c.time])
-                    .map(c => ({ time: c.time, value: c.close / mapB[c.time] }));
-                const sma50 = trimToMonths(calcSMA(fullRatio, 50), 6);
-                const sma200 = trimToMonths(calcSMA(fullRatio, 200), 6);
-                const ratioData = trimToMonths(fullRatio, 6);
-                renderLineChart(view, container, ratioData, '#a78bfa', sma50, sma200);
-            } else {
-                const hist = await fetch(`${API_BASE}/get_price_history/${entity.ticker}?range=2y`).then(r => r.json());
-                const closesForSMA = hist.candles.map(c => ({ time: c.time, value: c.close }));
-                const sma50 = trimToMonths(calcSMA(closesForSMA, 50), 6);
-                const sma200 = trimToMonths(calcSMA(closesForSMA, 200), 6);
-                const candles = trimToMonths(hist.candles, 6);
-                renderCandlestickChart(view, container, candles, sma50, sma200);
-            }
-            state.loadedFor = entityKey;
-        } catch (err) {
-            console.error('Chart load failed:', err);
-            container.innerHTML = '<div class="chart-loading">Couldn\'t load price history — is the engine running on :5000?</div>';
-        }
-    }
-
-    function destroyChart(view) {
-        const state = viewState[view];
-        if (state.chart) { state.chart.remove(); state.chart = null; state.series = null; }
-    }
-
-    // SMA overlays get their own left-side price scale so their value labels
-    // sit away from the right axis, where live price action (and its price
-    // labels) live — otherwise a candle sitting right on the 50/200 SMA would
-    // bury its own label behind the SMA's. No title text on the label - just
-    // the value, color-coded to match its line (cyan = 50, white = 200) via
-    // Lightweight Charts' default behavior of tinting the last-value axis
-    // label with the series' own color.
-    function addSMAOverlays(chart, sma50, sma200) {
-        if (sma50 && sma50.length) {
-            const s50 = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, priceScaleId: 'left' });
-            s50.setData(sma50);
-        }
-        if (sma200 && sma200.length) {
-            const s200 = chart.addLineSeries({ color: '#f8fafc', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, priceScaleId: 'left' });
-            s200.setData(sma200);
-        }
-    }
-
-    function renderCandlestickChart(view, container, candles, sma50, sma200) {
-        destroyChart(view);
-        container.innerHTML = '';
-        const chart = LightweightCharts.createChart(container, {
-            autoSize: true,
-            layout: { background: { color: 'transparent' }, textColor: '#94a3b8', fontFamily: 'Inter, sans-serif' },
-            grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-            timeScale: { borderColor: '#334155' },
-            rightPriceScale: { borderColor: '#334155' },
-            leftPriceScale: { visible: true, borderColor: '#334155' },
-            crosshair: { mode: 0 }
-        });
-        const series = chart.addCandlestickSeries({
-            upColor: '#34d399', downColor: '#f87171',
-            borderUpColor: '#34d399', borderDownColor: '#f87171',
-            wickUpColor: '#34d399', wickDownColor: '#f87171'
-        });
-        series.setData(candles);
-        addSMAOverlays(chart, sma50, sma200);
-        chart.timeScale().fitContent();
-        viewState[view].chart = chart;
-        viewState[view].series = series;
-    }
-
-    function renderLineChart(view, container, points, color, sma50, sma200) {
-        destroyChart(view);
-        container.innerHTML = '';
-        const chart = LightweightCharts.createChart(container, {
-            autoSize: true,
-            layout: { background: { color: 'transparent' }, textColor: '#94a3b8', fontFamily: 'Inter, sans-serif' },
-            grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-            timeScale: { borderColor: '#334155' },
-            rightPriceScale: { borderColor: '#334155' },
-            leftPriceScale: { visible: true, borderColor: '#334155' }
-        });
-        const series = chart.addLineSeries({ color: color, lineWidth: 2 });
-        series.setData(points);
-        addSMAOverlays(chart, sma50, sma200);
-        chart.timeScale().fitContent();
-        viewState[view].chart = chart;
-        viewState[view].series = series;
-    }
-
-    // --- Ticker deep-dive (Actionable Moves cards) ---
-    function updateContext(ticker) {
-        const d = dynamicContextData[ticker];
-        if (!d) return;
-        document.getElementById('empty-state').classList.add('hidden');
-        document.getElementById('newsletter-dive').classList.add('hidden');
-        document.getElementById('populated-state').classList.remove('hidden');
-        document.getElementById('populated-state').classList.add('flex');
-
-        const assetClass = 'equity'; // Actionable Moves are equity/ETF-only today
-
-        document.getElementById('dd-ticker').innerText = ticker;
-        document.getElementById('dd-dollar-price').innerText = d.price;
-        document.getElementById('dd-why').innerText = d.why || 'Awaiting AI synthesis...';
-        document.getElementById('dd-structure').innerText = d.structure || 'Analyzing options chain...';
-        document.getElementById('dd-impact').innerText = d.impact || 'Calculating optimal trade mechanics...';
-        document.getElementById('dd-sigma').innerText = d.expected_move ? '1σ bound: ±' + d.expected_move + '%' : '';
-
-        document.getElementById('dd-atm-strike').innerText = d.atm_strike ? `$${d.atm_strike}` : '--';
-        document.getElementById('dd-atm-put-price').innerText = d.atm_put_price ? `$${d.atm_put_price}` : '--';
-        document.getElementById('dd-atm-expiration').innerText = d.atm_expiration || '--';
-        document.getElementById('dd-atm-iv').innerText = d.atm_iv ? `${d.atm_iv}%` : '--';
-        document.getElementById('dd-put-wall').innerText = d.put_wall ? `$${d.put_wall}` : '--';
-        document.getElementById('dd-call-wall').innerText = d.call_wall ? `$${d.call_wall}` : '--';
-
-        // TRIGGER_DEFS checklist has no backing field in actionable_moves.json
-        // yet — the engine doesn't tag which specific trigger(s) fired, only
-        // that the combined 1σ+floor threshold was breached. Defaulting to
-        // '1-sigma' only until the engine adds real per-trigger tagging.
-        renderTriggers('dd', ['1-sigma']);
-
-        const priceEl = document.getElementById('dd-price');
-        const isPositive = d.price_change > 0;
-        priceEl.innerText = (isPositive ? '+' : '') + d.price_change + '%';
-        priceEl.className = 'text-2xl font-mono ' + (isPositive ? 'text-emerald-400' : 'text-red-400');
-
-        viewState.dd.entity = { asset_class: assetClass, ticker };
-        viewState.dd.loadedFor = null;
-        setTabsForAssetClass('dd', assetClass);
-        setOptionsDataVisibility('dd', assetClass);
-        resetToNarrativeTab('dd');
-    }
-
-    // --- Newsletter thesis deep-dive ---
-    function showNewsletterDive(key) {
-        const d = NEWSLETTER_MOCK[key] || NEWSLETTER_MOCK['xle-xlf'];
-        document.getElementById('empty-state').classList.add('hidden');
-        document.getElementById('populated-state').classList.add('hidden');
-        document.getElementById('populated-state').classList.remove('flex');
-        document.getElementById('newsletter-dive').classList.remove('hidden');
-        document.getElementById('newsletter-dive').classList.add('flex');
-
-        document.getElementById('nd-legs').innerText = d.legsLabel;
-        document.getElementById('nd-ratio').innerText = d.ratio;
-        document.getElementById('nd-status').innerText = d.status;
-        const pill = document.getElementById('nd-conviction');
-        pill.className = 'conviction-pill conviction-' + d.conviction;
-        pill.innerText = d.convictionLabel;
-
-        viewState.nd.entity = d;
-        viewState.nd.loadedFor = null;
-        setTabsForAssetClass('nd', d.asset_class);
-        setOptionsDataVisibility('nd', d.asset_class);
-        resetToNarrativeTab('nd');
-    }
-
-    let digestOpen = false;
-    function toggleDigest() {
-        digestOpen = !digestOpen;
-        const strip = document.getElementById('digest-strip');
-        const caret = document.getElementById('digest-caret');
-        strip.style.maxHeight = digestOpen ? '120px' : '0';
-        caret.style.transform = digestOpen ? 'rotate(90deg)' : 'rotate(0deg)';
-    }
-
-    // Default view: show a newsletter thesis so the new panel is visible on load
-    showNewsletterDive('xle-xlf');
-
-    // --- Left panel + Actionable Moves init: sync localStorage list to
-    // backend, then render sidebar/macro/actionable strip and poll on the
-    // same cadence as trader_dashboard.html (10s prices/lists/moves, 10min macro). ---
-    syncTickersWithBackend().then(() => {
-        renderDashboard();
-        fetchActionableMoves();
-        fetchMacroRegime();
-        setInterval(() => {
-            renderDashboard();
-            fetchActionableMoves();
-        }, 10000);
-        setInterval(fetchMacroRegime, 600000);
-    });
-</script>
+<!-- CACHE-BUST STAMP (?v=): python -m http.server sends no cache headers, so the
+     browser happily serves a STALE static/js/*.js after an edit while the HTML
+     itself revalidates — the tab label updates but the code behind it does not
+     (observed 2026-07-28: the Rates tab rendered blank because the cached
+     stoplight.js still had the old switchBubbleTab pane list). A version query
+     makes it a DIFFERENT URL, which the cache cannot satisfy.
+     BUMP THIS STAMP whenever you edit any file below. -->
+<script src="static/js/core.js?v=20260810i"></script>
+<script src="static/js/watchlist.js?v=20260810i"></script>
+<script src="static/js/macro.js?v=20260810i"></script>
+<script src="static/js/stoplight.js?v=20260810i"></script>
+<script src="static/js/strategy.js?v=20260810i"></script>
+<script src="static/js/actionable.js?v=20260810i"></script>
+<script src="static/js/newsletter-cards.js?v=20260810i"></script>
+<script src="static/js/charts.js?v=20260810i"></script>
+<script src="static/js/news-archive.js?v=20260810i"></script>
+<script src="static/js/newsletter-dive.js?v=20260810i"></script>
+<script src="static/js/newsletter-digest.js?v=20260810i"></script>
+<script src="static/js/main.js?v=20260810i"></script>
 </body>
 </html>

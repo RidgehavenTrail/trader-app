@@ -1,6 +1,6 @@
 ---
 paths:
-  - "market_data_engine.py"
+  - "watchtower_engine.py"
   - "schwab*.py"
 ---
 
@@ -9,6 +9,13 @@ paths:
 **Status:** Architecture decided in a planning conversation (2026-07-03). No code
 written yet. This file captures the design so implementation can start without
 re-deriving it. Update `## Status` at the top once work begins.
+
+**2026-07-13 note:** path-scope trigger above updated from `market_data_engine.py`
+(retired 2026-07-12) to `watchtower_engine.py` (canonical engine, port 5001) — the
+design content below is otherwise unchanged and still describes `fetch_loop`/
+`analyze_options_structure()` by name; those functions are presumed to still exist
+under those names in `watchtower_engine.py` (documented as a strict superset of the
+old engine) but this hasn't been directly verified against the current file.
 
 ## Why
 

@@ -14,8 +14,8 @@ Tunable constants in compute_blanket():
   TEMPERATURE   -- softmax temperature (world-Y units); lower = peaks dominate more
 
 Usage:
-    python test_heatmap_3d_blanket.py AMD
-    python test_heatmap_3d_blanket.py AAPL
+    python heatmap_3d.py AMD
+    python heatmap_3d.py AAPL
 """
 
 import sys

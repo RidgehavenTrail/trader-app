@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 
+# Runtime stores (stoplight state json is covered by *.json above)
+stoplight_snapshots.db
+
 # Generated/scratch — not source
 Archive/
 archive_claude/

@@ -121,6 +121,7 @@ For each price column, walks adjacent expiration pairs along the DTE axis:
 - Edge anchors Y=0 (floor) — Gaussian edge anchors caused false peaks
 - `max()` accumulation for splat, never averaging — averaging collapses signal to ~0.18
 - Pin uses `max()`, not hard assignment — hard assignment destroys terrain floor lift
+- Effective ceiling = `max(interpolated_ceiling, terrain_floor)` — prevents floor being cut
 - **Resolved:** put-side OI sparsity (previously flagged as possibly needing a
   separate Gaussian sigma per side) is no longer an issue — `compute_terrain_floor()`'s
   valley-lift plus the ridgeline ceiling guarantee fill sparse regions
@@ -135,6 +136,9 @@ For each price column, walks adjacent expiration pairs along the DTE axis:
 - Snow cap threshold: `MAX_HEIGHT * 1.7`
 - Strike labels snapped to actual strikes in `DATA.strikes` — no interpolated prices
 - Dynamic contour step: `priceRange / 13`, rounded up to nearest nice number
+- Price label font: slate white `rgba(241,245,249,0.95)` matching contour line color
+- DTE label font: slate white `rgba(241,245,249,0.95)` — different rendering (sprite vs
+  CSS2D) but same color intent
 
 ## Coordinate system
 

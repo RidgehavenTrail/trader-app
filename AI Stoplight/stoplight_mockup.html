@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<!--
+  stoplight_mockup.html — LOCKED visual reference for the AI Bubble Stoplight compact view.
+  Session 2026-07-18. This IS the build target: dimensions, colors, layout all exact.
+  Two panels shown: (A) AI-bubble EXPANDED (the compact view) and (B) all sections COLLAPSED.
+  Rendered against the watchtower dark sidebar (#0f172a panel on #334155 border).
+  Sample data is illustrative; real data comes from the factor builders + stoplight_events.json.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI Bubble Stoplight — locked compact view</title>
+<style>
+  body { background:#0b1220; font-family:Inter,ui-sans-serif,system-ui,sans-serif; margin:0; padding:24px;
+         display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
+  .panel { width:340px; background:#0f172a; border:1px solid #334155; border-radius:10px; overflow:hidden; }
+  .sec-hdr { padding:9px 12px; border-bottom:1px solid #334155; display:flex; align-items:center; gap:7px; }
+  .caret { color:#64748b; font-size:11px; }
+  .dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .g { background:#4ade80; } .y { background:#facc15; } .r { background:#f87171; }
+  .lbl-macro { font-size:10px; font-weight:500; color:#f59e0b; letter-spacing:.08em; text-transform:uppercase; flex-shrink:0; }
+  .lbl-ai { font-size:11px; font-weight:500; color:#e2e8f0; letter-spacing:.06em; text-transform:uppercase; flex-shrink:0; }
+  .lbl-wl { font-size:10px; font-weight:500; color:#818cf8; letter-spacing:.08em; text-transform:uppercase; }
+  .headline { font-size:11px; color:#cbd5e1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hdr-fresh { font-size:11px; color:#e2e8f0; } .hdr-fresh .val { font-family:ui-monospace,monospace; color:#4ade80; }
+  .hdr-when { font-size:10px; color:#64748b; margin-left:auto; }
+  /* factor list: centered fit-content block; fixed columns keep dot + metric rails aligned */
+  .rows { margin-top:8px; width:fit-content; margin-left:auto; margin-right:auto;
+          display:flex; flex-direction:column; font-size:11px; line-height:1; }
+  .row { display:flex; align-items:center; padding:3px 4px; }
+  .rk { flex:0 0 15px; text-align:right; color:#64748b; font-size:10px; }        /* rank gutter */
+  .gl { flex:0 0 12px; text-align:right; color:#cbd5e1; font-weight:700; font-size:11px; } /* glyph, LEFT of dot */
+  .row .dot { margin-left:5px; }
+  .nm { color:#e2e8f0; flex:0 0 118px; padding-left:6px; }                       /* name column */
+  .mt { font-family:ui-monospace,monospace; color:#94a3b8; flex:0 0 72px; }      /* metric rail */
+  .gap { height:5px; }
+  .badge-stale { font-size:9px; font-weight:500; color:#fbbf24; background:rgba(251,191,36,.12);
+                 border:1px solid rgba(251,191,36,.35); border-radius:4px; padding:0 4px; text-transform:uppercase; margin-left:4px; }
+  .badge-new { font-size:9px; font-weight:500; color:#4ade80; text-transform:uppercase; letter-spacing:.03em; }
+  .row-new { background:rgba(74,222,128,.08); border:1px solid rgba(74,222,128,.3); border-radius:3px; }
+  .row-new .nm, .row-new .mt { color:#f1f5f9; font-weight:500; }
+  /* odometer drum: white face, black numeral, inset shadow = curved-drum illusion */
+  .drum { width:16px; height:22px; background:linear-gradient(#ffffff,#e2e5ea); border:1px solid #0f172a;
+          border-radius:2px; display:flex; align-items:center; justify-content:center;
+          font-family:ui-monospace,monospace; font-size:14px; font-weight:700; color:#0b0b0b;
+          box-shadow:inset 0 3px 3px -2px rgba(0,0,0,.38), inset 0 -3px 3px -2px rgba(0,0,0,.38); }
+</style>
+</head>
+<body>
+
+<!-- ===================== PANEL A: AI-BUBBLE EXPANDED (the compact view) ===================== -->
+<div class="panel">
+  <!-- macro collapsed, headline survives -->
+  <div class="sec-hdr">
+    <span class="caret">&#9656;</span>
+    <span class="dot" style="width:7px;height:7px;background:#fbbf24"></span>
+    <span class="lbl-macro">Macro</span>
+    <span class="headline">Yields steady post-Fed minutes; semis lead</span>
+  </div>
+
+  <!-- AI bubble expanded -->
+  <div style="padding:9px 12px 11px;border-bottom:1px solid #334155">
+    <div style="display:flex;align-items:center;gap:7px">
+      <span class="caret">&#9662;</span>
+      <span class="lbl-ai">AI bubble</span>
+      <span class="dot g" style="margin-left:2px"></span>
+      <span class="hdr-fresh">Rate path <span class="val">+0.56 tght</span></span>
+      <span class="hdr-when">Thu</span>
+    </div>
+
+    <div class="rows">
+      <div class="row"><span class="rk">1</span><span class="gl"></span><span class="dot g"></span><span class="nm">Yield curve</span><span class="mt">+0.86</span></div>
+      <div class="row"><span class="rk">2</span><span class="gl"></span><span class="dot y"></span><span class="nm">Concentration</span><span class="mt">18.03%</span></div>
+      <div class="row row-new"><span class="rk">3</span><span class="gl"></span><span class="dot g"></span><span class="nm">Rate path</span><span class="mt">+0.56 tght</span></div>
+      <div class="row"><span class="rk">4</span><span class="gl">&#8722;</span><span class="dot r"></span><span class="nm">Premium share</span><span class="mt">57.1%</span></div>
+      <div class="row"><span class="rk">5</span><span class="gl"></span><span class="dot y"></span><span class="nm">Silicon payback</span><span class="mt">0.21</span></div>
+      <div class="row"><span class="rk">6</span><span class="gl"></span><span class="dot g"></span><span class="nm">Leverage</span><span class="mt">3.41&#215;</span></div>
+      <div class="row"><span class="rk">7</span><span class="gl"></span><span class="dot r"></span><span class="nm">Market credit</span><span class="mt">272bps</span></div>
+      <div class="row"><span class="rk">8</span><span class="gl">+</span><span class="dot r"></span><span class="nm">Infra backlog</span><span class="mt">2.9&#215;</span></div>
+      <div class="row"><span class="rk">9</span><span class="gl"></span><span class="dot r"></span><span class="nm">Memory canary</span><span class="mt">0/5 dn</span><span class="badge-stale">41d</span></div>
+      <div class="row"><span class="rk">10</span><span class="gl">&#8595;</span><span class="dot r"></span><span class="nm">Regulatory</span><span class="mt">3 states</span></div>
+      <div class="row"><span class="rk">11</span><span class="gl"></span><span class="dot r"></span><span class="nm">Heavy haul</span><span class="mt">+32.7%</span></div>
+      <div class="row"><span class="rk">12</span><span class="gl">&#8595;</span><span class="dot r"></span><span class="nm">Capex pressure</span><span class="mt">48&#8594;64%</span></div>
+      <div class="row"><span class="rk">13</span><span class="gl"></span><span class="dot r"></span><span class="nm">Capex spigot</span><span class="mt">+70&#8211;77%</span></div>
+      <div class="row"><span class="rk">14</span><span class="gl"></span><span class="dot r"></span><span class="nm">Copper</span><span class="mt">+8.9%</span></div>
+      <div class="row"><span class="rk">15</span><span class="gl"></span><span class="dot y"></span><span class="nm">Inflation</span><span class="mt">3.41%</span></div>
+      <div class="row"><span class="rk">16</span><span class="gl"></span><span class="dot y"></span><span class="nm">Net liquidity</span><span class="mt">$5.96T</span></div>
+    </div>
+
+    <!-- Silicon E module: centered white-drum odometer, lime nameplate, +22% pinned to corner -->
+    <div style="position:relative;margin-top:12px;padding-top:12px;border-top:1px solid rgba(51,65,85,.7)">
+      <span style="position:absolute;right:4px;top:13px;font-size:10px;color:#84cc16;font-family:ui-monospace,monospace">+22%</span>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+        <div style="display:flex;align-items:center;gap:2px">
+          <span style="color:#64748b;font-family:ui-monospace,monospace;font-size:12px;margin-right:1px;align-self:center">$</span>
+          <span class="drum">6</span><span class="drum">0</span><span class="drum">0</span>
+          <span style="color:#94a3b8;font-family:ui-monospace,monospace;font-size:12px;font-weight:700;margin-left:1px;align-self:center">B</span>
+        </div>
+        <span style="font-size:10px;font-weight:700;color:#bef264;text-transform:uppercase;letter-spacing:.16em;text-shadow:0 0 6px rgba(132,204,22,.9),0 0 12px rgba(132,204,22,.5)">Silicon E</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- watchlists collapsed -->
+  <div style="padding:9px 12px;display:flex;align-items:center;gap:7px">
+    <span class="caret">&#9662;</span><span class="lbl-wl">Watchlists</span>
+    <span style="font-size:10px;color:#475569;font-style:italic;margin-left:auto">groups below&#8230;</span>
+  </div>
+</div>
+
+<!-- ===================== PANEL B: ALL COLLAPSED (morning glance) ===================== -->
+<div class="panel">
+  <!-- macro collapsed: headline survives -->
+  <div class="sec-hdr">
+    <span class="caret">&#9656;</span>
+    <span class="dot" style="width:7px;height:7px;background:#fbbf24"></span>
+    <span class="lbl-macro">Macro</span>
+    <span class="headline">Yields steady post-Fed minutes; semis lead</span>
+  </div>
+  <!-- AI bubble collapsed: header shows freshest print = the fresh factor's OWN light + state label -->
+  <div class="sec-hdr">
+    <span class="caret">&#9656;</span>
+    <span class="lbl-ai">AI bubble</span>
+    <span class="dot g" style="margin-left:2px"></span>
+    <span class="hdr-fresh">Rate path <span class="val">+0.56 tght</span></span>
+    <span class="hdr-when">Thu</span>
+  </div>
+  <!-- watchlists collapsed -->
+  <div class="sec-hdr" style="border-bottom:none">
+    <span class="caret">&#9656;</span><span class="lbl-wl">Watchlists</span>
+    <span style="font-size:10px;color:#475569;font-style:italic;margin-left:auto">groups below&#8230;</span>
+  </div>
+</div>
+
+</body>
+</html>

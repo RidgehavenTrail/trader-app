@@ -8,9 +8,11 @@ A real-time stock watchlist dashboard that monitors a user-defined list of ticke
 
 ## System Overview
 
-- **Engine** (`market_data_engine.py`) — Alpha Vantage news + Claude synthesis, with Claude web search as a fallback when Alpha Vantage has no relevant articles. Port 5000.
-- **Dashboard** (`trader_dashboard.html`) — polls the engine every 10 seconds.
+- **Engine** (`watchtower_engine.py`) — Alpha Vantage news + Claude synthesis, with Claude web search as a fallback when Alpha Vantage has no relevant articles. Port 5001. Also serves the newsletter ingestion + read endpoints.
+- **Dashboard** (`watchtower.html`) — polls the engine every 10 seconds. On top of the watchlist + Actionable Moves it adds the **newsletter tracker** (plays strip, thesis deep-dives, Past Editions), client-side price/ratio charts, and per-entity tab controls.
 - **Macro panel** — powered by Gemini 2.5 Flash + Google Search grounding; updates on startup and hourly during market hours.
+
+> **Note (2026-07-12):** `watchtower.html` + `watchtower_engine.py` supersede and retire the original `trader_dashboard.html` + `market_data_engine.py` (port 5000). Watchtower is a strict superset — every watchlist/Actionable-Moves/macro endpoint plus the newsletter engine — so the older pair was removed rather than kept in parallel.
 
 ---
 
@@ -21,13 +23,13 @@ A real-time stock watchlist dashboard that monitors a user-defined list of ticke
 python3 -m http.server 8000
 
 # Engine (second terminal)
-python3 market_data_engine.py
+python3 watchtower_engine.py
 
 # Test mode — bypasses market hours, uses last two trading session closes
-python3 market_data_engine.py --test
+python3 watchtower_engine.py --test
 ```
 
-Open `http://localhost:8000/trader_dashboard.html` in a browser.
+Open `http://localhost:8000/watchtower.html` in a browser.
 
 ---
 
@@ -176,10 +178,10 @@ On each weekday midnight rollover, `actionable_moves.json` is archived to `archi
 
 ```
 project/
-├── market_data_engine.py      # Engine (port 5000)
-├── trader_dashboard.html      # Dashboard
-├── inspect_news_cache.py      # Debug: view cache entries for a ticker
-├── inspect_alpha_vantage.py   # Debug: raw AV news response
+├── watchtower_engine.py       # Engine (port 5001) — watchlist + Actionable Moves + newsletter endpoints
+├── watchtower.html            # Dashboard — watchlist, Actionable Moves, newsletter tracker, charts
+├── newsletter_ingest.py       # Newsletter extraction + deterministic derivation (store owner)
+├── q.py / stats.py / rebuild_store.py   # Newsletter store inspector / cost ledger / offline re-derive
 ├── tickers.json               # Watchlist
 ├── market_data.json           # Live prices
 ├── actionable_moves.json      # Triggered cards

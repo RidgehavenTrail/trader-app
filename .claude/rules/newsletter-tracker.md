@@ -1,24 +1,107 @@
 ---
 paths:
-  - "market_data_engine.py"
   - "newsletter*.py"
-  - "trader_dashboard.html"
   - "watchtower.html"
   - "watchtower_engine.py"
 ---
+<!-- 2026-07-13: removed retired market_data_engine.py / trader_dashboard.html
+     entries (retired 2026-07-12) — watchtower_engine.py/watchtower.html already
+     covered this file, those two were stale dead weight, not functional. -->
 
-# Newsletter Tracker — Left Panel + Actionable Moves Wired to Live Data (2026-07-05)
 
-**Status:** Left panel (categorized watchlist, macro panel) and Actionable Moves
-(strip + dd-dive, including the full Options Data quadrant) are now wired to real
-`market_data_engine.py` endpoints — see "Live wiring" section below. Newsletter-side
-schema/ingestion/lifecycle-storage are still just a brainstorm (see bottom half of
-this file) — none of that backend logic exists yet, and a git worktree +
-`feature/newsletter-ingestion` branch with a sandboxed engine copy
-(`watchtower_engine.py`, port 5001) now exist specifically for building that out
-without touching the live, stable `market_data_engine.py`/`trader_dashboard.html`.
-Read this top section first before touching `watchtower.html`, `watchtower_engine.py`,
-or adding to `market_data_engine.py`.
+# Newsletter Tracker — Schema Mapped to Dashboard (updated 2026-07-07)
+
+**2026-07-13 — `watchtower.html` JS split into `static/js/` modules (no logic change).**
+The single ~1,900-line inline `<script>` was extracted into nine files under
+`static/js/`; **eleven as of session 42** (`strategy.js`, `news-archive.js` added); `watchtower.html` dropped 2,410 → ~520 lines (markup + CSS + the
+`<script src>` tags). **These are CLASSIC scripts, NOT ES modules** — every function
+stays global, so the `onclick="fn(...)"` handlers in the markup keep working with zero
+changes. **Do not add `import`/`export` or `type="module"`** (that would scope the
+functions and break every `onclick`). The split was purely mechanical (a build script
+asserted the slices reconstruct the original JS byte-for-byte). Load order is
+load-bearing only at the ends: **`core.js` first, `main.js` (the bootstrap) LAST**; the
+middle files are just definitions and their order is free. Shared globals live
+where noted below.
+
+| File | Concern | Notable globals it declares |
+|------|---------|------------------------------|
+| `core.js` | shared helpers (`esc`, `initHorizontalScrollStrip`), `API_BASE` | `API_BASE` |
+| `watchlist.js` | left panel / market-data sidebar (`renderDashboard`, `addStock`, …) | `categories`, `openStates` |
+| `macro.js` | macro panel + self-waking poll clock | `MACRO_*` consts |
+| `actionable.js` | Actionable Moves strip + ticker deep-dive triggers | `dynamicContextData`, `TRIGGER_DEFS` |
+| `newsletter-cards.js` | plays strip + all card/trade rendering | **`NEWSLETTER_TRADES`/`NEWSLETTER_ISSUE`/`newsletterEditions`** |
+| `charts.js` | tab control + chart tab + `updateContext` (ticker dive) | `viewState` |
+| `strategy.js` | Rocket Strategy sidebar section (Fed dial + selected holding) | `STR_POLL_MS`, `strSel` |
+| `news-archive.js` | per-ticker news history inside the "Why" box | `_naEntries`, `_naSel` |
+| `newsletter-dive.js` | thesis deep-dive panel | `_ndDiveSeq` |
+| `newsletter-digest.js` | weekly digest + import + Past Editions | `digestOpen`, `openDropdownEl`, `viewingPastStem` |
+| `main.js` | bootstrap wiring (loads LAST) | — |
+
+The three cross-file newsletter globals (`NEWSLETTER_TRADES` etc.) are declared at the
+top of `newsletter-cards.js`; `newsletter-dive.js`/`-digest.js` read them at runtime
+(fine — classic scripts share one global scope, and nothing cross-calls at parse time).
+Served the same way as before (`python -m http.server` from the main dir serves the
+whole tree, so `static/js/*` resolves with no config). This retires the session-10
+"File size note" refactor item further down.
+
+**Status (2026-07-07):** Fully wired end-to-end, not mock data. Left panel,
+Actionable Moves, and the newsletter-specific side (Newsletter Plays strip, thesis
+deep-dive, weekly digest) all render from real `newsletter-schema.md`-shaped data —
+but as of this update, `NEWSLETTER_TRADES`/`NEWSLETTER_ISSUE` are `let`-populated
+from the real backend store (`GET /get_newsletter_state`) via `loadNewsletterState()`,
+not hand-authored JS. Step 4 (Import icon, Past Editions dropdown, plays panel wired
+to the store) is BUILT and a first real import has landed successfully (`260608`
+issue, 7 live/2 archive/1 discarded). See `.claude/rules/newsletter-ingestion.md`
+"Build status update (2026-07-07)" for the full build log.
+
+**2026-07-07 — card-design review session.** With real imported data finally on
+screen, a full card-by-card review against all 9 real trades surfaced that several
+of session 10's display choices below (status labels, title-building logic, the
+conviction "n/a" fallback) don't hold up against real data, and that the extraction
+prompt itself has real gaps (level fields holding prose instead of clean numbers).
+**Full precise fix list, finalized target card specs per trade shape, and the new
+risk-based P&L% calculation rule all live in `.claude/rules/newsletter-ingestion.md`
+"Card-design review + fixes queued (2026-07-07)" — read that before touching
+`watchtower.html`'s card-rendering functions or `newsletter_ingest.py`'s
+`EXTRACTION_SYSTEM`.** Not duplicated here; the session-10 mapping below is
+historical record of what was originally built, not the current target.
+
+**2026-07-10 — status-display revision (SUPERSEDES the session-10 "Status labels" /
+"Status colors" / "Per-play price line" / indicator-as-strip-card notes below).** The
+card's **badge** and its **color** are now DECOUPLED (`getStatusMeta` returns `label` +
+`tone`):
+- **Badge (`label`) — "New" takes PRIORITY:** any trade on its first appearance
+  (`first_seen === last_mentioned`) wears the **New** badge even when already ENTERED
+  (`open`). So a new+entered trade shows a New badge on a violet card. Otherwise: `open`
+  carried → Active, `planned` carried → Watching, `closed` → Closed.
+- **Color / opacity / price-line (`tone`) — driven by actual lifecycle status:** `open`
+  → violet (Active: Tgt/Stop line), `closed` → emerald + strikethrough (P&L/Exit line),
+  `planned` → slate (Watching: Entry line). A New-badged *entered* trade therefore shows
+  the **Tgt/Stop** line, not the Entry line.
+- **Indicators route to the DIGEST, not the strip (§6, built 2026-07-10):** trades with
+  `conviction.label ∈ {observation_only, watchlist}` are excluded from the plays strip
+  and rendered in the digest dropdown (title/proxy/thesis/constituents). They are NOT
+  shown as strip cards with a text label (the old session-10 behavior at line ~84).
+- **Digest summary pills = issue ACTIVITY** (not the raw store): indicators excluded;
+  `new` = New-badge count; `active`/`watching` = carried-forward; `closed` scoped to the
+  CURRENT issue (`last_mentioned === issue_date`) so prior weeks' closes don't inflate it.
+- **Past Editions SWAP the plays strip** to that week's frozen file (read-only, "← current"
+  to restore); the summary pills move into the dropdown body in that mode. This reverses
+  the old "never touch the plays panel" constraint — see `newsletter-ingestion.md`
+  "Display vs. archive" for why (the real intent was "no growing pile," not "no swap").
+
+Full detail + rationale live in `.claude/rules/newsletter-ingestion.md` (do not duplicate).
+
+**Schema update (2026-07-05):** the extraction schema brainstorm at the bottom of
+this file is now superseded by `.claude/rules/newsletter-schema.md`, drafted and
+confirmed against 5 real newsletter issues (2026-05-04, 05-25, 06-09, 06-22, 06-29)
+across a dedicated multi-session design pass. Read that file before writing any
+ingestion/parsing code — it has the current target JSON shape, the confirmed
+trade-lifecycle state machine (silence-means-abandoned only for `planned`/
+conditional trades, never for `open` ones), the basket-vs-options `legs`
+distinction, and the newer `campaign_title`/`key_dates`/`positioning_note`/
+`holding_period`/`paired_with`/`analysis_features` fields. The brainstorm below is
+left for historical context only.
 
 ## Live wiring (2026-07-05)
 
@@ -47,6 +130,78 @@ or adding to `market_data_engine.py`.
   converting a mouse wheel gesture into horizontal movement). Ported verbatim from
   `trader_dashboard.html` — see CLAUDE.md's Known Pitfalls entry, now updated to
   reflect both files share this pattern.
+
+## Schema-to-dashboard mapping (session 10, 2026-07-05)
+
+Everything below was built this session. No backend changes — all frontend-only
+in `watchtower.html`. The old `NEWSLETTER_MOCK` object (flat, ad-hoc fields) is
+gone, replaced by `NEWSLETTER_TRADES` (array of real schema-shaped trade objects)
+and `NEWSLETTER_ISSUE` (the issue envelope with `playbooks[]` and
+`analysis_features[]`). Data is still hand-authored JS, not fetched from a backend.
+
+**What changed in the Newsletter Plays strip:**
+- Cards rendered by `renderNewsletterStrip()` from `NEWSLETTER_TRADES`, not hardcoded HTML
+- Conviction: 5-dot scale (`renderConvictionDotsHTML()`) replaces momentum-word pills
+  (New/Reiterated/Increasing/Fading are gone). `role: "indicator"` trades show a text
+  label (observation_only/watchlist) instead of dots.
+- Status labels: **New** = `planned` trade on its first appearance (`first_seen ===
+  last_mentioned`); **Watching** = `planned` but seen in 2+ issues; **Active** = `open`;
+  **Resolved** = `closed`. `abandoned`/`deleted` trades filtered out before render.
+- Stale badge: amber "Stale" tag on Active cards when `stale_flag: true`
+- Card titles: derived from `basket` (pairs → "XLE / XLF"), `legs` (options → strike
+  labels), or plain `ticker` via `getLegsLabel()`. `campaign_title` used when present.
+- Entry/Tgt-Stop/P&L row: simplified by status via `levelsInlineHTML()` — New/Watching
+  → Entry only; Active → Tgt+Stop; Resolved → realized P&L with sign-based color
+  (fixes the old hardcoded-green bug flagged in item 4 of the original open items list).
+
+**What changed in the thesis deep-dive (nd panel):**
+- `showNewsletterDive(id)` looks up by `id` in `NEWSLETTER_TRADES` instead of key
+  in `NEWSLETTER_MOCK`
+- Header levels box: Entry/Tgt-Stop/P&L (was "Support/Resistance" from old brainstorm
+  schema — that field never existed in the real schema)
+- Conviction dots in header (was a momentum-word pill)
+- Stale badge next to status label
+- Key Dates: real list from `trade.key_dates[]` with passed/pending indicators (was
+  one hardcoded line)
+- Status History: real timeline from `trade.status_history[]` with dated entries and
+  P&L where present (was "Conviction History" prose paragraph)
+
+**What changed in the weekly digest strip:**
+- Header: JS-rendered from `NEWSLETTER_ISSUE` — date, themes, and status-count pills
+  (new/watching/active/closed) derived from `NEWSLETTER_TRADES`
+- Expanded body order: 1) Newsletter summary (issue title), 2) Analysis features
+  (sector_model with ▲/▼ tickers, deep_dive with linked_theme tag), 3) Playbooks
+  (conditional rules with per-candidate status). Trade summary line removed per user
+  request — redundant with the Newsletter Plays strip.
+- `toggleDigest()` uses `scrollHeight` instead of fixed 120px so content isn't clipped.
+
+**Options tab / Options Data quadrant changes:**
+- `dd-pane-options`: was hardcoded `$142.50/$3.15/42.8%`; now wired to real
+  `actionable_moves.json` fields via `updateContext()`
+- `nd-pane-options`: was hardcoded `$115.00/$4.20/51.2%`; now shows an honest message
+  that no live options-chain endpoint exists for newsletter trades yet
+- "🗻 3D Heatmap — Coming Soon" placeholder button (dashed border, disabled,
+  equity/ETF-gated) added in **four** places, not just the quadrant: `dd-options-data`
+  and `nd-options-data` (the Options Data quadrant on the Narrative tab), AND
+  `dd-pane-options` and `nd-pane-options` (the actual Options tab pane itself).
+  **Bug fixed same session (caught by user):** the placeholder was originally only
+  added to the Narrative-tab quadrant — clicking the actual "Options" tab button
+  showed nothing about the heatmap at all. Both locations now have it for
+  consistency. This is the future launch point for `heatmap_3d.py` — see
+  `.claude/rules/heatmap-dashboard-hook.md`.
+
+**New CSS classes added:** `.conviction-dots`, `.conviction-dot`, `.conviction-dot.filled`,
+`.conviction-label-only`, `.status-dot-new`, `.stale-badge`, `.heatmap-hook-placeholder`
+
+**New rule file created this session:** `.claude/rules/heatmap-dashboard-hook.md` —
+documents the previously-undocumented decision that the Options Data quadrant is the
+future launch point for the 3D heatmap. Placeholder only, not wired. Equity/ETF only,
+daily-snapshot-based once built, does not touch locked heatmap code.
+
+**File size note:** `watchtower.html` is now ~1300 lines. Discussed refactoring JS into
+separate files by concern (watchlist, newsletter, charts) — natural moment to do this
+is when ingestion code is added, not before. The JS functions already have clean
+boundaries for splitting.
 
 ## Layout — settled, don't re-litigate without reason (updated 2026-07-05)
 
@@ -194,24 +349,30 @@ dashboard, **not yet added anywhere in the mockup.**
   client-side (`viewState.dd/nd.loadedFor`) so re-clicking tabs doesn't refetch.
 - **No range-toggle UI yet** (1mo/3mo/1y etc.) — fixed 6-month display only.
 
-## Not yet done — real open items for next session
+## Not yet done — real open items (updated session 10)
 
 1. Ticker display-name vs. yfinance-symbol mapping (`CL1!` vs `CL=F`) — no schema field.
-2. Newsletter ingestion — confirmed manual paste each week, but no actual paste/parse
-   UI or Claude-extraction prompt exists. This session only built the display/tracking
-   UI and chart infra, assuming the data already exists in the right shape.
+2. ~~Newsletter ingestion — backend + step-4 UI~~ — **DONE 2026-07-07.** Backend
+   (`newsletter_ingest.py` + `watchtower_engine.py` endpoints) built 2026-07-06;
+   step-4 UI (Import icon, Past Editions dropdown, plays panel wired to the real
+   store) built and a first real import landed 2026-07-07. What's open now is a
+   card-design/display-and-calculation fix list surfaced by that first real
+   import — see `.claude/rules/newsletter-ingestion.md` "Card-design review +
+   fixes queued (2026-07-07)", not a rebuild of anything in this item.
 3. Hit-rate/accuracy tracking — confirmed as a wanted goal, but no diffing/scoreboard
    logic exists yet.
-4. Resolved-card exit color is hardcoded green (assumes a win) — doesn't branch red
-   for a stopped-out/loss outcome.
+4. ~~Resolved-card exit color is hardcoded green~~ — **FIXED session 10.** P&L color
+   now branches by `pnl.value` sign (green positive, red negative) via `levelsInlineHTML()`
+   and `levelsRowHTML()`.
 5. Lightweight Charts attribution notice not added anywhere.
 6. **None of this is wired into the real `trader_dashboard.html` yet.** Everything
    lives in the standalone `watchtower.html`. Merging into production is
    unstarted — will need the real Actionable Moves card markup/JS merged with the
    tab-control + chart logic built here.
-7. The original brainstorm below (schema draft, lifecycle enum, ingestion/hit-rate
-   open questions) is still just a brainstorm — today's backend work was ONLY the
-   price-history endpoint, unrelated to actual newsletter data storage/lifecycle.
+7. ~~The original brainstorm schema was speculative~~ — **RESOLVED sessions 9-10.**
+   Real schema in `newsletter-schema.md`, display layer mapped in session 10.
+8. **Refactoring `watchtower.html`** (~1300 lines) into separate JS modules — discussed
+   end of session 10, deferred to when ingestion code is added (natural growth point).
 
 ---
 

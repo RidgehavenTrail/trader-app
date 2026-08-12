@@ -12,6 +12,14 @@
 // content.
 // The payload still carries those fields, unused here, ready for that panel.
 
+    // Remember open/closed across reloads (shared helper in core.js), same grammar as
+    // Live Macro and AI Bubble. Added 2026-08-12: this section was the only one of the
+    // three NOT registered, so it fell back to a hardcoded `open` in the markup and
+    // re-expanded on every reload no matter what the user had done. The markup default
+    // is now closed — Live Macro is the only section that starts expanded — and this
+    // makes the user's own choice stick.
+    persistCollapse('strategy-section', 'strategySectionOpen');
+
     // 60s — driven by the day-move percentages, not the dial. The dial itself moves
     // once a business day and is cached 6h server-side; the quotes ride a separate
     // 60s cache, so this poll is cheap and keeps the pills current intraday.
@@ -49,12 +57,20 @@
         const p = h.day_pct;
         const has = (p !== null && p !== undefined && isFinite(p));
         const dir = has ? (p >= 0 ? '#4ade80' : '#f87171') : strHexToRgba(h.color, 0.38);
+        // RED TEXT IS LIGHTER THAN ITS BORDER (user, 2026-08-12) — the Live Macro VIX
+        // pill's scheme: text-red-300 on a red-500/30 border. Green is deliberately
+        // unchanged; only the red was failing, measuring 4.70-4.82 against the pill fill
+        // while green sat at 7.2-7.7. #fca5a5 lifts it to ~7.0 without touching a colour
+        // that already worked. The BORDER stays #f87171 on purpose: keeping it more
+        // saturated than the text is what makes this read as the VIX treatment rather
+        // than as a washed-out red.
         const pct = has
-            ? `<span class="str-tp-pct" style="color:${p >= 0 ? '#4ade80' : '#f87171'}">` +
+            ? `<span class="str-tp-pct" style="color:${p >= 0 ? '#4ade80' : '#fca5a5'}">` +
               `${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(2)}%</span>`
             : '';
-        const sel = h.ticker === strSel ? ' str-tpill-sel' : '';
-        return `<span class="str-tpill str-tpill-lg${sel}" style="color:${h.color};` +
+        // Selection is marked by a caret to the LEFT of the pill (see strColumnHTML),
+        // not on the pill itself — nothing here varies with what is selected.
+        return `<span class="str-tpill str-tpill-lg" style="color:${h.color};` +
                `background:${strHexToRgba(h.color, 0.14)};border-color:${dir}" ` +
                `onclick="openStrategyTicker('${esc(h.ticker)}')" ` +
                `title="${esc(h.ticker)}${has ? ` · ${p >= 0 ? '+' : ''}${p}% today` : ''}">` +
@@ -69,7 +85,11 @@
             if (isAlt) return `<div class="str-hold">${strTickerPillHTML(h, true)}</div>`;
             const st = h.state || {};
             const cls = st.wired ? 'str-st' : 'str-st-off';
-            return `<div class="str-hold">${strTickerPillHTML(h, false)}` +
+            // The caret slot is emitted on EVERY live row, empty when unselected, so the
+            // 10px is always reserved and the column never shifts as selection moves.
+            const car = h.ticker === strSel ? '&#9654;' : '';
+            return `<div class="str-hold"><span class="str-sel-caret">${car}</span>` +
+                   `${strTickerPillHTML(h, false)}` +
                    `<span class="str-wt">${h.weight}%</span>` +
                    `<span class="${cls}">${esc(st.label || '—')}</span></div>`;
         }).join('');

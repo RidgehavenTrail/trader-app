@@ -192,13 +192,28 @@
        identity, BORDER = today's direction (green up / red down), background = a
        tint of the identity color. The border is the only thing that changes
        day to day, so a glance down the column reads as today's tape. */
-    .str-tpill-lg { font-size:11px; padding:2px 8px; display:inline-flex;
+    /* Bumped one level 2026-08-12 (11->12 / 10->11). Size is the other half of
+       legibility: at a fixed contrast ratio, a larger glyph simply resolves better,
+       and the % had been the smallest type in the panel while carrying one of its
+       most-read numbers. Tried before reaching for colour changes. */
+    .str-tpill-lg { font-size:12px; padding:2px 8px; display:inline-flex;
                     align-items:baseline; gap:5px; }
-    .str-tp-pct { font-size:10px; font-weight:600; }
-    /* Selected holding — the one whose strategy block is showing below. A left bar
-       rather than another border color, because the border is already spoken for by
-       today's direction and must not be overloaded. */
-    .str-tpill-sel { box-shadow:inset 3px 0 0 0 currentColor; padding-left:10px; }
+    .str-tp-pct { font-size:11px; font-weight:600; }
+    /* Selected holding — the one whose strategy block is showing below the dial.
+       A CARET TO THE LEFT, OUTSIDE THE PILL (user, 2026-08-12). It replaced an inset
+       left bar drawn in currentColor, which inherited the instrument's colour — purple
+       on QQQ — and read as an artifact rather than a state. That bar also added 4px of
+       left padding, so the selected pill was wider than its neighbours and the column
+       twitched whenever selection moved.
+       Putting the marker outside means it competes with nothing: the pill keeps its own
+       colour, fill, border and geometry, and legibility and selection stop fighting over
+       the same pixels — which is what went wrong with the bar.
+       The 10px fixed width is the point: the slot is reserved on EVERY row, so the
+       glyph appears and disappears without shifting anything. Same geometry as the
+       panel's existing .sec-caret / .sl-caret, at #f1f5f9 rather than their #64748b so
+       "selected" never reads as "collapsed". */
+    .str-sel-caret { display:inline-block; width:10px; flex-shrink:0;
+                     font-size:10px; line-height:1; color:#f1f5f9; }
     /* A live row can carry pill + weight + strategy state; let it wrap rather than
        overflow when the sidebar is narrow. */
     .str-col-live .str-hold { flex-wrap:wrap; margin-bottom:5px; }
@@ -532,6 +547,17 @@
             </div>
         </div>
 
+        <!-- ONE SCROLLBAR FOR THE WHOLE LOWER PANEL (user, 2026-08-12).
+             Previously only #sidebar-lists scrolled, while Macro / Rocket Strategy /
+             AI Bubble sat above it as shrink-0 siblings of the flex column. Three
+             expanded sections therefore squeezed the watchlist to nothing and the only
+             way to reach anything was to collapse a section — collapse was doing a
+             scrollbar's job. Wrapping all four in a single overflow-y-auto container
+             means the panel scrolls as one continuous surface and sections can be left
+             open. min-h-0 is load-bearing: without it a flex child refuses to shrink
+             below its content and the container never scrolls at all. -->
+        <div id="sidebar-scroll" class="flex-1 min-h-0 overflow-y-auto">
+
         <!-- Live Macro Regime — collapsible (collapse grammar shared with AI Bubble).
              The headline lives in <summary> so it SURVIVES collapse: full when open,
              clamped to its first two lines when collapsed (user, 2026-07-19). The
@@ -570,7 +596,12 @@
              See engine/live_config.py for why the values sit outside this repo.
 
              Deliberately over-detailed — cut rows toward the detail panel from here. -->
-        <details id="strategy-section" class="px-3 py-2 border-b border-slate-700 shrink-0" open>
+        <!-- NOT `open` by default (user, 2026-08-12): Live Macro is the only section
+             that should start expanded. This one previously had no persistCollapse()
+             registration either, so it ignored whatever you last did and re-expanded on
+             every reload from this hardcoded attribute. strategy.js now registers it,
+             so the default is closed and your own choice sticks thereafter. -->
+        <details id="strategy-section" class="px-3 py-2 border-b border-slate-700 shrink-0">
             <summary class="flex items-center gap-2">
                 <span class="sec-caret"></span>
                 <span class="str-lbl">Rocket Strategy</span>
@@ -624,7 +655,11 @@
              + STOPLIGHT_DESIGN.md. Data: GET /get_stoplight, rendered by
              static/js/stoplight.js. Collapsed header carries the freshest print
              (header-pin rule computed server-side). -->
-        <details id="stoplight-section" class="px-3 py-2 border-b border-slate-700 shrink-0" open>
+        <!-- Also not `open` by default, same rule as Rocket Strategy: Live Macro is the
+             only section that starts expanded. This one already registers
+             persistCollapse(), so in practice a saved preference wins and this attribute
+             only governs a first-ever load or cleared storage. -->
+        <details id="stoplight-section" class="px-3 py-2 border-b border-slate-700 shrink-0">
             <summary class="flex items-center gap-2">
                 <span class="sl-caret"></span>
                 <span class="sl-lbl">AI Bubble</span>
@@ -639,9 +674,13 @@
             <div id="stoplight-module" class="sl-module" style="display:none"></div>
         </details>
 
-        <div id="sidebar-lists" class="flex-1 overflow-y-auto p-2 space-y-2">
+        <!-- No longer the scroller itself — #sidebar-scroll above owns that now, so
+             this takes its natural height and flows with the sections above it. -->
+        <div id="sidebar-lists" class="p-2 space-y-2">
             <!-- JS populates <details> groups here via renderDashboard() -->
         </div>
+
+        </div><!-- /#sidebar-scroll -->
     </aside>
 
     <!-- RIGHT COLUMN -->

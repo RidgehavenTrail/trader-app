@@ -918,33 +918,82 @@ def macro_context(now=None):
     # varies between hourly regenerations. Observed live 2026-08-12: a dict at 14:05
     # ({"CPI (8:30 ET)": "RELEASED ..."}) and a LIST an hour later. Assuming dict cost
     # five AV calls — see the backoff note in run_due_news_pulls. Normalise anything.
-    dr = m.get('data_releases')
-    if isinstance(dr, dict):
-        rows = [f"{k}: {v}" for k, v in dr.items() if isinstance(v, str)]
-    elif isinstance(dr, list):
-        rows = []
-        for x in dr:
-            if isinstance(x, str):
-                rows.append(x)
-            elif isinstance(x, dict):
-                # e.g. {"name": "CPI", "status": "RELEASED ..."} — join the values in
-                # a stable order rather than guessing at key names.
-                rows.append(": ".join(str(v) for v in x.values() if isinstance(v, (str, int, float))))
-    else:
-        rows = []
-    released = [r for r in rows
-                if "RELEASED" in r.upper() and "NOT RELEASED" not in r.upper()]
+    # PREFERRED PATH (session 44): `released_figures` is PYTHON-AUTHORED by
+    # engine/release_data.py, straight from the publishing agency, with an explicit
+    # per-release status. It is a contract, not a sentence, so nothing below has to
+    # interpret wording to decide whether a number is real.
+    released = []
+    rf = m.get('released_figures')
+    if isinstance(rf, dict):
+        for r in rf.values():
+            if isinstance(r, dict) and r.get('status') == 'ok' and r.get('display'):
+                released.append(f"{r.get('label')}: {r['display']}")
+
+    # FALLBACK: the model's own `data_releases`, which still covers releases we have no
+    # deterministic source for (ISM, JOLTS, FOMC). Shape varies between regenerations
+    # -- observed live 2026-08-12 as a dict at 14:05 and a LIST an hour later, and
+    # assuming dict cost five AV calls. Normalise anything.
+    if not released:
+        dr = m.get('data_releases')
+        if isinstance(dr, dict):
+            rows = [f"{k}: {v}" for k, v in dr.items() if isinstance(v, str)]
+        elif isinstance(dr, list):
+            rows = []
+            for x in dr:
+                if isinstance(x, str):
+                    rows.append(x)
+                elif isinstance(x, dict):
+                    # e.g. {"name": "CPI", "status": "RELEASED ..."} — join the values in
+                    # a stable order rather than guessing at key names.
+                    rows.append(": ".join(str(v) for v in x.values() if isinstance(v, (str, int, float))))
+        elif isinstance(dr, str):
+            # THIRD shape, observed 2026-08-13 10:31 — dict at 08:37, list at 09:37, a
+            # bare comma-joined STRING at 10:31, from three consecutive runs of one
+            # prompt. Split only on separators that cannot appear inside a figure.
+            # NOT on commas, deliberately: "1,800K expected" would split mid-number and
+            # manufacture a row stating a fragment. One un-splittable blob is a worse
+            # row but an honest one, and the figure test below still gates it.
+            rows = [x.strip() for x in re.split(r"[;\n]", dr) if x.strip()]
+        else:
+            rows = []
+        # A ROW MUST CARRY AN ACTUAL FIGURE. "PPI (8:30 ET): RELEASED figure not found"
+        # passes the RELEASED test and explains exactly nothing -- on 2026-08-13 three
+        # such rows took three of the four context slots on every card. The comment
+        # above already says an unreleased print explains nothing; a released print
+        # with no figure is no different.
+        #
+        # "does it contain a digit" is NOT the test, and gets this exactly wrong: that
+        # row carries digits in BOTH the schedule "(8:30 ET)" and the expectation
+        # "(Expected +0.2% m/m)" while stating no actual number. Strip parenthesised
+        # segments first -- schedule and expectation both live there, the actual figure
+        # does not -- then require a digit in what remains.
+        def _states_a_figure(row):
+            bare = re.sub(r"\([^)]*\)", "", row)
+            if "NOT FOUND" in bare.upper() or "NOT YET IN HAND" in bare.upper():
+                return False
+            return any(ch.isdigit() for ch in bare)
+
+        released = [r for r in rows
+                    if "RELEASED" in r.upper() and "NOT RELEASED" not in r.upper()
+                    and _states_a_figure(r)]
     headline = (m.get('headline') or "").strip()
     if not released and not headline:
         return None
 
     lines = []
     if released:
-        lines.append("Macro data released today: " + "; ".join(released[:4]))
+        # "released today" was a lie waiting to happen: `released_figures` carries every
+        # print we hold, and payrolls/unemployment come from the month's first Friday.
+        # We store the PERIOD a figure covers, never the date it was published, so
+        # today-ness is not something this function can honestly assert. Say "recent"
+        # and let the model weigh it -- an overstated date is how a card ends up
+        # explaining a move with a week-old release.
+        lines.append("Recent macro prints: " + "; ".join(released[:4]))
     if headline:
         stamp = (m.get('updated_at') or "").strip()
         lines.append(f"Market read{f' ({stamp})' if stamp else ''}: {headline}")
-    print(f"[MACRO CONTEXT] supplying {len(released)} released print(s) as fallback context")
+    print(f"[MACRO CONTEXT] supplying {len(released)} released print(s) "
+          f"from {'released_figures' if rf else 'data_releases'}")
     return (
         "CONTEXT — MARKET-WIDE, NOT COMPANY NEWS.\n" + "\n".join(lines) + "\n"
         "NOTE: this describes the whole market, not this company. Offer it only if the "

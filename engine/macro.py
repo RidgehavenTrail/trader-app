@@ -102,12 +102,68 @@ def _release_anchor_passed(last_ok, now=None):
     return False
 
 
+# --- Deterministic context for the briefing (session 44) ----------------------
+# Between 08:35 and this hour, a price reaction is worth measuring; after it, the
+# 08:30 window is stale news and would just be noise on every hourly refresh.
+REACTION_WINDOW_END_HOUR = 11
+RELEASE_TIME_ET = (8, 30)
+
+
+def _deterministic_context(now):
+    """(figures_block, reaction_block, figures, reaction). NEVER raises.
+
+    Both halves are a BONUS on top of the briefing, exactly as peer/macro context is a
+    bonus on top of a news card -- and session 43 established what happens when a
+    cosmetic context builder is allowed to throw into a paid call's error path: the
+    paid pull is discarded and retried. Each half is wrapped separately so one failing
+    cannot cost us the other, or the Gemini call.
+    """
+    figures_block = reaction_block = ""
+    figures = reaction = None
+
+    try:
+        from engine.release_data import latest_releases
+        from engine.release_data import format_for_prompt as fmt_figures
+        figures = latest_releases(now=now)
+        block = fmt_figures(figures)
+        figures_block = f"\n{block}\n" if block else ""
+    except Exception as e:
+        print(f"[MACRO] release figures unavailable ({type(e).__name__}: {e}) "
+              f"— continuing without them")
+
+    try:
+        if now.weekday() < 5 and (
+                (now.hour, now.minute) >= RELEASE_TIME_ET
+                and now.hour < REACTION_WINDOW_END_HOUR):
+            from engine.release_reaction import measure_release_reaction
+            from engine.release_reaction import format_for_prompt as fmt_reaction
+            rel_dt = now.replace(hour=RELEASE_TIME_ET[0], minute=RELEASE_TIME_ET[1],
+                                 second=0, microsecond=0)
+            reaction = measure_release_reaction(rel_dt, now=now)
+            block = fmt_reaction(reaction)
+            reaction_block = f"\n{block}\n" if block else ""
+    except Exception as e:
+        print(f"[MACRO] release reaction unavailable ({type(e).__name__}: {e}) "
+              f"— continuing without it")
+
+    return figures_block, reaction_block, figures, reaction
+
+
 def generate_macro_regime():
     """
-    Fetches live ^TNX and ^VIX data via yfinance, then calls Gemini with
-    Google Search grounding to generate a market briefing headline and
-    2-3 sentence summary. Writes result to macro_regime.json.
+    Fetches live ^TNX and ^VIX data via yfinance, pulls the day's released FIGURES
+    from the publishing agency and measures the tape's REACTION to the 08:30 window,
+    then calls Gemini with Google Search grounding to write the briefing around them.
+    Writes result to macro_regime.json.
     Only runs during market hours (8am-4pm ET weekdays).
+
+    THE MODEL NO LONGER LOOKS UP NUMBERS. It is handed the figures and the measured
+    reaction and writes prose around them -- the same split the newsletter path uses
+    (model turns prose into primitives; Python owns everything computable). It exists
+    here because the reverse cost us a morning: on 2026-08-13 the model was asked to
+    search for a PPI print seven minutes old, correctly reported it could not find the
+    figure, and then wrote a headline saying markets awaited a release that had
+    already happened.
     """
     if not GEMINI_API_KEY:
         print("[MACRO] Gemini API key missing — skipping macro regime update.")
@@ -128,12 +184,15 @@ def generate_macro_regime():
         vix_price = round(float(vix_hist['Close'].iloc[-1]), 2)
         vix_change = round(float(vix_hist['Close'].iloc[-1]) - float(vix_hist['Close'].iloc[-2]), 2)
 
-        now_et = datetime.now(ET).strftime('%A %Y-%m-%d %I:%M %p ET')
+        now = datetime.now(ET)
+        now_et = now.strftime('%A %Y-%m-%d %I:%M %p ET')
+        figures_block, reaction_block, figures, reaction = _deterministic_context(now)
+
         prompt = f"""Search for today's market news and provide a concise market briefing.
 
 It is currently {now_et}. Anything scheduled for EARLIER today has already
 happened — treat it as reported, not upcoming.
-
+{figures_block}{reaction_block}
 Current market data:
 - 10-Year Treasury Yield: {tnx_price}% ({'+' if tnx_change >= 0 else ''}{tnx_change} today)
 - VIX: {vix_price} ({'+' if vix_change >= 0 else ''}{vix_change} today)
@@ -148,23 +207,55 @@ they outnumber the coverage of the actual print and will dominate the results.
 Do not let that make you describe a number that has already come out as though
 it is still expected.
 
-For every US economic release scheduled TODAY (CPI, PPI, PCE, payrolls, jobless
-claims, retail sales, GDP, ISM, consumer sentiment, JOLTS, FOMC), decide
-explicitly which of these is true:
+Any RELEASED FIGURES block above is AUTHORITATIVE — it was retrieved from the
+publishing agency itself. Do not search for those numbers, do not replace them
+with a figure you find elsewhere, and do not recompute them. Search is for
+narrative, positioning and reaction commentary, not for the prints.
+
+EVERY line of that block must appear in "data_releases" with its figure copied
+exactly as supplied — all of them, whatever agency each came from, matching by
+which release it is rather than by exact wording of the label. You already have
+those numbers: never write that a supplied figure is unavailable, missing or
+not in hand. (Observed failure: jobless claims were supplied as a figure and
+still written up as "not yet in hand" while the PPI lines were copied
+correctly.)
+
+Only for a US release scheduled TODAY that is NOT in that block (ISM, consumer
+sentiment, JOLTS, FOMC, GDP and anything else) decide which is true:
   RELEASED     - it has printed. Give the ACTUAL figure and what was expected.
   NOT RELEASED - its scheduled time has not arrived yet. Say so plainly.
 "NOT RELEASED" is a correct and expected answer — never guess a figure, and
-never present a preview as a result. If a release was scheduled for earlier
-today and you cannot find the actual number, say the figure was not found
-rather than describing it as upcoming.
+never present a preview as a result. If one of THOSE printed earlier today and
+you cannot find its number, say the figure is not yet in hand. Never describe a
+release that has already printed as upcoming, awaited or anticipated — that is
+a statement about the market, and it would be false.
+
+EXPECTATIONS are not supplied above. Where you give a consensus/expected figure
+it must come from your own sources, and you must NOT mark it as such in the
+text — see the formatting rule below.
+
+FORMATTING — every field is read by a person on a dashboard. Output PLAIN PROSE
+only: no citation markers, no bracketed source tags, no "[cite: ...]", no
+footnote markup, no references to "provided data" or to these instructions. If
+you cannot state something without a citation marker, state it without the
+marker or leave it out.
 
 Return ONLY a valid JSON object with exactly these three keys, no preamble,
 no markdown fences:
-"headline": A single punchy sentence capturing the dominant market theme today
-"summary": 2-3 sentences covering what's moving markets, major catalysts on
-deck today, and the current risk tone. Keep it concise and actionable for
-an active trader. A release that has already printed must be described in the
-past tense with its actual figure, never as awaited.
+"headline": A single punchy sentence capturing the dominant market theme today.
+A release that has already printed must NEVER be described as awaited or
+anticipated here, even when its figure is not in hand — if today's theme is a
+print, the headline is what it DID, not that it is coming.
+"summary": AT MOST 3 sentences covering what's moving markets, major catalysts
+on deck today, and the current risk tone. Concise and actionable for an active
+trader who is busy — every sentence must earn its place, and three short ones
+beat five. A release that has already printed must be described in the past
+tense: give its figure when one is supplied above, and otherwise say the figure
+is not yet in hand. Report LEVELS, not intraday moves: a percentage change over
+a time window is something the reader can see on a chart, so state where
+something IS ("yield down to 4.63%"), not how far it travelled and over how
+long. Mention an intraday move only when the price-action block above says it
+was notable, and then in one clause.
 "data_releases": One short line per US release scheduled today, each tagged
 RELEASED or NOT RELEASED, e.g. "Core PCE (8:30 ET): RELEASED +0.3% m/m vs
 +0.2% expected" or "CPI (8:30 ET Wed): NOT RELEASED". Use the exact string
@@ -198,6 +289,16 @@ RELEASED or NOT RELEASED, e.g. "Core PCE (8:30 ET): RELEASED +0.3% m/m vs
         macro_data['tnx_change'] = tnx_change
         macro_data['vix'] = vix_price
         macro_data['vix_change'] = vix_change
+        # PYTHON-AUTHORED, and persisted alongside the model's prose so downstream
+        # consumers can read the FIGURE rather than re-reading a sentence about it.
+        # macro_context() prefers these over the model's `data_releases` rows for
+        # exactly that reason: `data_releases` is prose in a dict, and prose is not a
+        # contract. Kept as separate keys rather than overwriting `data_releases`,
+        # because merging the two would mean string-matching the model's row labels
+        # against our release keys -- i.e. parsing prose to decide something, which is
+        # the one thing Python is never allowed to do here.
+        macro_data['released_figures'] = figures
+        macro_data['market_reaction'] = reaction
         macro_data['updated_at'] = datetime.now(ET).strftime('%I:%M %p ET')
 
         with open(MACRO_FILE, 'w') as f:

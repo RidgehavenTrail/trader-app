@@ -38,7 +38,36 @@ SHIPPED behavior, not a future target.)
 
 ## 2x Volume Indicator (priority 2)
 
-> **TWO CORRECTIONS, session 43 (2026-08-12) — read before touching this.**
+> **SESSION 44 (2026-08-13) SUPERSEDES CORRECTION (1) BELOW — the 1m fetch is GONE, and the
+> mechanism it was fixed for was never the one operating.** `compute_volume_ratio` now reads
+> today's cumulative volume from the LAST ROW OF THE DAILY FRAME, which it was already
+> fetching for the baseline. One call, one source, no 1-minute data anywhere.
+>
+> The session-43 fix trimmed multi-SESSION 1m responses. The real fault, caught live in 33
+> paired samples of both sources (3 corrupt, ~9%):
+> ```
+> 12:44:16  NVDA  195 bars  daily  52,781,066   1m 447,657,208   8.48x
+> 12:44:16  TSLA  195 bars  daily  15,516,464   1m  62,006,573   4.00x
+> 12:45:01  NVDA  195 bars  daily  52,850,045   1m  52,848,190   1.00x
+> ```
+> Correct bar count, ONE session, no duplicates — the per-bar Volume VALUES were transiently
+> inflated, clearing within one 45s sample, hitting two tickers at once while a third stayed
+> clean. **A session-trim can never see this.** The "about five sessions each" below was
+> inferred from the implied cumulative, never observed; a corrupt 1m read on NVDA computes to
+> 3.18x, which fits the same evidence with no extra sessions at all.
+> **The daily bar was correct and monotonic in all 33 samples**, including during both events,
+> on the very tickers that were corrupt — it is one row and nothing is summed, so it cannot
+> express this fault. NOT gated: a confirmation gate (cumulative volume cannot fall, so a 2x
+> read must survive a later sample) was designed and left unbuilt — this had not surfaced in a
+> month and the source switch removes the observed fault. Build the gate only if inflation
+> ever appears in the DAILY bar.
+>
+> **STILL OPEN (unfixed by choice):** `patch_actionable_move` unions `conditions` and the
+> volume branch only runs when the ratio is ABOVE 2.0, so nothing ever clears the tag or
+> corrects the stored ratio downward — one bad read survives until the midnight clear. That is
+> what left NVDA showing 2.8x all afternoon on a true 0.34x day.
+>
+> **TWO CORRECTIONS, session 43 (2026-08-12) — historical; (1) is superseded above.**
 > **(1) The 1m fetch must be trimmed to ONE session.** `compute_volume_ratio` summed
 > `stock.history(period="1d", interval="1m")` and trusted the period. yfinance serves 1-minute
 > data from a rolling ~7-day window and sometimes returns SEVERAL sessions, turning "volume so

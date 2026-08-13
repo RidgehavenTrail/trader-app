@@ -2395,7 +2395,7 @@ def fetch_loop(test_mode=False):
 
                     volume_ratio_val = None
                     if run_volume:
-                        vratio = compute_volume_ratio(stock)
+                        vratio = compute_volume_ratio(stock, today=now_et.date())
                         if vratio is not None and vratio >= VOLUME_TRIGGER_MULTIPLE:
                             fired.append("2x-volume")
                             volume_ratio_val = round(vratio, 1)

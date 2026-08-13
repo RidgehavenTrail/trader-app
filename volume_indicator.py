@@ -12,6 +12,17 @@ with yfinance's regular-session `Volume` field (not `fast_info`/pre-post).
 The math (`volume_ratio_from_data`) is split from the fetch (`compute_volume_ratio`)
 so the trigger logic can be unit-tested offline with injected arrays.
 """
+from datetime import datetime
+
+try:
+    from engine.common import ET
+except Exception:                                    # standalone / unit-test use
+    try:
+        from zoneinfo import ZoneInfo
+        ET = ZoneInfo("America/New_York")
+    except Exception:
+        import pytz
+        ET = pytz.timezone("America/New_York")
 
 VOLUME_TRIGGER_MULTIPLE = 2.0
 VOLUME_BASELINE_DAYS = 50
@@ -56,12 +67,47 @@ def volume_check_slot(now):
     return None
 
 
-def compute_volume_ratio(stock):
+def compute_volume_ratio(stock, today=None):
     """Fetch + compute the live 2x-volume ratio for a yfinance Ticker object.
 
     Reuses the caller's `stock` (same yfinance session). Returns the ratio as a
     float, or None on any data gap. Never raises — a data problem must not abort
     the caller's per-ticker pipeline.
+
+    ONE FETCH, ONE SOURCE. The last row of the daily frame IS today's cumulative
+    regular-session volume, so it serves as both the numerator and (once dropped)
+    the thing excluded from the baseline. This function used to fetch 1-minute bars
+    separately and sum them to reconstruct that same number — a second network call
+    per ticker per sweep, computing a value it already had in hand.
+
+    WHY THE 1m PATH IS GONE (2026-08-13, measured, not inferred). 33 paired samples
+    of both sources 45s apart, 3 of them corrupt (~9%):
+
+        12:44:16  NVDA  195 bars  daily  52,781,066   1m 447,657,208   8.48x
+        12:44:16  TSLA  195 bars  daily  15,516,464   1m  62,006,573   4.00x
+        12:45:01  NVDA  195 bars  daily  52,850,045   1m  52,848,190   1.00x
+
+    On every corrupt sample the BAR COUNT was correct and identical to the clean
+    samples either side, one session, no duplicates — the per-bar Volume VALUES were
+    simply inflated, transiently, clearing within one sample. It hit two tickers in
+    the same instant while a third stayed clean.
+
+    That matters because the previous guard trimmed multi-SESSION responses, and this
+    failure has one session and the right number of bars: the guard could never have
+    seen it. The session-43 note attributing NVDA's 3.2x to "about five sessions" was
+    inferred from the implied cumulative, never observed; a corrupt 1m read on NVDA
+    works out to 3.18x, which fits the same evidence without any extra sessions.
+
+    THE DAILY BAR WAS CORRECT AND MONOTONIC IN ALL 33 SAMPLES, including during both
+    corruption events, on the very tickers that were corrupt. It cannot express this
+    fault at all: one row, one session, nothing summed.
+
+    NOT GATED, deliberately (user, 2026-08-13). A confirmation gate — reject a 2x
+    read until a later sample confirms it at or above the same level, since cumulative
+    session volume cannot fall — was designed and left unbuilt: this had not surfaced
+    in a month, and the source switch removes the observed fault rather than defending
+    against it. If inflation ever appears in the DAILY bar, that gate is the fix, and
+    the invariant it rests on needs no threshold tuning.
     """
     try:
         daily = stock.history(period="3mo", prepost=False)
@@ -70,41 +116,17 @@ def compute_volume_ratio(stock):
         daily_vols = [float(v) for v in daily['Volume'].tolist()]
         if len(daily_vols) < 2:
             return None
-        # The last daily bar is TODAY's partial bar during market hours; its
-        # Volume duplicates the intraday sum below and must be dropped from the
-        # baseline so today doesn't contaminate its own average.
-        baseline_vols = daily_vols[:-1]
 
-        intraday = stock.history(period="1d", interval="1m", prepost=False)
-        if intraday.empty or 'Volume' not in intraday:
+        # FAIL CLOSED on a stale frame. Outside market hours, on a holiday, or against
+        # a lagging feed the last bar is a PRIOR session — whose full-day volume would
+        # read ~1x and, on a genuinely heavy prior session, could re-fire yesterday's
+        # trigger. No bar for today means no reading, which is not the same as a zero.
+        today = today or datetime.now(ET).date()
+        if daily.index[-1].date() != today:
             return None
 
-        # period="1d" is a REQUEST, not a guarantee. yfinance serves 1-minute data out
-        # of a rolling ~7-day window and has been observed returning SEVERAL sessions
-        # for this call. Summing them turns "volume so far today" into a multi-day
-        # total and inflates the ratio by however many sessions came back.
-        #
-        # Observed live 2026-08-12: NVDA reported 3.2x and TSLA 3.5x in the same sweep,
-        # on a day both traded BELOW average (true ratios 0.64x and 0.60x). The implied
-        # cumulatives were ~4.4 and ~5.4 full days — i.e. about five sessions each.
-        # Both fired 1-sigma-plus-volume cards and one burned a news pull.
-        #
-        # Keep only the LAST session present. Slicing on the last date rather than on
-        # the wall clock also means stale data fails SAFE: an all-yesterday response
-        # yields yesterday's full volume (~1x, no trigger) instead of a false spike.
-        try:
-            bar_dates = intraday.index.date
-            last_session = bar_dates[-1]
-            n_sessions = len(set(bar_dates))
-            if n_sessions > 1:
-                intraday = intraday[bar_dates == last_session]
-                print(f"[VOLUME] 1m fetch returned {n_sessions} sessions for a period='1d' "
-                      f"request — trimmed to {last_session} ({len(intraday)} bars)")
-        except Exception:
-            pass          # no usable index -> fall through and sum what we have
-
-        cumulative_today = float(intraday['Volume'].sum())
-
-        return volume_ratio_from_data(baseline_vols, cumulative_today)
+        # The last bar is today's PARTIAL bar: the numerator. Everything before it is
+        # the baseline — today must not contaminate its own average.
+        return volume_ratio_from_data(daily_vols[:-1], daily_vols[-1])
     except Exception:
         return None

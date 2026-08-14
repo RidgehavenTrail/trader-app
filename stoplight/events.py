@@ -415,8 +415,8 @@ def refresh_calendar(today=None):
                 _roll_release(ev, today, summary)
             elif etype == "weekly_sweep":
                 _roll_weekly(ev, today, summary)
-            # self_gate rows are computed elsewhere (the factor projects them);
-            # left untouched here so we never overwrite a real gate with a guess.
+            elif etype == "self_gate":
+                _refresh_self_gate(ev, today, summary)
         except Exception as e:
             summary["errors"].append(f"{ev.get('event_id')}: {type(e).__name__}: {e}")
 
@@ -426,6 +426,42 @@ def refresh_calendar(today=None):
     except Exception as e:
         summary["errors"].append(f"save: {type(e).__name__}: {e}")
     return summary
+
+
+def _refresh_self_gate(ev, today, summary):
+    """Point a self-gate row at the date its feeding factor currently projects.
+
+    A self-gate fires on ELAPSED TIME -- "no new 52-week high for 63 trading bars" --
+    so its date is a function of the last 52-week high and RESETS every time a new one
+    prints. It cannot be computed once.
+
+    This used to be a comment saying self-gate rows were "computed elsewhere (the
+    factor projects them)". Nothing was: no code anywhere wrote a self_gate date.
+    Measured 2026-08-13 -- copper's row still read 2026-09-01, computed on 2026-07-18
+    off a 2026-06-02 high, while copper had made a new high on 2026-08-05 that pushed
+    the real gate out by about two months. The LIGHT was correct throughout (it
+    recomputes from data every poll); only the stored date drifted, so the calendar
+    advertised a transition that was never going to happen on that day.
+
+    Reads the factor's own projection rather than recomputing here -- the factor owns
+    its gate rule (copper 63 bars on HG=F, heavy_haul 63 bars on its custom index) and
+    a second implementation would be free to disagree with it.
+    """
+    factors = (store.load_state() or {}).get("factors") or {}
+    for fid in ev.get("feeds") or []:
+        gate = ((factors.get(fid) or {}).get("extras") or {}).get("gate_date")
+        if not gate:
+            continue
+        old = ev.get("next_date")
+        if gate != old:
+            ev["next_date"] = gate
+            ev["date_status"] = "computed"
+            summary["changed"].append(
+                {"event_id": ev["event_id"], "from": old, "to": gate})
+        return
+    # No projection available yet -- the factor has not run since this shipped. Leave
+    # the stored date alone rather than blanking a row the UI is rendering.
+    summary["errors"].append(f"{ev.get('event_id')}: no gate_date from {ev.get('feeds')}")
 
 
 def _refresh_earnings(ev, today, summary):

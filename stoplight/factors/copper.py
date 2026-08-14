@@ -20,7 +20,7 @@ period="200d" is calendar days = too short). Reference (2026-07-18 spec):
 red, +8.7-8.9% vs 200MA, 52wk high 6.6495 on 2026-06-02 -> self-executing
 yellow gate ~Sep 1 absent a new high.
 """
-from ..sources.yfin import daily_closes, bars_since_52wk_high
+from ..sources.yfin import daily_closes, bars_since_52wk_high, project_gate_date
 
 GATE_BARS = 63
 
@@ -31,6 +31,7 @@ def compute():
     ma200 = float(px.tail(200).mean())
     vs200 = round((last / ma200 - 1) * 100, 1)
     high, high_date, bars_since = bars_since_52wk_high(px)
+    gate_date, gate_remaining = project_gate_date(px, GATE_BARS)
 
     if last < ma200:
         light, state = "green", "below_trend"
@@ -53,6 +54,10 @@ def compute():
             "high_date": high_date,
             "bars_since_high": bars_since,
             "gate_bars": GATE_BARS,
+            # Projected on every compute so the calendar row can be REFRESHED from it
+            # rather than pinned once -- see project_gate_date's note.
+            "gate_date": gate_date,
+            "gate_bars_remaining": gate_remaining,
             "source": "yfinance HG=F",
         },
     }

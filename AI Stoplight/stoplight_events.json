@@ -169,10 +169,10 @@
       "next_date": "2026-09-01",
       "date_status": "computed",
       "cadence": "one_time",
-      "source": "computed (63-bar off the June HG=F highs)",
+      "source": "computed from the factor's last 52-week high + 63 trading bars",
       "display": true,
       "status": "scheduled",
-      "note": "copper polls hourly regardless; this is the one-off ~Sep-1 transition gate"
+      "note": "copper polls hourly regardless; this is the one-off transition gate. next_date is RECOMPUTED each calendar refresh from the factor's projection — a new 52-week high resets it, so no date is hardcoded here"
     },
     {
       "event_id": "orcl_earnings",
@@ -193,10 +193,10 @@
       "next_date": "2026-09-10",
       "date_status": "computed",
       "cadence": "one_time",
-      "source": "computed (63-bar off the June highs)",
+      "source": "computed from the factor's last 52-week high + 63 trading bars",
       "display": true,
       "status": "scheduled",
-      "note": "heavy_haul polls daily regardless; this is the one-off ~Sep-10 transition gate"
+      "note": "heavy_haul polls daily regardless; this is the one-off transition gate. next_date is RECOMPUTED each calendar refresh from the factor's projection — a new 52-week high resets it, so no date is hardcoded here"
     },
     {
       "event_id": "mu_earnings",

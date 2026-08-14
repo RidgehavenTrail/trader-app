@@ -58,3 +58,41 @@ def bars_since_52wk_high(closes):
     high_idx = px.idxmax()
     bars_since = len(px) - 1 - px.index.get_loc(high_idx)
     return float(high), high_idx.date().isoformat(), int(bars_since)
+
+
+def project_gate_date(closes, gate_bars):
+    """When does "no new 52-week high for `gate_bars` bars" become true?
+
+    -> (iso_date, bars_remaining). Copper and heavy_haul both flip state on elapsed
+    TIME rather than on new information, so their transition date is knowable in
+    advance -- which is the only reason a self-gate has a calendar row at all.
+
+    IT MUST BE RECOMPUTED, NOT PINNED. The date is a function of the LAST 52-week
+    high, so any new high resets it. Observed 2026-08-13: the calendar still carried
+    copper's gate at 2026-09-01, computed on 2026-07-18 off a 2026-06-02 high, while
+    copper had actually made a new high on 2026-08-05 and pushed the real gate out by
+    roughly two months. The light was right the whole time -- it recomputes hourly
+    from data -- and only the stored date drifted.
+
+    bars_remaining <= 0 means the gate is already open, and the returned date is the
+    bar it opened on. Otherwise the date is projected forward over WEEKDAYS; without a
+    holiday calendar that runs slightly EARLY, which is the same direction the news
+    freshness cutoff errs and is stated for the same reason.
+    """
+    from datetime import timedelta
+
+    px = closes.tail(252)
+    high_pos = px.index.get_loc(px.idxmax())
+    gate_pos = high_pos + int(gate_bars)
+    remaining = gate_pos - (len(px) - 1)
+
+    if remaining <= 0:
+        return px.index[gate_pos].date().isoformat(), int(remaining)
+
+    d = px.index[-1].date()
+    left = remaining
+    while left > 0:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            left -= 1
+    return d.isoformat(), int(remaining)

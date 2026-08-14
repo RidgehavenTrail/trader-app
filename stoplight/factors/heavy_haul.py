@@ -27,7 +27,7 @@ orange gate ~Sep 10 absent a new high.
 """
 import pandas as pd
 
-from ..sources.yfin import batched_closes, bars_since_52wk_high
+from ..sources.yfin import batched_closes, bars_since_52wk_high, project_gate_date
 
 TICKERS = ["ODFL", "SAIA", "XPO", "ARCB",                    # LTL
            "KNX", "WERN", "HTLD", "MRTN", "SNDR", "CVLG",    # truckload
@@ -139,6 +139,7 @@ def compute():
     vs200 = round((last / ma200 - 1) * 100, 1)
     vs50 = round((last / ma50 - 1) * 100, 1)
     high, high_date, bars_since = bars_since_52wk_high(idx)
+    gate_date, gate_remaining = project_gate_date(idx, GATE_BARS)
 
     if last < ma200:
         light, state = "green", "below_trend"
@@ -165,6 +166,10 @@ def compute():
             "high_date": high_date,
             "bars_since_high": bars_since,
             "gate_bars": GATE_BARS,
+            # Same 63-bar gate as copper, so the same drift applies: recomputed every
+            # pass so the calendar row is refreshed rather than pinned.
+            "gate_date": gate_date,
+            "gate_bars_remaining": gate_remaining,
             "n_names": len(TICKERS),
             "index_level": round(last, 2),
             "base_date": BASE_DATE,

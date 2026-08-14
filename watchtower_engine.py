@@ -147,6 +147,28 @@ MATERIALITY_RULES = [
     (1,  "analyst",       r"upgrade|downgrade|price target|initiat\w+ coverage|reiterat|"
                           r"preferred list|conviction list|focus list|buy list|top pick|"
                           r"added to .{0,20}?list|resumes? coverage"),
+    # SECTOR MOVE (added 2026-08-14). A story about the GROUP moving can explain our
+    # move when nothing company-specific does -- and until now it could only ever score
+    # 0, because no rule described it. Observed on DDOG 2026-08-14: "monday.com and
+    # MongoDB lead AI software rally" (MongoDB is a listed DDOG peer) landed at tier 0
+    # on a +4.7% day, while the card reached for day-old CPI/PPI instead.
+    #
+    # Tier 1, alongside `analyst`: it is market commentary, not a company event, and
+    # that is honestly what it is worth. It does NOT need its own "penalise it if it
+    # doesn't name us" clause -- SHARED_COVERAGE_PENALTY already does exactly that, and
+    # simply had nothing above zero to bite on.
+    #
+    # Deliberately narrow. Measured over 501 live headlines it fires on 0.2%, and it
+    # rejects "Nvidia rallies to a record high" (single name, not a sector) and "3
+    # Stocks To Watch This Week" (SEO filler). Loose noun-matching here is what put 72%
+    # of one pool in the top tier; this needs a MOVE word next to a GROUP word.
+    (1,  "sector move",   r"\b(sector|group|peers?|complex)\b.{0,25}?"
+                          r"\b(rally|rallies|rout|sell-?off|surge|slump|slide|tumble)\b|"
+                          r"\b(rally|rallies|sell-?off|rout)\b.{0,30}?"
+                          r"\b(sector|stocks|shares|software|semis|chips|names)\b|"
+                          r"\b(stocks|shares|names)\b.{0,20}?"
+                          r"\b(rally|rallies|sell-?off|slump|slide|surge)\b|"
+                          r"\blead(s|ing)?\b.{0,20}?\b(rally|sell-?off|higher|lower)\b"),
 ]
 # Matched against the TITLE only — the title is what an article is *about*.
 # "CEO sells $36M ahead of earnings" is an insider-sale story, not an earnings one.
@@ -159,6 +181,18 @@ MATERIALITY_RULES = [
 # This is the one knob: raise it if sector coverage crowds out company news, lower it
 # if real sector drivers stay buried.
 SHARED_COVERAGE_PENALTY = 1.5
+
+# RSS items that land at tier 0 are discounted (user, 2026-08-14). Tier 0 is not a
+# judgement that a story is minor -- it is the DEFAULT, what you get when no rule
+# matched and the classifier could not place the article at all. On the AV side an
+# unclassified item still carries a relevance score to rank on; on the RSS side there
+# is no such second axis, so an unclassified RSS item is one we know nothing about on
+# EITHER dimension, and it should not sit level with an article we did classify.
+#
+# Applied ONLY at tier 0, not as a flat source penalty: a flat -1 dropped AVEX's own
+# earnings release from a clear lead into a tie with a content-mill summary of its
+# 10-Q, which is the exact failure adding the RSS source was meant to fix.
+RSS_TIER0_DISCOUNT = 1.0
 
 MATERIALITY_DEMOTIONS = [
     # The sell-verb pattern is deliberately loose about what sits between the verb
@@ -626,6 +660,18 @@ def _av_pace():
 # Weight bonus for an article whose HEADLINE names our ticker. Applied to weight, not
 # to tier, so it can lift a demoted item into view for situational awareness without
 # ever making it eligible to be a CAUSE — the band is decided by tier alone.
+# KEPT, ON NOTICE (user, 2026-08-14). Reviewed when the AV path gained company-name
+# aliases, which widened the bonus's reach: articles naming the company in prose
+# ("Pfizer CEO Buys...") now collect +3 where the bare-ticker match used to miss them.
+# Decision was to keep it, and to make it THE FIRST THING CUT if garbage AV articles
+# start outranking real events.
+#
+# If that day comes, check the sort key BEFORE touching this number. Measured
+# 2026-08-14: "Pfizer Stock: 3 Things To Watch This Week" (tier 0, weight 3.0) already
+# outranks "...Pfizer reports Q2 results above estimates" (tier 4, weight 5.5) -- not
+# on the bonus, which loses that comparison, but on the `leads` boolean, which is the
+# sort's PRIMARY key and beats every weight difference. Cutting the bonus would not fix
+# it; demoting `leads` to a tiebreak would.
 NAMED_BONUS = 3
 
 # Backoff when a pull could not be MADE (AV_UNAVAILABLE). An unavailable attempt keeps
@@ -842,6 +888,49 @@ TICKER_PEERS = {t: [p for p in members if p != t]
 EARNINGS_CAL_FILE = 'earnings_calendar.json'
 _earn_cal_lock = threading.Lock()
 
+COMPANY_NAME_FILE = 'company_names.json'
+_name_cache_lock = threading.Lock()
+
+
+def _company_names(tickers):
+    """{ticker: display name} for `tickers`, cached for the ET day.
+
+    EXISTS BECAUSE HEADLINES USE NAMES, NOT TICKERS. The RSS source's precision filter
+    matches a headline against the company it claims to be about, and the first
+    implementation took that name from the actionable card. Measured 2026-08-13: only
+    12 of 19 cards carried a real name -- CAG, ENB, MO, MU, PFE, PM and TGT had the
+    TICKER in the name field. So PFE's aliases were ['pfe'], and "5 Insightful Analyst
+    Questions From Pfizer's Q2 Earnings Call" -- a tier-4 article about its own
+    earnings -- scored 0.35 and was thrown away. Cards also only exist for tickers that
+    have already triggered, so anything without one degraded the same way.
+
+    Same shape as _earnings_calendar deliberately: ~1s per name, paid once per ticker
+    per ET day, cached to DISK so a restart does not re-pay it, and a name that fails
+    to resolve is cached as "" so a bad symbol does not retry all day.
+    """
+    from engine.common import atomic_write_json
+    today = datetime.now(ET).date().isoformat()
+    with _name_cache_lock:
+        try:
+            with open(COMPANY_NAME_FILE, encoding='utf-8') as f:
+                cache = json.load(f)
+        except (OSError, ValueError):
+            cache = {}
+        if cache.get('date') != today:
+            cache = {"date": today, "names": {}}
+        known = cache.setdefault('names', {})
+        missing = [t for t in tickers if t not in known]
+        if missing:
+            print(f"[NEWS RSS] resolving {len(missing)} company name(s)...")
+            for t in missing:
+                try:
+                    info = yf.Ticker(t).info or {}
+                    known[t] = (info.get('longName') or info.get('shortName') or "")
+                except Exception:
+                    known[t] = ""
+            atomic_write_json(COMPANY_NAME_FILE, cache)
+        return known
+
 
 def _earnings_calendar(tickers):
     """{ticker: [iso datetime strings]} for `tickers`, cached for the ET day.
@@ -922,18 +1011,43 @@ def macro_context(now=None):
     # engine/release_data.py, straight from the publishing agency, with an explicit
     # per-release status. It is a contract, not a sentence, so nothing below has to
     # interpret wording to decide whether a number is real.
+    # A FIGURE MUST BE FRESH BY THE SAME RULE AN ARTICLE IS (user, 2026-08-14). This
+    # used to admit every figure the store held, so DDOG's 2026-08-14 card explained a
+    # 4.7% move with CPI printed 08-12 and PPI printed 08-13 -- both BEFORE the
+    # 08-13 16:00 cutoff that had already discarded 49 of AV's 50 articles as stale.
+    # Articles were held to the window and macro was not.
+    #
+    # `first_seen` is when we OBSERVED the figure change (engine/release_data.py); an
+    # `estimated` stamp is a first sighting whose true publication date is unknowable,
+    # and unknown is NOT fresh -- it is excluded rather than assumed, which is the same
+    # rule applied to an undated article.
+    cutoff = _news_cutoff(now)
     released = []
     rf = m.get('released_figures')
     if isinstance(rf, dict):
         for r in rf.values():
-            if isinstance(r, dict) and r.get('status') == 'ok' and r.get('display'):
-                released.append(f"{r.get('label')}: {r['display']}")
+            if not (isinstance(r, dict) and r.get('status') == 'ok' and r.get('display')):
+                continue
+            fs = r.get('first_seen')
+            if not fs or r.get('first_seen_estimated'):
+                continue
+            try:
+                if datetime.fromisoformat(fs) < cutoff:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            released.append(f"{r.get('label')}: {r['display']}")
 
     # FALLBACK: the model's own `data_releases`, which still covers releases we have no
     # deterministic source for (ISM, JOLTS, FOMC). Shape varies between regenerations
     # -- observed live 2026-08-12 as a dict at 14:05 and a LIST an hour later, and
     # assuming dict cost five AV calls. Normalise anything.
-    if not released:
+    # FALLBACK ONLY WHEN THE STRUCTURED FIELD IS ABSENT, never when it is present and
+    # everything in it failed the freshness test. Keyed on `rf` rather than on
+    # `released` being empty, because "all of today's figures are stale" is a RESULT --
+    # falling through to undated prose there would reinstate the exact staleness the
+    # filter above exists to remove, by a second route.
+    if not released and not isinstance(rf, dict):
         dr = m.get('data_releases')
         if isinstance(dr, dict):
             rows = [f"{k}: {v}" for k, v in dr.items() if isinstance(v, str)]
@@ -1184,7 +1298,18 @@ def run_due_news_pulls():
                 _advance_after_empty(ticker, now)
                 continue
 
-            news_source = "Alpha Vantage"
+            # NAME THE SOURCES THAT ACTUALLY SUPPLIED THE CHOSEN HEADLINES. This was
+            # hardcoded "Alpha Vantage", which stopped being true the moment the pool
+            # gained a second feed -- a card could be attributed to AV while carrying a
+            # headline only Yahoo had. Falls back to the old label when meta is absent
+            # so a cached/degraded path still reads sensibly.
+            _SRC_LABELS = {"alpha_vantage": "Alpha Vantage", "yahoo_rss": "Yahoo RSS"}
+            _srcs = (news_meta or {}).get("sources") or ["alpha_vantage"]
+            news_source = " + ".join(_SRC_LABELS.get(s, s) for s in _srcs)
+            _corr = (news_meta or {}).get("corroborated") or 0
+            if _corr:
+                print(f"[NEWS PULL] {ticker}: {_corr} chosen headline(s) carried by "
+                      f"more than one source")
             set_cached_news(ticker, news_text, news_source)
             print(f"[NEWS PULL] {ticker}: {news_source.lower()} ({state} attempt) — synthesising")
             ai = generate_ai_synthesis(ticker, _opt_from_card(card), news_text,
@@ -1193,12 +1318,21 @@ def run_due_news_pulls():
             if not why.strip():
                 _advance_after_empty(ticker, now)
                 continue
-            patch_actionable_move(ticker, {
+            # CLEAR THE PENDING STATUS. "TRIGGERED - Synthesis Pending" is set when the
+            # card fires and was never cleared when the synthesis arrived, so a finished
+            # card kept advertising that it was still waiting -- observed on AVEX
+            # (2026-08-13) and DDOG (2026-08-14), both `news_state: done` with a written
+            # narrative and a status still claiming pending. Only that one string is
+            # rewritten; a volume/turtle status is left exactly as its trigger set it.
+            done_patch = {
                 "news_source": news_source, "why": why,
                 "structure": ai.get('structure', ''), "impact": ai.get('impact', ''),
                 "news_state": "done", "news_due_at": None,
-            })
-            print(f"[NEWS PULL] {ticker}: synthesis complete")
+            }
+            if (card.get('status') or '').strip() == "TRIGGERED - Synthesis Pending":
+                done_patch["status"] = "TRIGGERED - 1-sigma Move"
+            patch_actionable_move(ticker, done_patch)
+            print(f"[NEWS PULL] {ticker}: synthesis complete ({news_source})")
         except Exception as e:
             print(f"[NEWS PULL ERROR] {ticker}: {type(e).__name__}: {e}")
 
@@ -1444,6 +1578,29 @@ def fetch_latest_news(ticker_symbol):
         # loop broke at the first 3 that passed, which -- because the feed arrives
         # newest-first -- meant selection by recency. On a day of filing-aggregator
         # posts all three slots filled before a real catalyst was ever examined.
+        # ALIASES ARE RESOLVED ONCE, FOR BOTH PATHS. Headlines name COMPANIES, not
+        # tickers, and until now only the RSS path knew that. The AV path matched
+        # `\bAVEX\b` against "AEVEX Corp. Announces..." and scored named=False,
+        # leads=False -- forfeiting the +3 bonus and the lead key on an article plainly
+        # about the company. It is not an AVEX quirk: "Pfizer CEO Buys $1 Million of
+        # Stock" does not contain the string PFE either, so AV has been systematically
+        # under-scoring the company-specific articles it does carry, which is part of
+        # why its pools read as off-target filler.
+        #
+        # Falls back to ticker-only if the name lookup fails -- worse aboutness, but the
+        # article path must never break for want of a display name.
+        try:
+            from engine.news_rss import company_aliases, derive_relevance
+            _alias_peers = TICKER_PEERS.get(ticker_symbol) or []
+            _names = _company_names([ticker_symbol] + _alias_peers)
+            self_aliases = company_aliases(ticker_symbol, _names.get(ticker_symbol))
+        except Exception as e:
+            print(f"[NEWS ALIAS] {ticker_symbol}: name lookup unavailable "
+                  f"({type(e).__name__}: {e}) — matching on the ticker alone")
+            _names, _alias_peers = {}, []
+            self_aliases = [ticker_symbol.lower()]
+            company_aliases = derive_relevance = None
+
         candidates = []
         cutoff = _news_cutoff()
         stale = undated = 0
@@ -1515,9 +1672,15 @@ def fetch_latest_news(ticker_symbol):
             #             PRIMARY override below, so a piece plainly about this
             #             company is never demoted to background merely because its
             #             wording missed every catalyst keyword.
-            lead_pat = rf"^\W*({re.escape(ticker_symbol)})\b"
-            leads = bool(re.match(lead_pat, title, re.I))
-            named = bool(re.search(rf"\b{re.escape(ticker_symbol)}\b", title, re.I))
+            # Matched against COMPANY ALIASES (ticker + resolved name), not the bare
+            # ticker -- see the alias block above. Reuses derive_relevance's matcher
+            # rather than keeping a second copy of the same regexes on this side; only
+            # its named/leads verdicts are taken, since AV supplies its own relevance.
+            if derive_relevance is not None:
+                _, named, leads = derive_relevance(title, ticker_symbol, self_aliases)
+            else:
+                leads = bool(re.match(rf"^\W*({re.escape(ticker_symbol)})\b", title, re.I))
+                named = bool(re.search(rf"\b{re.escape(ticker_symbol)}\b", title, re.I))
 
             # The shared-coverage penalty is SUPPRESSED when our ticker leads. It
             # fired on 100% of one measured pool, which makes a flat penalty
@@ -1546,6 +1709,7 @@ def fetch_latest_news(ticker_symbol):
                 "leads": leads, "named": named, "top_ticker": top_ticker,
                 "gap": round(relevance - top_relevance, 2),
                 "weight": weight - penalty + bonus,
+                "source": "alpha_vantage",
             })
 
         if stale or undated:
@@ -1553,6 +1717,143 @@ def fetch_latest_news(ticker_symbol):
                   f"{cutoff:%Y-%m-%d %H:%M} ET"
                   + (f" and {undated} undated" if undated else "")
                   + f" (of {len(feed)}).")
+
+        # --- SECOND SOURCE: Yahoo RSS, free and quota-less --------------------
+        # AV is precise but can be EMPTY. On 2026-08-13 its whole corpus for AVEX was
+        # 10 articles, 1 of them fresh -- a content-mill 10-Q summary -- and it never
+        # carried the Q2 results at all. Yahoo's feed for the same ticker at the same
+        # moment had the company's own release, timestamped 16:01. AVEX IPO'd in April;
+        # for a young micro-cap AV's coverage is close to empty, and no amount of
+        # ranking fixes an empty pool.
+        #
+        # Ranked in the SAME pool rather than used as a fallback (user, 2026-08-13). A
+        # "only when AV is thin" gate is an arbitrary threshold: a name with three
+        # mediocre AV filings and a wire release on Yahoo would fail it and lose the
+        # release -- the same failure one notch up.
+        #
+        # RSS carries no ticker_sentiment, so relevance is DERIVED from the headline
+        # (see engine/news_rss.py) rather than defaulted to a constant, which would be
+        # a silent thumb on the scale whichever way it was set. The derived score is
+        # arranged so the EXISTING `relevance < 0.5` gate above rejects the
+        # not-about-us rung -- measured live, RSS filed an ABBV earnings call under
+        # PFE, a TDS results piece under VZ, and one Cerebras story under MRVL, INTC
+        # and AMD alike. Those score 0.35 and never enter the pool.
+        try:
+            from engine.news_rss import fetch_yahoo_rss
+            if derive_relevance is None:
+                raise RuntimeError("alias resolution unavailable")
+            # Reuses the aliases resolved once above; the name cache is per-ET-day, so
+            # the peer lookups are already paid for by this point.
+            aliases = self_aliases
+            peer_aliases = {p: company_aliases(p, _names.get(p)) for p in _alias_peers}
+            rss_items = fetch_yahoo_rss(ticker_symbol)
+            r_kept = r_peer = r_stale = r_unnamed = 0
+            for it in rss_items:
+                pub = it.get('published')
+                if pub is None or pub < cutoff:
+                    r_stale += 1
+                    continue
+                rtitle = it['title']
+                rweight, rlabel = _materiality(rtitle)
+                rrel, rnamed, rleads = derive_relevance(rtitle, ticker_symbol, aliases)
+
+                if rrel >= 0.5:
+                    # NO SHARED-COVERAGE PENALTY ON THE RSS PATH AT ALL (user,
+                    # 2026-08-14). Two attempts at one both failed for the same reason --
+                    # neither had anything real to key on:
+                    #   1. "does not LEAD with the ticker" -- that is how an editor chose
+                    #      to word a headline, not a fact about the article. "Does Datadog
+                    #      Still Trade Below Fair Value" is wholly about Datadog and was
+                    #      docked 1.5 for opening with "Does".
+                    #   2. "names one of our peers" -- better, but partial: it misses any
+                    #      comparison against a company not on our peer list (The Trade
+                    #      Desk, in the case that prompted this).
+                    # The AV path can penalise because AV SUPPLIES the co-tag set and a
+                    # per-ticker relevance score. Here there is no equivalent, and the
+                    # correct response to having no evidence is to score no adjustment.
+                    #
+                    # Peer detection is KEPT, as annotation rather than punishment: a
+                    # detected peer populates `co_tagged`, which fires the existing "Also
+                    # covers X -- may indicate a sector-wide move" note in the prompt. That
+                    # is what this file's own LRCX finding argues for -- co-tagging is
+                    # EVIDENCE for a sector story, so surface it to the model instead of
+                    # ranking the article down for it.
+                    rco = [(p, 0.0) for p, al in peer_aliases.items()
+                           if derive_relevance(rtitle, p, al)[1]]
+                    rpenalty = RSS_TIER0_DISCOUNT if rweight == 0 else 0
+                    # NO NAMED_BONUS ON THE RSS SIDE (user, 2026-08-14). On the AV path
+                    # naming is EVIDENCE -- some articles name us, most do not, so +3
+                    # discriminates. Here it is the ADMISSION CRITERION: derive_relevance
+                    # scores anything that does not name the company at 0.35, below the
+                    # 0.5 gate, so every surviving RSS item would earn the bonus. A
+                    # constant across a whole population ranks nothing within it, and
+                    # lifts all of it 3 points over AV's.
+                    #
+                    # Measured on DDOG 2026-08-14: three RSS pieces -- a valuation
+                    # think-piece, a peer comparison and a Cramer segment, none of them
+                    # analyst RATINGS, none a catalyst -- each scored 3.0 purely for
+                    # saying "Datadog", while AV's one fresh item (an AI-software rally
+                    # naming MongoDB, a listed peer) sat at -1.5. The bonus was worth
+                    # more than the entire distance from `general` to `corp action`.
+                    #
+                    # Without it an RSS item competes on MATERIALITY alone, which is the
+                    # point: AVEX's own earnings release still leads at tier 4, and
+                    # generic commentary no longer outranks a sector story.
+                    candidates.append({
+                        "title": rtitle, "summary": "", "relevance": rrel,
+                        "tier": rweight, "label": rlabel, "co_tagged": rco,
+                        "leads": rleads, "named": rnamed, "top_ticker": ticker_symbol,
+                        # gap is "how far behind the article's real subject we sit", which
+                        # AV measures from its relevance scores. RSS supplies nothing to
+                        # measure it with, so it stays 0.0 rather than carrying a number
+                        # we made up.
+                        "gap": 0.0,
+                        "weight": rweight - rpenalty,
+                        "source": "yahoo_rss",
+                    })
+                    r_kept += 1
+                    continue
+
+                # PEER READ-ACROSS (user, 2026-08-13). A headline that names none of our
+                # aliases may still be a PEER's event, and the board already prices that
+                # in: the derived peer-earnings block ranks at 2.5, which is tier-4
+                # earnings minus SHARED_COVERAGE_PENALTY. Applying that same offset to
+                # every tier generalises it -- a peer's corp action or FDA decision
+                # reads across too, and dropping it was the whitelist's blind spot:
+                #     earnings 4 -> 2.5    corp action / regulatory 3 -> 1.5
+                #     business 2 -> 0.5    general 0 -> below zero, never admitted
+                # The .5 is load-bearing (see the constant's own note): a peer item can
+                # never TIE an own-ticker item, so the ordering is fully determined.
+                hit = next((p for p, al in peer_aliases.items()
+                            if derive_relevance(rtitle, p, al)[1]), None)
+                if hit is None:
+                    r_unnamed += 1
+                    continue
+                peer_tier = rweight - SHARED_COVERAGE_PENALTY
+                if peer_tier <= 0:
+                    r_unnamed += 1
+                    continue
+                # top_ticker is the PEER on purpose: it makes _band's in-window earnings
+                # guard check whether THAT company actually reported, reusing the
+                # existing mechanism rather than adding a second one. No such gate for
+                # corp action / regulatory -- those headlines describe something that
+                # just happened, where an earnings piece routinely rehashes an old one.
+                candidates.append({
+                    "title": rtitle, "summary": "", "relevance": 0.6,
+                    "tier": peer_tier, "label": rlabel, "co_tagged": [(hit, 0.0)],
+                    "leads": False, "named": False, "top_ticker": hit,
+                    "gap": -0.10, "weight": peer_tier,
+                    "source": "yahoo_rss", "peer": hit,
+                })
+                r_peer += 1
+            if rss_items:
+                print(f"[NEWS RSS] {ticker_symbol}: {len(rss_items)} items — "
+                      f"{r_kept} kept, {r_peer} peer read-across, {r_stale} stale, "
+                      f"{r_unnamed} not about us or peers")
+        except Exception as e:
+            # A supplement must never break the pull it supplements.
+            print(f"[NEWS RSS] {ticker_symbol}: unavailable ({type(e).__name__}: {e}) "
+                  f"— continuing on Alpha Vantage alone")
 
         if not candidates:
             # NO ARTICLES IS NOT A SUCCESSFUL PULL, and the derived context tiers below
@@ -1638,16 +1939,46 @@ def fetch_latest_news(ticker_symbol):
         # feed gave the SAME CEO-share-sale piece twice, taking two of three slots.
         # Compared on a normalised title prefix -- reprints share a headline even
         # when the summary is reworded.
-        seen_titles, deduped = set(), []
+        # CORROBORATION (user, 2026-08-13): with two sources a duplicate stops being
+        # pure waste. If the same story comes back from more than one feed at the same
+        # tier, that is evidence it is the event worth reporting. So a duplicate is
+        # MERGED and the survivor counts how many distinct sources carried it, instead
+        # of being dropped and forgotten.
+        #
+        # What that number does NOT mean: several outlets rewriting one wire release
+        # are not several confirmations, they are one fact echoed. It measures how much
+        # the press CARED, not whether it is true -- so it ranks as a TIEBREAK among
+        # equals below, never as a promoter across tiers.
+        seen_titles, deduped = {}, []
         for c in candidates:
             key = re.sub(r"[^a-z0-9 ]", "", (c["title"] or "").lower())
             key = " ".join(key.split())[:60]
             if key and key in seen_titles:
-                print(f"[NEWS RANK] {ticker_symbol}: duplicate '{c['title'][:55]}...' — skipped")
+                kept = seen_titles[key]
+                src = c.get("source", "alpha_vantage")
+                if src not in kept["sources"]:
+                    kept["sources"].append(src)
+                    kept["corroboration"] = len(kept["sources"])
+                    print(f"[NEWS RANK] {ticker_symbol}: '{c['title'][:45]}...' also "
+                          f"carried by {src} — corroboration {kept['corroboration']}")
+                else:
+                    print(f"[NEWS RANK] {ticker_symbol}: duplicate '{c['title'][:55]}...' — skipped")
                 continue
-            seen_titles.add(key)
+            c["sources"] = [c.get("source", "alpha_vantage")]
+            c["corroboration"] = 1
+            if key:
+                seen_titles[key] = c
             deduped.append(c)
         candidates = deduped
+
+        # Re-rank now that corroboration is known — it cannot be part of the first
+        # sort because it is only discovered by deduping, and deduping keeps the
+        # best-ranked copy, which requires the first sort to have run. Inserted AFTER
+        # weight so it separates equals and never lifts a story over a higher tier.
+        candidates.sort(key=lambda c: (c["leads"] and c["tier"] >= 0, c["weight"],
+                                       c.get("corroboration", 1), c["gap"],
+                                       c["relevance"]),
+                        reverse=True)
 
         # --- BANDS ------------------------------------------------------------
         # Tiers exist to PRIORITISE by likely price impact, not to delete coverage:
@@ -1738,7 +2069,16 @@ def fetch_latest_news(ticker_symbol):
                 top_tier = max(top_tier, c["tier"])
             print(f"[NEWS RANK] {ticker_symbol}: chose [{band}] '{c['title'][:50]}...' [{_why(c)}]")
             notes = []
-            if c["co_tagged"]:
+            if c.get("peer"):
+                # A peer ARTICLE needs firmer framing than a co-tag note: this headline
+                # is ABOUT another company, and the model will otherwise write "Pfizer
+                # announced" off an AbbVie headline. Same rule the derived peer block
+                # carries, stated harder because an article invites the mistake more.
+                notes.append(
+                    f"This is {c['peer']}'s news, NOT {ticker_symbol}'s — sector "
+                    f"read-across only. Attribute it to the sector, and never state or "
+                    f"imply {ticker_symbol} did this.")
+            elif c["co_tagged"]:
                 peers = ", ".join(tk for tk, _ in c["co_tagged"][:5] if tk)
                 notes.append(f"Also covers {peers} — may indicate a sector-wide move "
                              f"rather than a company-specific one.")
@@ -1760,9 +2100,22 @@ def fetch_latest_news(ticker_symbol):
 
         if not headlines:
             return None, {"n_primary": 0, "n_catalyst": 0, "n_background": 0, "top_tier": -99}
+        # WHICH SOURCES ACTUALLY CONTRIBUTED. Without this the two-source pool is
+        # unauditable: DDOG's 2026-08-14 pull chose two headlines that BOTH feeds could
+        # plausibly have supplied, and nothing in the card, the cache or the prompt
+        # recorded which one did -- so "is the RSS source earning its place?" could not
+        # be answered from the artifacts at all. Derived from the CHOSEN items, not the
+        # pool, because a source that only ever supplies also-rans is not contributing.
+        picked_sources = []
+        for c, _b in chosen:
+            for s in (c.get("sources") or [c.get("source")] or []):
+                if s and s not in picked_sources:
+                    picked_sources.append(s)
         return "\n---\n".join(headlines), {
             "n_primary": n_primary, "n_catalyst": n_catalyst, "top_tier": top_tier,
-            "n_background": len(headlines) - n_primary}
+            "n_background": len(headlines) - n_primary,
+            "sources": picked_sources,
+            "corroborated": sum(1 for c, _ in chosen if (c.get("corroboration") or 1) > 1)}
 
     except Exception as e:
         # WHERE the failure happened decides whether retrying is sane.

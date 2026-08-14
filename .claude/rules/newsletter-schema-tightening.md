@@ -693,7 +693,11 @@ sequence index): e.g. `hg-long-closed-2026-06-08` vs `hg-long-2026-06-08`.
 split. If a close-event lives only in a prose `note` (as it did in some runs), Python
 is blind to it (§7 — Python never parses prose).
 
-Also open: the `structure` vs `type` field-naming decision (section 2).
+*(This line used to read "Also open: the `structure` vs `type` field-naming decision
+(section 2)." It was not open. §2 records it DECIDED on 2026-07-08 — the same day this
+file was written — as `structure`, a new field rather than the reused `type` name, and it
+shipped in `ef10326`. A status line outlived its own resolution by six hundred lines in
+the same document. Corrected 2026-08-14; nothing else in §8d changes.)*
 
 ## 9. Cross-trade synthesis (all 9 trades reviewed — 260608 high vs low)
 

@@ -58,6 +58,23 @@ BLS_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
 BLS_TIMEOUT = 45
 BLS_ATTEMPTS = 2                      # bounded. never a loop.
 
+# WHEN WE FIRST SAW EACH FIGURE. The store records the PERIOD a figure covers and has
+# no idea when it was published -- so a card explaining a 2026-08-14 move cited CPI
+# (printed 08-12) and PPI (printed 08-13), both of which are stale under the very
+# freshness cutoff every ARTICLE is held to. An article published 08-13 08:30 is
+# dropped; the same morning's PPI figure sailed through and became the explanation.
+#
+# There is no publication date in either source, so it is OBSERVED: when a release's
+# period changes between polls, it published between those two polls. The briefing runs
+# hourly in market hours, so the stamp lands within an hour of the print.
+#
+# `estimated` marks the FIRST sighting of a release, where the period did not change on
+# our watch and the true publication date could be a month ago. Those are unusable for
+# a freshness test and callers must treat them as unknown, not as fresh -- the whole
+# point is to stop asserting recency we cannot source. Each release self-corrects at its
+# next period rollover.
+SEEN_FILE = 'release_first_seen.json'
+
 
 # --- The releases -------------------------------------------------------------
 # Every id below was VERIFIED live against both sources on 2026-08-13 before being
@@ -219,6 +236,50 @@ def _derive(transform, value, previous):
     return None, None, None
 
 
+def _load_seen():
+    try:
+        with open(SEEN_FILE, encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _stamp_first_seen(results, now):
+    """Attach `first_seen` / `first_seen_estimated` to every ok result.
+
+    Writes only when something actually changed, so a poll that observes no new period
+    does not rewrite the file. Never raises -- a missing stamp degrades a caller to
+    "publication time unknown", which is a safe answer; losing the article path over a
+    bookkeeping file would not be.
+    """
+    try:
+        seen = _load_seen()
+        dirty = False
+        for name, r in results.items():
+            if r.get("status") != "ok" or not r.get("period"):
+                continue
+            prev = seen.get(name) or {}
+            if prev.get("period") != r["period"]:
+                # A period we have not recorded before. If we had a PREVIOUS period on
+                # file, the change happened between polls and this timestamp is real.
+                # If we had nothing, we are seeing it for the first time and the print
+                # could be weeks old.
+                seen[name] = {"period": r["period"],
+                              "first_seen": now.isoformat(),
+                              "estimated": not bool(prev.get("period"))}
+                dirty = True
+            r["first_seen"] = seen[name]["first_seen"]
+            r["first_seen_estimated"] = bool(seen[name].get("estimated"))
+        if dirty:
+            from engine.common import atomic_write_json
+            atomic_write_json(SEEN_FILE, seen)
+    except Exception as e:
+        print(f"[RELEASE DATA] first-seen bookkeeping failed "
+              f"({type(e).__name__}: {e}) — publication times will read as unknown")
+    return results
+
+
 def latest_releases(names=None, now=None):
     """Fetch several releases at once. -> {name: result dict}
 
@@ -305,7 +366,7 @@ def latest_releases(names=None, now=None):
                     + f"FRED unavailable: {type(e).__name__}"
 
         out[name] = res
-    return out
+    return _stamp_first_seen(out, now)
 
 
 def latest_release(name, now=None):

@@ -270,6 +270,11 @@
     .na-extra { font-size:11px; line-height:1.5; color:#94a3b8; margin-top:8px;
                 padding-top:8px; border-top:1px solid rgba(51,65,85,.7); }
     .na-empty { font-size:12px; color:#64748b; font-style:italic; }
+    /* Today's card when it has fired but not yet been synthesised. Sits ABOVE the
+       history so a pending state can never be mistaken for the latest news. */
+    .na-pending { font-size:11px; color:#fbbf24; background:rgba(251,191,36,0.07);
+                  border-left:2px solid rgba(251,191,36,0.5); padding:5px 8px;
+                  margin-bottom:8px; border-radius:2px; }
 
     #actionable-container {
         display: flex;
@@ -1020,17 +1025,17 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260810i"></script>
-<script src="static/js/watchlist.js?v=20260810i"></script>
-<script src="static/js/macro.js?v=20260810i"></script>
-<script src="static/js/stoplight.js?v=20260810i"></script>
-<script src="static/js/strategy.js?v=20260810i"></script>
-<script src="static/js/actionable.js?v=20260810i"></script>
-<script src="static/js/newsletter-cards.js?v=20260810i"></script>
-<script src="static/js/charts.js?v=20260810i"></script>
-<script src="static/js/news-archive.js?v=20260810i"></script>
-<script src="static/js/newsletter-dive.js?v=20260810i"></script>
-<script src="static/js/newsletter-digest.js?v=20260810i"></script>
-<script src="static/js/main.js?v=20260810i"></script>
+<script src="static/js/core.js?v=20260814a"></script>
+<script src="static/js/watchlist.js?v=20260814a"></script>
+<script src="static/js/macro.js?v=20260814a"></script>
+<script src="static/js/stoplight.js?v=20260814a"></script>
+<script src="static/js/strategy.js?v=20260814a"></script>
+<script src="static/js/actionable.js?v=20260814a"></script>
+<script src="static/js/newsletter-cards.js?v=20260814a"></script>
+<script src="static/js/charts.js?v=20260814a"></script>
+<script src="static/js/news-archive.js?v=20260814a"></script>
+<script src="static/js/newsletter-dive.js?v=20260814a"></script>
+<script src="static/js/newsletter-digest.js?v=20260814a"></script>
+<script src="static/js/main.js?v=20260814a"></script>
 </body>
 </html>

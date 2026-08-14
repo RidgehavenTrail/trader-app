@@ -56,6 +56,19 @@
                            `a mechanical-only fire does not create one.</div>`;
             return;
         }
+        // Today, fired but not yet synthesised: show the STATUS and nothing else. No
+        // prior day's narrative rides along underneath it — the whole point is that a
+        // pending state cannot be mistaken for the latest news, and older days remain
+        // one click away in the list beside it.
+        if (e.live && !e.has_news) {
+            el.innerHTML =
+                `<div class="na-meta">${esc(e.date || '')}` +
+                (e.status ? ` · ${esc(e.status)}` : '') +
+                (e.price ? ` · ${esc(String(e.price))}` : '') + `</div>` +
+                `<div class="na-pending">${esc((e.why || '').trim()
+                                               || 'Awaiting news pull.')}</div>`;
+            return;
+        }
         // structure/impact are the options-mechanics halves of the same synthesis.
         // They already have their own box lower in the pane, so only the extra
         // context that is NOT duplicated there rides along here.
@@ -91,8 +104,16 @@
                 // card fired on a mechanical trigger only carries no synthesis, so it
                 // is not an entry. Filtering here rather than server-side keeps the
                 // endpoint returning the full record for anything else that wants it.
-                _naEntries = ((d && d.entries) || []).filter(e => e.has_news);
-                _naSel = 0;     // every entry has news now, so newest IS the latest news
+                // TODAY ALWAYS GETS ITS OWN ROW, synthesis or not. has_news is a length
+                // test on `why` (>=120 chars server-side), so a status line like
+                // "Awaiting news pull @ 10:31 ET." can never pass it. Filtering on it
+                // alone — as this did — dropped today entirely and left YESTERDAY's
+                // synthesis sitting in the box, reading as if it were current. The
+                // filter stays correct for HISTORY (a mechanical-only fire is not an
+                // entry) and is simply not applied to the live card, which has a date
+                // of its own and belongs in the list whatever state it is in.
+                _naEntries = ((d && d.entries) || []).filter(e => e.live || e.has_news);
+                _naSel = 0;     // today first, so a pending state is what you land on
                 renderNewsList();
                 renderNewsBody();
             })

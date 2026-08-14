@@ -116,12 +116,31 @@ def build_archive(ticker):
     }
 
 
+def _live_pending(payload):
+    """Is today's entry a card that has fired but has no synthesis yet?
+
+    Such a payload must NOT be served from cache. The TTL is 5 minutes and assumes
+    what changes here changes daily -- true of the archive files, false of the live
+    card, which is exactly the entry that flips mid-session when a pull lands. The
+    panel now renders that pending state instead of hiding it, so a cached copy would
+    keep asserting "awaiting news pull" for up to five minutes AFTER the synthesis
+    arrived: a stale claim in place of what used to be a silent omission, which is the
+    worse of the two failures.
+
+    Only the pending case bypasses the cache, so a settled card still gets the full TTL.
+    """
+    for e in (payload or {}).get("entries") or []:
+        if e.get("live"):
+            return not e.get("has_news")
+    return False
+
+
 @bp.route('/get_news_archive/<ticker>', methods=['GET'])
 def get_news_archive(ticker):
     ticker = ticker.upper()
     with _lock:
         hit = _cache.get(ticker)
-        if hit and time.time() - hit[1] < CACHE_TTL_SECONDS:
+        if hit and time.time() - hit[1] < CACHE_TTL_SECONDS and not _live_pending(hit[0]):
             return jsonify(hit[0])
     try:
         payload = build_archive(ticker)

@@ -5,6 +5,32 @@
     // read endpoints, so every call in this file routes through one base.
     const API_BASE = 'http://localhost:5001';
 
+    // --- The right-hand column shows exactly ONE panel -------------------------------
+    //
+    // WHY THIS IS CENTRAL (2026-08-15). Every opener used to hide its siblings BY NAME:
+    // updateContext hid three, showNewsletterDive hid three, openBubbleDetail hid three.
+    // Adding a fourth panel therefore had to edit all three of them, and adding
+    // `strategy-dive` edited none — so opening the AI Bubble detail did not REPLACE the
+    // strategy panel, it left it visible and stacked underneath. Four openers each held a
+    // private copy of the list and three of them were wrong the moment the list changed.
+    //
+    // One list, one helper. A fifth panel is added HERE and nowhere else.
+    const DETAIL_PANELS = ['empty-state', 'populated-state', 'newsletter-dive',
+                           'ai-bubble-dive', 'strategy-dive'];
+    // `empty-state` carries `flex` statically in its markup; the dive panels have it ADDED
+    // on show. Toggling it off `empty-state` would break it the next time it is shown.
+    const DETAIL_PANELS_STATIC_FLEX = new Set(['empty-state']);
+
+    function showOnlyPanel(id) {
+        DETAIL_PANELS.forEach(p => {
+            const el = document.getElementById(p);
+            if (!el) return;
+            const on = (p === id);
+            el.classList.toggle('hidden', !on);
+            if (!DETAIL_PANELS_STATIC_FLEX.has(p)) el.classList.toggle('flex', on);
+        });
+    }
+
     // Persist a <details> section's open/closed state across reloads. The section
     // collapses natively on summary click; this restores the last state on load and
     // records changes to localStorage. Shared by the Macro + AI Bubble sidebar

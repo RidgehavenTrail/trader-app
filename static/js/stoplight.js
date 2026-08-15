@@ -128,11 +128,7 @@
     // stays until another entity is selected — no close button, matching dd/nd.
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
-        const hide = id => { const el = document.getElementById(id);
-                             el.classList.add('hidden'); el.classList.remove('flex'); };
-        hide('empty-state'); hide('populated-state'); hide('newsletter-dive');
-        const ab = document.getElementById('ai-bubble-dive');
-        ab.classList.remove('hidden'); ab.classList.add('flex');
+        showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
         switchBubbleTab('overview');
         renderBubbleOverview();
     }

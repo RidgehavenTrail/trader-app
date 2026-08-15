@@ -54,12 +54,7 @@
         if (!t) return; // empty store — nothing to dive into
         _ndDiveSeq++;
         const meta = getStatusMeta(t);
-        document.getElementById('empty-state').classList.add('hidden');
-        document.getElementById('populated-state').classList.add('hidden');
-        document.getElementById('populated-state').classList.remove('flex');
-        document.getElementById('ai-bubble-dive').classList.add('hidden');
-        document.getElementById('newsletter-dive').classList.remove('hidden');
-        document.getElementById('newsletter-dive').classList.add('flex');
+        showOnlyPanel('newsletter-dive');   // shared list in core.js — see DETAIL_PANELS
         // Restore the tab bar (an unresolved-stub dive hides it; a normal trade always shows it).
         document.getElementById('nd-tabs').style.display = '';
 

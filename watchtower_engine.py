@@ -826,6 +826,10 @@ def _advance_after_empty(ticker, now=None):
     now = now or datetime.now(ET)
     sweep = _sweep_time_today()
     if now < sweep:
+        # STATUS IS DELIBERATELY LEFT ALONE HERE. A card in this branch still has a
+        # pull due at the sweep, so "Synthesis Pending" is TRUE -- clearing it would
+        # replace an accurate status with a finished-looking one and hide that
+        # something is still coming. Only the terminal branch below is stale.
         patch_actionable_move(ticker, {
             "news_state": "retry", "news_due_at": sweep.timestamp(),
             "why": f"No news as of {now:%H:%M} ET — next pull @ {sweep:%H:%M} ET.",
@@ -834,12 +838,27 @@ def _advance_after_empty(ticker, now=None):
     else:
         # Stable wording ON PURPOSE — this is the string to count when asking how
         # often a flagged move never got a story (user, 2026-08-11).
-        patch_actionable_move(ticker, {
+        done_patch = {
             "news_state": "none", "news_due_at": None,
             "why": "No news surfaced today.",
             "structure": "No catalyst found in two attempts.",
             "impact": "Move unexplained by available coverage.",
-        })
+        }
+        # CLEAR THE PENDING STATUS ON THE NO-NEWS PATH TOO. The matching clear in
+        # run_due_news_pulls covers only a SUCCESSFUL synthesis, so a card that
+        # definitively finished with no story kept advertising that it was waiting
+        # -- observed on XNDU (2026-08-14), whose card read "No news surfaced today."
+        # beside a status of "TRIGGERED - Synthesis Pending". The trigger itself was
+        # real and is unchanged; only the narrative is absent, so it resolves to the
+        # same status a successful pull would leave. Read here rather than taken as
+        # an argument so a future caller cannot reintroduce this by omission.
+        # Exact-match guarded, like the success branch: "Synthesis Pending" is only
+        # ever set on the 1-sigma path, and a volume/turtle status must survive
+        # untouched.
+        card = (get_actionable_moves_local() or {}).get(ticker) or {}
+        if (card.get('status') or '').strip() == "TRIGGERED - Synthesis Pending":
+            done_patch["status"] = "TRIGGERED - 1-sigma Move"
+        patch_actionable_move(ticker, done_patch)
         print(f"[NEWS NONE] {ticker}: no news surfaced today — closed out")
 
 

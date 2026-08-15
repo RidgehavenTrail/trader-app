@@ -278,14 +278,18 @@ def _holding_state(h):
     change here. A failed build degrades to the unwired marker rather than blanking
     the holding.
     """
-    if h.get("strategy") == "qqq_system":
+    name = h.get("strategy")
+    if name:
         try:
-            from engine.qqq_system import get_state
-            s = get_state()
-            if s.get("ok"):
-                return s
+            from engine.qqq_system import STRATEGIES, get_state
+            if name in STRATEGIES:
+                s = get_state(name)
+                if s.get("ok"):
+                    return s
+            else:
+                print(f"[STRATEGY] holding declares unknown strategy {name!r}")
         except Exception as e:
-            print(f"[STRATEGY] qqq state failed: {type(e).__name__}: {e}")
+            print(f"[STRATEGY] {name} state failed: {type(e).__name__}: {e}")
         return {"ok": False, "state": "unavailable", "state_tier": "flat"}
     return {"ok": True, "state": "hold", "state_tier": "flat",
             "detail": "monthly rebal", "no_strategy": True}
@@ -370,7 +374,15 @@ def compute_dial():
 
 
 def _with_day_moves(payload):
-    """Attach live technicals to the LIVE holdings only.
+    """Attach live technicals to EVERY holding — the live column and the alternates.
+
+    WAS LIVE-ONLY (changed 2026-08-15). A vehicle sitting in a column the dial has not
+    selected still has a price, a day move and a 50/200 reading; withholding them made an
+    alternate's detail block render as a column of dashes, which reads as broken rather
+    than as unallocated. Which column is live is an ALLOCATION fact, and the column itself
+    already carries it. Symbols are deduped (QQQ is in two columns) and `_tech` batches
+    behind its own 60s quote cache, so covering the alternates costs a couple of extra
+    symbols on one call, not a call per column.
 
     Done HERE and not in compute_dial() on purpose: compute_dial's result is cached
     for six hours, and a six-hour-old quote rendered as "today's move" would be
@@ -378,14 +390,24 @@ def _with_day_moves(payload):
     """
     if not payload.get("ok"):
         return payload
-    tech = _tech([h["symbol"] for h in payload["holdings"]])
+
+    alts = payload.get("alternates") or []
+    symbols = {h["symbol"] for h in payload["holdings"]}
+    for a in alts:
+        symbols.update(h["symbol"] for h in (a.get("holdings") or []))
+    tech = _tech(sorted(symbols))
+
+    blank = {"price": None, "day_pct": None, "s50": None, "s200": None,
+             "gap_pct": None, "depth_pct": None, "era": None,
+             "era_days": None, "era_days_capped": False}
+
+    def _fill(h):
+        return dict(h, **(tech.get(h["symbol"]) or blank))
+
     return dict(payload,
-                holdings=[dict(h, **(tech.get(h["symbol"]) or
-                                     {"price": None, "day_pct": None, "s50": None,
-                                      "s200": None, "gap_pct": None,
-                                      "depth_pct": None, "era": None,
-                                      "era_days": None, "era_days_capped": False}))
-                          for h in payload["holdings"]])
+                holdings=[_fill(h) for h in payload["holdings"]],
+                alternates=[dict(a, holdings=[_fill(h) for h in (a.get("holdings") or [])])
+                            for a in alts])
 
 
 def get_dial():
@@ -410,3 +432,39 @@ def get_dial():
 @bp.route('/get_strategy_dial', methods=['GET'])
 def get_strategy_dial():
     return jsonify(get_dial())
+
+
+@bp.route('/get_ticker_strategy/<ticker>', methods=['GET'])
+def get_ticker_strategy(ticker):
+    """One ticker's strategy state, INDEPENDENT of what the dial has allocated.
+
+    WHY THIS EXISTS. `_holding_state()` is the only other way strategy state reaches the
+    UI, and it runs over the holdings the dial has made live — so a registered strategy on
+    a name the current regime does not hold could not be asked about itself at all. XLE off
+    a tightening dial is exactly that: the system has a live reading every day, and the
+    board could only show it in one regime out of three. Allocation and state are different
+    questions and this separates them.
+
+    Serves the CONTRACT dict unchanged, plus the ticker's own color so the deep-dive can
+    paint `state` the same way the sidebar does. A ticker with no registered strategy is a
+    200 with `has_strategy: false`, not a 404 — "nothing to show here" is a normal answer
+    for most of the watchlist, and a 404 would put an error in the console on every click.
+    """
+    t = (ticker or "").upper()
+    try:
+        from engine.qqq_system import BY_TICKER, get_state
+        key = BY_TICKER.get(t)
+        if not key:
+            return jsonify({"ok": True, "has_strategy": False, "ticker": t})
+        c = cfg()
+        return jsonify(dict(
+            get_state(key),
+            has_strategy=True, ticker=t, strategy=key,
+            color=c.TICKER_COLOR.get(t, c.TICKER_COLOR_DEFAULT),
+        ))
+    except Exception as e:
+        print(f"[STRATEGY] {t} ticker-strategy failed: {type(e).__name__}: {e}")
+        # Degrade to the unwired shape rather than a 500 — the deep-dive treats this
+        # exactly like a ticker with no strategy and simply shows nothing.
+        return jsonify({"ok": False, "has_strategy": False, "ticker": t,
+                        "error": f"{type(e).__name__}: {e}"})

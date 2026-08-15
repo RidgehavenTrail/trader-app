@@ -82,7 +82,17 @@
     // states each name once rather than listing the book twice.
     function strColumnHTML(label, color, holdings, isAlt) {
         const rows = holdings.map(h => {
-            if (isAlt) return `<div class="str-hold">${strTickerPillHTML(h, true)}</div>`;
+            if (isAlt) {
+                // The caret slot is emitted on ALTERNATE rows too (2026-08-15). Selection
+                // can now land in a column the dial has not allocated, and without a slot
+                // here the only visible effect of selecting one was the caret vanishing
+                // from the live column — the selection worked and looked like nothing had
+                // happened. Kept to the caret alone: the weight and state label stay off
+                // the alternates, which are deliberately the dimmed, minimal columns.
+                const carA = h.ticker === strSel ? '&#9654;' : '';
+                return `<div class="str-hold"><span class="str-sel-caret">${carA}</span>` +
+                       `${strTickerPillHTML(h, true)}</div>`;
+            }
             const st = h.state || {};
             const cls = st.wired ? 'str-st' : 'str-st-off';
             // The caret slot is emitted on EVERY live row, empty when unselected, so the
@@ -107,6 +117,59 @@
     function openStrategyTicker(ticker) {
         strSel = ticker;
         if (strLast) renderStrategyDial(strLast);
+    }
+
+    // Find a vehicle anywhere in the book — the live column OR a dimmed alternate.
+    // LIVE FIRST on purpose: a ticker can appear in two columns (QQQ is in both hold and
+    // tightening) and the live copy is the one the server filled `state` on, so the richer
+    // record wins. This is what lets a pill in a column the dial has not selected be
+    // selected and hold focus; it used to be looked up in the live column alone, so
+    // selecting XLE off a tightening dial was reset by the very next poll.
+    function strFindHolding(d, ticker) {
+        if (!d || !ticker) return null;
+        return (d.holdings || []).find(h => h.ticker === ticker)
+            || (d.alternates || []).reduce(
+                   (acc, a) => acc || (a.holdings || []).find(h => h.ticker === ticker),
+                   null)
+            || null;
+    }
+
+    // Strategy state for a vehicle the dial has NOT allocated.
+    //
+    // The dial payload builds state for the live column only, and that stays true: each
+    // build walks ~26 years of history, so with QQQ/MO/PM/GC/XLE all wired an eager
+    // payload would block a cold engine on five of them before the dial could paint. An
+    // alternate's state is therefore fetched ON SELECTION and cached here — the panel
+    // costs nothing for vehicles you are not looking at.
+    const STR_STATE_TTL_MS = 15 * 60 * 1000;
+    const _strState     = {};   // ticker -> {at, payload}   payload null = nothing to show
+    const _strStateWait = {};   // ticker -> true while a fetch is in flight
+
+    function strStateFor(h) {
+        if (!h || !h.strategy) return null;   // no rule declared -> nothing to fetch
+        if (h.state) return h.state;          // live column already carries it
+
+        const hit = _strState[h.ticker];
+        if (hit && (Date.now() - hit.at) < STR_STATE_TTL_MS) return hit.payload;
+
+        if (!_strStateWait[h.ticker]) {
+            _strStateWait[h.ticker] = true;
+            fetch(`${API_BASE}/get_ticker_strategy/${encodeURIComponent(h.ticker)}`)
+                .then(r => r.json())
+                // CACHE THE NEGATIVE TOO. A vehicle whose build failed would otherwise be
+                // re-fetched on every poll, turning a broken strategy into a request loop.
+                .then(p => { _strState[h.ticker] =
+                                 { at: Date.now(),
+                                   payload: (p && p.ok && p.has_strategy) ? p : null }; })
+                .catch(() => { _strState[h.ticker] = { at: Date.now(), payload: null }; })
+                .finally(() => {
+                    _strStateWait[h.ticker] = false;
+                    if (strLast) renderStrategyDial(strLast);   // repaint with what landed
+                });
+        }
+        // Serve the stale payload while a refresh is in flight rather than blanking the
+        // block; on a first fetch there is nothing yet and this pass renders without it.
+        return hit ? hit.payload : null;
     }
 
     // Label / value / footnote as three SIBLINGS, not a nested pair — .str-v is
@@ -160,7 +223,9 @@
         if (!box) return;
         if (!h) { box.innerHTML = ''; return; }
 
-        const st = h.state || {};
+        // strStateFor returns the live column's own `state` untouched, and only reaches
+        // for the endpoint when the selected vehicle is an alternate.
+        const st = strStateFor(h) || h.state || {};
         const hasStrategy = !!h.strategy && st.ok && !st.no_strategy;
         // Era: the STRATEGY's own reading wins for the name it governs. It walks the
         // full unadjusted history the system actually trades on, where the generic
@@ -185,10 +250,32 @@
             // The open position's P&L rides as State's FOOTNOTE rather than taking a
             // row of its own (user, 2026-08-10): it is a property of the state, not a
             // peer fact, and it still carries gain/loss color there.
+            // PHASE GOES IN THE FOOTNOTE COLUMN, AND ONLY WHEN FLAT (user, 2026-08-15).
+            // Two rules, both his:
+            //   ACTIVE state -> no phase at all. "50MA dip" already names what is on; the
+            //   cycle position adds nothing a reader needs there.
+            //   CASH -> the phase explains it, because Cash reads identically whether the
+            //   gate is holding the slot, B1 has yet to fire, or B1 is done.
+            // It rides the THIRD span, never the value cell. `.str-v` is fixed at 66px, so
+            // anything appended there wraps and costs the block a line — which is what made
+            // the section look sloppy on the first attempt.
+            // The two are mutually exclusive by construction: a flat system has no P&L, so
+            // the footnote is free exactly when the phase needs it.
             rows += strRow('State', esc(st.state),
-                           st.pnl_pct === null || st.pnl_pct === undefined
-                               ? null : strPct(st.pnl_pct),
+                           (st.pnl_pct === null || st.pnl_pct === undefined)
+                               ? (st.state_tier === 'flat' && st.phase ? esc(st.phase) : null)
+                               : strPct(st.pnl_pct),
                            strStateColor(st.state_tier, h.color));
+            // THE PRICE THAT WOULD OPEN A POSITION — shown only while FLAT, because that is
+            // the only time it is the next thing to happen. Colored in the instrument's own
+            // hue at 55% so it reads as belonging to this name but is visibly NOT the solid
+            // tone a held position wears: a target, not a fill.
+            if (st.state_tier === 'flat'
+                && st.trigger !== null && st.trigger !== undefined) {
+                rows += strRow('entry @', st.trigger.toFixed(2),
+                               esc(st.trigger_basis || 'trigger'),
+                               strHexToRgba(h.color, 0.55));
+            }
             // Days held sit in parentheses after the entry DATE — the date is what
             // they qualify. Both rows are skipped when flat, and `target` is null on
             // the strategy's timer-based sleeves, which have no price target.
@@ -202,6 +289,13 @@
                 rows += strRow('target', st.target.toFixed(2),
                                st.target_mult ? `fill ×${st.target_mult}` : 'target');
             }
+        } else if (h.strategy && _strStateWait[h.ticker]) {
+            // A DECLARED strategy whose first read is still running. Without this branch
+            // the block fell through to "no strategy" for the ~minute the build takes —
+            // asserting the vehicle has no rule at the exact moment it is proving it has
+            // one. The state is unknown here, not absent, and the row says so.
+            rows += strRow('State', '<span class="str-st-off">building…</span>',
+                           'first read walks ~26 years');
         } else {
             rows += strRow('State', '<span class="str-st-off">no strategy</span>',
                            'held · monthly rebal');
@@ -295,7 +389,10 @@
         // largest weight. Re-validated every render so a regime flip (which swaps
         // the whole book) cannot leave a stale ticker selected.
         strLast = d;
-        if (!d.holdings.some(h => h.ticker === strSel)) {
+        // Validated across the WHOLE book now, so a deliberately-selected alternate
+        // survives the poll. The DEFAULT is unchanged — still the live column's rule
+        // holding — so nothing auto-selects a vehicle the dial has not allocated.
+        if (!strFindHolding(d, strSel)) {
             const withRule = d.holdings.find(h => h.strategy);
             strSel = (withRule || d.holdings[0] || {}).ticker || null;
         }
@@ -305,7 +402,7 @@
             strColumnHTML(d.label, d.color, d.holdings, false) +
             d.alternates.map(a => strColumnHTML(a.label, a.color, a.holdings, true)).join('');
 
-        renderStrategyStock(d.holdings.find(h => h.ticker === strSel));
+        renderStrategyStock(strFindHolding(d, strSel));
     }
 
     function fetchStrategyDial() {

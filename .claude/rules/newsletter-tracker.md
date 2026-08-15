@@ -13,7 +13,9 @@ paths:
 
 **2026-07-13 — `watchtower.html` JS split into `static/js/` modules (no logic change).**
 The single ~1,900-line inline `<script>` was extracted into nine files under
-`static/js/`; **eleven as of session 42** (`strategy.js`, `news-archive.js` added); `watchtower.html` dropped 2,410 → ~520 lines (markup + CSS + the
+`static/js/`; **eleven as of session 42** (`strategy.js`, `news-archive.js` added), **thirteen
+as of 2026-08-15** (`strategy-dive.js` added; the count line itself had gone stale, which is
+why it now carries a date); `watchtower.html` dropped 2,410 → ~520 lines (markup + CSS + the
 `<script src>` tags). **These are CLASSIC scripts, NOT ES modules** — every function
 stays global, so the `onclick="fn(...)"` handlers in the markup keep working with zero
 changes. **Do not add `import`/`export` or `type="module"`** (that would scope the
@@ -25,13 +27,15 @@ where noted below.
 
 | File | Concern | Notable globals it declares |
 |------|---------|------------------------------|
-| `core.js` | shared helpers (`esc`, `initHorizontalScrollStrip`), `API_BASE` | `API_BASE` |
+| `core.js` | shared helpers (`esc`, `initHorizontalScrollStrip`), `API_BASE`, **the detail-panel switch** | `API_BASE`, **`DETAIL_PANELS`/`showOnlyPanel`** |
 | `watchlist.js` | left panel / market-data sidebar (`renderDashboard`, `addStock`, …) | `categories`, `openStates` |
 | `macro.js` | macro panel + self-waking poll clock | `MACRO_*` consts |
+| `stoplight.js` | AI Bubble sidebar section + its detail panel (`openBubbleDetail`, `switchBubbleTab`) | `_abFactor` |
 | `actionable.js` | Actionable Moves strip + ticker deep-dive triggers | `dynamicContextData`, `TRIGGER_DEFS` |
 | `newsletter-cards.js` | plays strip + all card/trade rendering | **`NEWSLETTER_TRADES`/`NEWSLETTER_ISSUE`/`newsletterEditions`** |
 | `charts.js` | tab control + chart tab + `updateContext` (ticker dive) | `viewState` |
-| `strategy.js` | Rocket Strategy sidebar section (Fed dial + selected holding) | `STR_POLL_MS`, `strSel` |
+| `strategy.js` | Rocket Strategy sidebar section (Fed dial + selected holding) | `STR_POLL_MS`, `strSel`, `strLast`, `strFindHolding` |
+| `strategy-dive.js` | Rocket Strategy DETAIL panel — Strategy/Chart/Dial tabs, the chart's strategy levels | `_sdSeq` |
 | `news-archive.js` | per-ticker news history inside the "Why" box | `_naEntries`, `_naSel` |
 | `newsletter-dive.js` | thesis deep-dive panel | `_ndDiveSeq` |
 | `newsletter-digest.js` | weekly digest + import + Past Editions | `digestOpen`, `openDropdownEl`, `viewingPastStem` |
@@ -40,6 +44,26 @@ where noted below.
 The three cross-file newsletter globals (`NEWSLETTER_TRADES` etc.) are declared at the
 top of `newsletter-cards.js`; `newsletter-dive.js`/`-digest.js` read them at runtime
 (fine — classic scripts share one global scope, and nothing cross-calls at parse time).
+`strategy-dive.js` reads `strLast`/`strFindHolding`/`strRow` from `strategy.js` and
+`viewState`/`loadChart`/`switchTab` from `charts.js` the same way — note it loads BEFORE
+`charts.js`, which is safe only because every one of those references is inside a function
+body, evaluated on click rather than at parse time.
+
+**ONE PANEL AT A TIME — `showOnlyPanel(id)` in `core.js` (2026-08-15).** The right-hand
+column holds five mutually exclusive panels (`empty-state`, `populated-state`,
+`newsletter-dive`, `ai-bubble-dive`, `strategy-dive`). Each opener used to hide its
+siblings BY NAME, so a new panel had to be added to every existing opener and adding
+`strategy-dive` was added to none of them — the AI Bubble detail rendered *beside* it
+instead of replacing it. **Add a sixth panel to `DETAIL_PANELS` and nowhere else.**
+`empty-state` is excepted from the `flex` toggle: it carries that class statically in
+markup, so toggling it off breaks it on the next show.
+
+**`switchTab(view, tabName)` reads its pane names off the tab strip's own `data-view`
+attributes** (2026-08-15). It used to iterate a hardcoded
+`['narrative','chart','options']` — the dd/nd vocabulary — so `sd`'s Strategy/Chart/Dial
+panes would have been left untouched while the buttons restyled. A panel's tab strip is
+the authority on its own panes. Charts stay LAZY (built on tab selection, never on open):
+a chart built into a `display:none` pane measures zero and renders collapsed.
 Served the same way as before (`python -m http.server` from the main dir serves the
 whole tree, so `static/js/*` resolves with no config). This retires the session-10
 "File size note" refactor item further down.

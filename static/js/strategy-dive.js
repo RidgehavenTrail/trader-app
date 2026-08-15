@@ -16,12 +16,12 @@
 // buffer for seeding. This file only supplies the entity and the levels to draw.
 
     let _sdSeq = 0;          // stale-guard: a slow fetch must not paint over a newer open
-    let _sdTicker = null;    // what the panel is currently showing
 
-    function hideStrategyDive() {
-        document.getElementById('strategy-dive')?.classList.add('hidden');
-        _sdTicker = null;
-    }
+    // NO hideStrategyDive(). One was written for symmetry and never called: every other
+    // panel's opener hides this one through showOnlyPanel(), so a private hide would be a
+    // second way to do the same thing and the first to fall out of step. `_sdTicker` went
+    // with it — that function was its only reader, so keeping it left a variable written
+    // on every open and consulted by nothing.
 
     // The levels the chart draws, derived from the CONTRACT and nothing else.
     //
@@ -160,7 +160,6 @@
     async function showStrategyDive(ticker) {
         if (!ticker) return;
         const seq = ++_sdSeq;
-        _sdTicker = ticker;
 
         if (!document.getElementById('strategy-dive')) return;
         showOnlyPanel('strategy-dive');     // shared list in core.js — see DETAIL_PANELS

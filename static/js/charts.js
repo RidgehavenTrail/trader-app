@@ -2,7 +2,11 @@
 
     const viewState = {
         dd: { entity: null, chart: null, series: null, loadedFor: null },
-        nd: { entity: null, chart: null, series: null, loadedFor: null }
+        nd: { entity: null, chart: null, series: null, loadedFor: null },
+        // `sd` = the Rocket Strategy detail panel (static/js/strategy-dive.js). Same shape
+        // as the other two plus `levels`: the horizontal price lines the strategy wants
+        // drawn on its own chart (entry/target while holding, the trigger while flat).
+        sd: { entity: null, chart: null, series: null, loadedFor: null, levels: [] }
     };
 
     function setTabsForAssetClass(view, assetClass) {
@@ -26,13 +30,20 @@
 
     function switchTab(view, tabName) {
         const tabsEl = document.getElementById(view + '-tabs');
-        tabsEl.querySelectorAll('.view-tab').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === tabName);
-        });
-        ['narrative', 'chart', 'options'].forEach(name => {
+        if (!tabsEl) return;
+        const btns = [...tabsEl.querySelectorAll('.view-tab')];
+        btns.forEach(btn => btn.classList.toggle('active', btn.dataset.view === tabName));
+        // PANE NAMES COME FROM THE BUTTONS, not a hardcoded list. This used to be
+        // ['narrative','chart','options'] — the dd/nd vocabulary — so the strategy panel's
+        // own tabs (strategy/chart/dial) would have switched the button styling and left
+        // every pane exactly as it was. A panel's tab strip is the authority on its own
+        // panes; anything else is a second copy of the same list waiting to disagree.
+        btns.map(b => b.dataset.view).forEach(name => {
             const pane = document.getElementById(view + '-pane-' + name);
             if (pane) pane.classList.toggle('hidden', name !== tabName);
         });
+        // Charts stay LAZY — a chart built into a display:none pane measures zero and
+        // renders collapsed, which is why this fires on selection rather than on open.
         if (tabName === 'chart') loadChart(view);
     }
 
@@ -268,6 +279,48 @@
         chart.timeScale().fitContent();
         viewState[view].chart = chart;
         viewState[view].series = series;
+        // A chart rebuilt under a view that carries levels redraws them itself, so the
+        // caller never has to sequence "load, then draw" — which matters because the
+        // strategy panel starts its chart BEFORE its state has arrived.
+        drawStrategyLevels(view);
+    }
+
+    // Horizontal levels on a price series — the strategy panel's entry/target/trigger.
+    //
+    // IDEMPOTENT BY CONSTRUCTION. The chart and the strategy state arrive on independent
+    // round trips in either order, so this is called from both and each call removes the
+    // lines it drew last time before drawing again. Without that, a slow state response
+    // landing after a chart rebuild would stack a second set of lines on the first.
+    function drawStrategyLevels(view) {
+        const state = viewState[view];
+        if (!state || !state.series) return;
+        (state._priceLines || []).forEach(pl => {
+            try { state.series.removePriceLine(pl); } catch (e) { /* series already gone */ }
+        });
+        state._priceLines = (state.levels || []).map(l => state.series.createPriceLine({
+            price: l.price,
+            color: l.color,
+            lineWidth: 1,
+            // Dashed, always: a level is a line the price has NOT reached (or a fill that
+            // is already history). Solid would read as another data series.
+            // Read through a guard — LineStyle is a library enum, and a version that moved
+            // or renamed it would throw here and take every level down with it.
+            lineStyle: (window.LightweightCharts && LightweightCharts.LineStyle
+                        && LightweightCharts.LineStyle.Dashed) || 2,
+            // THE LABEL LIVES IN THE AXIS GUTTER, NOT ON THE PANE (user, 2026-08-15).
+            // A price line's `title` is drawn inside the plot area hard against the price
+            // scale, and Lightweight Charts gives it no position option — so the text sat
+            // exactly where the candles matter most, and worst of all precisely when price
+            // approached the level, which is when the chart is being read closely.
+            //
+            // axisLabelVisible puts the LEVEL ITSELF in the right-hand gutter, tinted with
+            // the line's own colour, outside the plot area. Nothing is lost: the facts strip
+            // above the chart already names entry / target / entry @ with their values, and
+            // the colours match it. The gutter also stacks colliding labels rather than
+            // burying them — the same property the SMA overlays rely on above.
+            axisLabelVisible: true,
+            title: '',
+        }));
     }
 
     function renderLineChart(view, container, points, color, sma50, sma200) {
@@ -293,11 +346,7 @@
     function updateContext(ticker) {
         const d = dynamicContextData[ticker];
         if (!d) return;
-        document.getElementById('empty-state').classList.add('hidden');
-        document.getElementById('newsletter-dive').classList.add('hidden');
-        document.getElementById('ai-bubble-dive').classList.add('hidden');
-        document.getElementById('populated-state').classList.remove('hidden');
-        document.getElementById('populated-state').classList.add('flex');
+        showOnlyPanel('populated-state');   // shared list in core.js — see DETAIL_PANELS
 
         const assetClass = 'equity'; // Actionable Moves are equity/ETF-only today
 

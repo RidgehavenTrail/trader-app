@@ -112,11 +112,15 @@
     // left panel shows one holding at a time (user, 2026-08-10). Re-renders off the
     // cached payload, so selecting is instant and costs no fetch.
     //
-    // This is also the hook the future strategy DETAIL panel should hang off; today
-    // it only drives the left-panel selection.
+    // THE DETAIL PANEL IS NO LONGER "FUTURE" (2026-08-15). This comment used to read "the
+    // hook the future strategy DETAIL panel should hang off; today it only drives the
+    // left-panel selection" — accurate when written, and it outlived its own resolution the
+    // moment strategy-dive.js landed. A pill click now does both: selects into the sidebar
+    // block AND opens the panel.
     function openStrategyTicker(ticker) {
         strSel = ticker;
         if (strLast) renderStrategyDial(strLast);
+        if (typeof showStrategyDive === 'function') showStrategyDive(ticker);
     }
 
     // Find a vehicle anywhere in the book — the live column OR a dimmed alternate.

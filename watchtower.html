@@ -212,6 +212,17 @@
        glyph appears and disappears without shifting anything. Same geometry as the
        panel's existing .sec-caret / .sl-caret, at #f1f5f9 rather than their #64748b so
        "selected" never reads as "collapsed". */
+    /* Rocket Strategy detail panel — ONE inline strip of facts, not a grid of boxes.
+       The sidebar already states the same position vertically; a second stacked copy
+       would just be the sidebar again at a larger size. Wraps rather than scrolls so a
+       narrow window costs a line of height, never a hidden fact. */
+    .sd-facts-row { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px; }
+    .sd-fact { display:inline-flex; align-items:baseline; gap:5px; font-size:11px; }
+    .sd-fact-k { color:#64748b; text-transform:uppercase; letter-spacing:.06em;
+                 font-size:9px; font-weight:700; }
+    .sd-fact-v { font-family:ui-monospace,monospace; color:#cbd5e1; }
+    .sd-fact-sub { font-size:9px; color:#94a3b8; }
+
     .str-sel-caret { display:inline-block; width:10px; flex-shrink:0;
                      font-size:10px; line-height:1; color:#f1f5f9; }
     /* A live row can carry pill + weight + strategy state; let it wrap rather than
@@ -995,6 +1006,54 @@
                  and newsletter dives (a toggled sibling, not a modal). Opened by
                  openBubbleDetail(); factorId reserved for a future factor-row deep-link.
                  Tabs mirror the deep-dive pattern (view id "ab"). -->
+            <!-- ROCKET STRATEGY DETAIL PANEL (2026-08-15). Opened by openStrategyTicker()
+                 in strategy.js, which its own comment has named as this panel's hook since
+                 the sidebar shipped. Rendered by static/js/strategy-dive.js; the chart is
+                 the existing charts.js machinery under a third view key, `sd`.
+                 No tab strip: the chart IS the panel, so a one-tab bar would be furniture. -->
+            <div id="strategy-dive" class="hidden flex-1 flex-col overflow-hidden">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-3 shrink-0">
+                    <div class="flex items-baseline gap-3">
+                        <span class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2 py-0.5">Rocket Strategy</span>
+                        <h2 id="sd-ticker" class="text-2xl font-bold text-white tracking-tight">—</h2>
+                        <span id="sd-price" class="text-xl font-mono text-slate-300">—</span>
+                        <span id="sd-day" class="text-xs font-mono text-slate-400">—</span>
+                    </div>
+                    <div id="sd-regime" class="text-xs font-mono text-slate-400"></div>
+                </div>
+                <!-- The facts strip sits ABOVE the tabs, so it is on screen whichever tab is
+                     open — it was in the chart header before the tabs existed and reads best
+                     there (user, 2026-08-15). Deliberately DUPLICATED into the Strategy tab
+                     rather than moved: the same strip in both places is redundant on purpose
+                     until the Strategy tab grows content of its own. -->
+                <div id="sd-facts-hd" class="shrink-0 mb-3"></div>
+                <!-- Same tab grammar as every other panel (dd/nd/ab). switchTab('sd', …)
+                     reads its pane names off these buttons' data-view, so this strip is the
+                     only place the panel's tabs are declared. -->
+                <div class="view-tabs shrink-0 mb-3" id="sd-tabs">
+                    <button class="view-tab active" data-view="strategy" onclick="switchTab('sd','strategy')">Strategy</button>
+                    <button class="view-tab" data-view="chart" onclick="switchTab('sd','chart')">Chart</button>
+                    <button class="view-tab" data-view="dial" onclick="switchTab('sd','dial')">Dial</button>
+                </div>
+                <div class="flex-1 flex flex-col min-h-0">
+                    <div id="sd-pane-strategy" class="view-pane flex-1 overflow-y-auto pr-1">
+                        <div id="sd-facts"></div>
+                    </div>
+                    <div id="sd-pane-chart" class="view-pane hidden flex-1 flex flex-col min-h-0">
+                        <div id="sd-chart-controls" class="chart-controls hidden"></div>
+                        <div id="sd-chart-container" class="chart-container flex-1"></div>
+                    </div>
+                    <!-- The DIAL tab is where the payload's long-orphaned numeric fields
+                         finally land: rate, the change over the lookback, distance to each
+                         flip, and the latch counter. strategy.js's header has said since
+                         2026-08-10 that these are "detail-panel content" and shipped them
+                         unused in every payload since. -->
+                    <div id="sd-pane-dial" class="view-pane hidden flex-1 overflow-y-auto pr-1">
+                        <div id="sd-dial"></div>
+                    </div>
+                </div>
+            </div>
+
             <div id="ai-bubble-dive" class="hidden flex-1 flex-col overflow-hidden">
                 <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-3 shrink-0">
                     <div class="flex items-baseline gap-3">
@@ -1025,17 +1084,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260815h"></script>
-<script src="static/js/watchlist.js?v=20260815h"></script>
-<script src="static/js/macro.js?v=20260815h"></script>
-<script src="static/js/stoplight.js?v=20260815h"></script>
-<script src="static/js/strategy.js?v=20260815h"></script>
-<script src="static/js/actionable.js?v=20260815h"></script>
-<script src="static/js/newsletter-cards.js?v=20260815h"></script>
-<script src="static/js/charts.js?v=20260815h"></script>
-<script src="static/js/news-archive.js?v=20260815h"></script>
-<script src="static/js/newsletter-dive.js?v=20260815h"></script>
-<script src="static/js/newsletter-digest.js?v=20260815h"></script>
-<script src="static/js/main.js?v=20260815h"></script>
+<script src="static/js/core.js?v=20260815n"></script>
+<script src="static/js/watchlist.js?v=20260815n"></script>
+<script src="static/js/macro.js?v=20260815n"></script>
+<script src="static/js/stoplight.js?v=20260815n"></script>
+<script src="static/js/strategy.js?v=20260815n"></script>
+<script src="static/js/strategy-dive.js?v=20260815n"></script>
+<script src="static/js/actionable.js?v=20260815n"></script>
+<script src="static/js/newsletter-cards.js?v=20260815n"></script>
+<script src="static/js/charts.js?v=20260815n"></script>
+<script src="static/js/news-archive.js?v=20260815n"></script>
+<script src="static/js/newsletter-dive.js?v=20260815n"></script>
+<script src="static/js/newsletter-digest.js?v=20260815n"></script>
+<script src="static/js/main.js?v=20260815n"></script>
 </body>
 </html>

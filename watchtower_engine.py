@@ -133,8 +133,26 @@ MATERIALITY_RULES = [
                           # a divestiture is often phrased as a sale of a business,
                           # not with the word "divest"
                           r"sells? .{0,30}?\b(division|unit|business|segment|assets)\b"),
+    # WIDENED 2026-08-17. The pattern only knew the LATE stages of a regulatory story --
+    # the lawsuit, the subpoena, the settlement. It had no word for the stage that moves
+    # a stock first: a regulator taking an interest. SNAP 08-17 is the worked case --
+    # "Snap (SNAP) Faces Fresh Youth Safety Scrutiny As Valuation Questions Grow" scored
+    # (0, 'general'), the DEFAULT, meaning no rule matched rather than judged immaterial.
+    # That zero made n_catalyst 0, which invited the macro tier in at 1, which then took
+    # PRIMARY and blocked the last-resort aboutness promotion -- so the card reported "no
+    # company-specific catalyst" while holding one. Rephrase the same event as
+    # "investigation" or "lawsuit" and it already scored 3.
+    #
+    # `scrutiny` is the discriminating word; `safety` alone is NOT added -- it appears in
+    # ordinary product marketing and would drag noise into the top catalyst tier. The
+    # agency names are included because a headline often names the regulator instead of
+    # the action ("FTC opens...", "state AGs press...").
     (3,  "regulatory",    r"\bFDA\b|approval|lawsuit|court|ruling|verdict|investigat|"
-                          r"subpoena|recall|antitrust|settlement|probe"),
+                          r"subpoena|recall|antitrust|settlement|probe|"
+                          r"scrutin|regulator|regulatory|oversight|"
+                          r"\bFTC\b|\bSEC\b|\bDOJ\b|\bCFPB\b|attorneys? general|"
+                          r"\bsues?\b|sued|complaint|consent decree|"
+                          r"congressional|senate|hearing"),
     (3,  "dilution",      r"public offering|shelf registration|convertible|"
                           r"at-the-market|dilut|secondary offering|prices? .*notes"),
     # business ABOVE analyst (user, 2026-08-10): a contract win or a product launch

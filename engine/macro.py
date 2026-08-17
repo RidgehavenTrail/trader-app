@@ -184,6 +184,29 @@ def generate_macro_regime():
         vix_price = round(float(vix_hist['Close'].iloc[-1]), 2)
         vix_change = round(float(vix_hist['Close'].iloc[-1]) - float(vix_hist['Close'].iloc[-2]), 2)
 
+        # THE MARKET'S OWN MOVE, so a card can say WITH or AGAINST it (user, 2026-08-17).
+        # On a day with no macro print the briefing headline is model narrative with no
+        # event under it -- on 2026-08-17 "reduced Fed rate hike bets" explained four
+        # cards at 10:15 and had vanished from the 11:20 regeneration, with no speaker
+        # and no release all day. A direction is a FACT and needs no narrative.
+        #
+        # Fetched here rather than in the news path: this job already runs hourly and
+        # already pays for yfinance, so the news pull reads a number instead of adding a
+        # call per ticker. SPY, not the watchlist median -- that list is tech-heavy and
+        # would call its own concentration "the market". Failure is non-fatal: the field
+        # goes absent and the news path simply omits the comparison.
+        spy_price = spy_change_pct = None
+        try:
+            spy_hist = yf.Ticker("SPY").history(period="5d")
+            if len(spy_hist) >= 2:
+                _now = float(spy_hist['Close'].iloc[-1])
+                _prev = float(spy_hist['Close'].iloc[-2])
+                spy_price = round(_now, 2)
+                spy_change_pct = round((_now / _prev - 1) * 100, 2)
+        except Exception as e:
+            print(f"[MACRO] SPY reference unavailable ({type(e).__name__}: {e}) — "
+                  f"cards will omit the with/against-the-market line")
+
         now = datetime.now(ET)
         now_et = now.strftime('%A %Y-%m-%d %I:%M %p ET')
         figures_block, reaction_block, figures, reaction = _deterministic_context(now)
@@ -289,6 +312,8 @@ RELEASED or NOT RELEASED, e.g. "Core PCE (8:30 ET): RELEASED +0.3% m/m vs
         macro_data['tnx_change'] = tnx_change
         macro_data['vix'] = vix_price
         macro_data['vix_change'] = vix_change
+        macro_data['spy'] = spy_price
+        macro_data['spy_change_pct'] = spy_change_pct
         # PYTHON-AUTHORED, and persisted alongside the model's prose so downstream
         # consumers can read the FIGURE rather than re-reading a sentence about it.
         # macro_context() prefers these over the model's `data_releases` rows for

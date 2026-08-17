@@ -1157,9 +1157,48 @@ def macro_context(now=None):
                     if "RELEASED" in r.upper() and "NOT RELEASED" not in r.upper()
                     and _states_a_figure(r)]
     headline = (m.get('headline') or "").strip()
-    if not released and not headline:
-        return None
 
+    # NO HARD PRINT, NO MACRO NARRATIVE (user, 2026-08-17).
+    #
+    # "Market chatter can drive prices up or down. On the other hand, it isn't directly
+    # related to the stock. So unless there's hard news, let's not report it -- we can
+    # just say moving with the market or against it, but let's not try to explain it on
+    # the macro level."
+    #
+    # The briefing headline is model prose regenerated hourly, and with no release under
+    # it there is nothing anchoring it. On 2026-08-17 "reduced Fed rate hike bets"
+    # explained SNAP, UPS, DDOG and MRVL at 10:15 -- two down hard, one up 5.75% -- and
+    # had disappeared from the 11:20 regeneration. No speaker, no print: every release
+    # the store held was July, published the previous week. The freshness rule already
+    # stopped those FIGURES reaching a card; their narrative walked back in through the
+    # headline, which is the same publication-vs-event distinction the earnings gate
+    # makes one layer down.
+    #
+    # A HARD PRINT KEEPS ITS NARRATIVE. CPI, PPI, PCE, jobs, the Fed -- when one of
+    # those is genuinely in the window it belongs in the card if nothing company-specific
+    # explains the move. That is what `released` being non-empty means here, and this
+    # block does not touch that path.
+    #
+    # With no print, the card gets a FACT instead of a story: how the market itself
+    # moved. Direction is checkable; "sentiment improved on rate-cut hopes" is not.
+    if not released:
+        spy_pct = m.get('spy_change_pct')
+        if spy_pct is None:
+            print("[MACRO CONTEXT] no released print and no market reference — omitted")
+            return None
+        print(f"[MACRO CONTEXT] no released print — supplying the market's move only "
+              f"(SPY {spy_pct:+.2f}%)")
+        return (
+            "CONTEXT — MARKET-WIDE, NOT COMPANY NEWS.\n"
+            f"The market itself moved {spy_pct:+.2f}% today (SPY).\n"
+            "NOTE: there is NO macro release today. State only whether this company moved "
+            "WITH the market or AGAINST it, and say nothing about why the market moved. "
+            "Do not offer sentiment, rate expectations or policy as an explanation."
+        )
+
+    # Past the guard above, `released` is non-empty by construction — the old
+    # `if not released and not headline: return None` line here could no longer fire and
+    # was removed rather than left as a branch that reads like it still guards something.
     lines = []
     if released:
         # "released today" was a lie waiting to happen: `released_figures` carries every

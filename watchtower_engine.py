@@ -273,11 +273,16 @@ MATERIALITY_DEMOTIONS = [
 # consonant and a greedy suffix would over-match ("cuts" vs "cutting-edge"). The NOUN is
 # still required, which is what keeps "Raises 2026 Guidance" out -- there is no holdings
 # noun in it -- and the actor guard still decides who gets demoted.
+# `takes` added 2026-08-17 from PM's live pool: "Janney Montgomery Scott LLC Takes
+# $112.15 Million Position in Philip Morris" scored tier 0 on a verb list that had every
+# other way of saying the same thing. Unambiguous BECAUSE the holdings noun is still
+# required next to it -- "takes" alone appears in all sorts of headlines ("takes on",
+# "takes aim"), none of which name a stake, position or holding.
 _HOLD_VERB = (r"(buys?|bought|sell\w*|sold|acquir(e|es|ed)|purchas(e|es|ed)|"
               r"lower(s|ed)?|decreas(e|es|ed)|increas(e|es|ed)|reduc(e|es|ed)|"
               r"boost(s|ed)?|trim(s|med)?|rais(e|es|ed)|cuts?|adds? to|added to|"
-              r"grow(s|n)?|grew|offload(s|ed)?|invest(s|ed)?|has|have|had|"
-              r"hold(s)?|held|owns?|owned|maintain(s|ed)?)")
+              r"tak(e|es)|took|grow(s|n)?|grew|offload(s|ed)?|invest(s|ed)?|"
+              r"has|have|had|hold(s)?|held|owns?|owned|maintain(s|ed)?)")
 _HOLD_NOUN = r"(stake|position|holdings|shares|investment)"
 # KNOWN RESIDUAL, left deliberately (2026-08-17): "First Trust Advisors LP Invests $2.26
 # Million in Advance Auto Parts" is a 13F in substance and is NOT demoted, because it
@@ -467,18 +472,40 @@ def get_cached_news(ticker_symbol, label_date=None):
         entry = cache.get(_cache_key(ticker_symbol, label_date))
         return entry.get("news_text") if entry else None
 
-def set_cached_news(ticker_symbol, news_text, source, label_date=None):
+def set_cached_news(ticker_symbol, news_text, source, label_date=None, meta=None):
     """Stores news_text for this ticker/day so repeated triggers (e.g. across
-    engine restarts during testing) don't re-hit Alpha Vantage."""
+    engine restarts during testing) don't re-hit Alpha Vantage.
+
+    ALSO THE PULL'S DIAGNOSTIC RECORD (2026-08-17). `pool` and `chosen_sources` are
+    computed in fetch_latest_news and were printed to stdout and then dropped, so a
+    later review could see WHICH feeds supplied the chosen headlines but never how deep
+    the pool behind them was -- and the source of an individual headline had to be
+    inferred from the ABSENCE of a summary, since Yahoo RSS supplies none and Alpha
+    Vantage does. Twice in one session that was the missing number.
+
+    Cached rather than put on the card deliberately (user, 2026-08-17): this is
+    diagnostics, and the card is display state. The cache is already keyed per
+    ticker-day, already cleared at rollover, and is already the artifact you open when
+    asking what a pull actually saw.
+
+    `meta` is optional and additive -- a caller that omits it writes exactly what it
+    wrote before, so the two synthesis paths that have no meta to give are unaffected.
+    """
     if label_date is None:
         label_date = datetime.today().date()
     with news_cache_lock:
         cache = _load_news_cache()
-        cache[_cache_key(ticker_symbol, label_date)] = {
+        entry = {
             "news_text": news_text,
             "source": source,
             "cached_at": datetime.now().isoformat()
         }
+        if meta:
+            if meta.get("pool"):
+                entry["pool"] = meta["pool"]
+            if meta.get("chosen_sources"):
+                entry["chosen_sources"] = meta["chosen_sources"]
+        cache[_cache_key(ticker_symbol, label_date)] = entry
         with open(NEWS_CACHE_FILE, 'w') as f:
             json.dump(cache, f)
 
@@ -1440,7 +1467,9 @@ def run_due_news_pulls():
             if _corr:
                 print(f"[NEWS PULL] {ticker}: {_corr} chosen headline(s) carried by "
                       f"more than one source")
-            set_cached_news(ticker, news_text, news_source)
+            # meta carries `pool` + `chosen_sources` — cached alongside the text so a
+            # later review can answer how thin the pool was without re-pulling.
+            set_cached_news(ticker, news_text, news_source, meta=news_meta)
             # POOL LINE. The source label alone said WHICH feeds contributed but never how
             # thin the pool was -- an AV corpus of 50 with 1 fresh article reads identically
             # to a healthy one. These counts are the difference between "ranked badly" and

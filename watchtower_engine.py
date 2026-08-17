@@ -1484,8 +1484,15 @@ def run_due_news_pulls():
                       f"({_rs.get('stale', 0)} stale, {_rs.get('unnamed', 0)} not about us) · "
                       f"chose {', '.join((news_meta or {}).get('chosen_sources') or []) or 'none'}")
             print(f"[NEWS PULL] {ticker}: {news_source.lower()} ({state} attempt) — synthesising")
+            # THE TRIGGER'S MOVE, not the live one. `price_change` keeps updating, so
+            # reading it here quoted whatever the price happened to be when the news pull
+            # ran rather than the move the card exists to explain. Falls back for any card
+            # minted before trigger_pct existed.
+            _trig = card.get('trigger_pct')
+            if _trig is None:
+                _trig = card.get('price_change')
             ai = generate_ai_synthesis(ticker, _opt_from_card(card), news_text,
-                                       round(float(card.get('price_change') or 0), 2))
+                                       round(float(_trig or 0), 2))
             why = ai.get('why', '')
             if not why.strip():
                 _advance_after_empty(ticker, now)
@@ -3044,6 +3051,24 @@ def fetch_loop(test_mode=False):
                             "name": display_name,
                             "price": f"${current_price:,.2f}",
                             "price_change": round(pct_change, 2),
+                            # THE MOVE THAT FIRED THIS, frozen at the trigger (2026-08-17).
+                            # `price_change` is deliberately LIVE -- the hourly :30 refresh
+                            # re-stamps it so a card does not freeze at the moment it fired
+                            # -- but the synthesis was reading that live field whenever the
+                            # NEWS pull happened to run, which is T+30 or the 15:00 sweep.
+                            # So the sentence carried neither the trigger nor the current
+                            # move: SNAP's card said "the 3.88% decline" (the value at
+                            # 08:31) beside a price_change that read -2.03% and later
+                            # -4.71%. Neither number was wrong; the prose was quoting a
+                            # sample taken at an arbitrary moment.
+                            #
+                            # Stamped HERE, inside `if fired:`, so it updates on every
+                            # trigger event and nowhere else. That is what makes a VOLUME
+                            # fire re-stamp it (user, 2026-08-17: "for volume we always
+                            # update the state -- we update news and we update the price"),
+                            # while the hourly price refresh above, which is not a trigger,
+                            # leaves it alone. Costs nothing: pct_change is already in hand.
+                            "trigger_pct": round(pct_change, 2),
                             "expected_move": opt_data['expected_move_pct'] if opt_data else existing.get('expected_move'),
                             "atm_strike":    opt_data['atm_strike']     if opt_data else existing.get('atm_strike'),
                             "atm_put_price": opt_data['atm_put_price']  if opt_data else existing.get('atm_put_price'),

@@ -1348,6 +1348,19 @@ def run_due_news_pulls():
                 print(f"[NEWS PULL] {ticker}: {_corr} chosen headline(s) carried by "
                       f"more than one source")
             set_cached_news(ticker, news_text, news_source)
+            # POOL LINE. The source label alone said WHICH feeds contributed but never how
+            # thin the pool was -- an AV corpus of 50 with 1 fresh article reads identically
+            # to a healthy one. These counts are the difference between "ranked badly" and
+            # "had nothing to rank", which is the distinction this pipeline keeps turning on.
+            _pool = (news_meta or {}).get("pool") or {}
+            if _pool:
+                _av, _rs = _pool.get("alpha_vantage", {}), _pool.get("yahoo_rss", {})
+                print(f"[NEWS POOL] {ticker}: "
+                      f"AV {_av.get('raw', 0)} raw/{_av.get('kept', 0)} kept "
+                      f"({_av.get('stale', 0)} stale, {_av.get('undated', 0)} undated) · "
+                      f"RSS {_rs.get('raw', 0)} raw/{_rs.get('kept', 0)} kept "
+                      f"({_rs.get('stale', 0)} stale, {_rs.get('unnamed', 0)} not about us) · "
+                      f"chose {', '.join((news_meta or {}).get('chosen_sources') or []) or 'none'}")
             print(f"[NEWS PULL] {ticker}: {news_source.lower()} ({state} attempt) — synthesising")
             ai = generate_ai_synthesis(ticker, _opt_from_card(card), news_text,
                                        round(float(card.get('price_change') or 0), 2))
@@ -1775,6 +1788,10 @@ def fetch_latest_news(ticker_symbol):
         # not-about-us rung -- measured live, RSS filed an ABBV earnings call under
         # PFE, a TDS results piece under VZ, and one Cerebras story under MRVL, INTC
         # and AMD alike. Those score 0.35 and never enter the pool.
+        # INITIALIZED OUTSIDE THE TRY so the pool counts survive an RSS failure. Zeroes
+        # then mean "the feed contributed nothing", which is true, rather than the meta
+        # build blowing up on an unbound name and taking a paid AV pull down with it.
+        rss_raw = r_kept = r_peer = r_stale = r_unnamed = 0
         try:
             from engine.news_rss import fetch_yahoo_rss
             if derive_relevance is None:
@@ -1784,7 +1801,7 @@ def fetch_latest_news(ticker_symbol):
             aliases = self_aliases
             peer_aliases = {p: company_aliases(p, _names.get(p)) for p in _alias_peers}
             rss_items = fetch_yahoo_rss(ticker_symbol)
-            r_kept = r_peer = r_stale = r_unnamed = 0
+            rss_raw = len(rss_items)
             for it in rss_items:
                 pub = it.get('published')
                 if pub is None or pub < cutoff:
@@ -2148,10 +2165,31 @@ def fetch_latest_news(ticker_symbol):
             for s in (c.get("sources") or [c.get("source")] or []):
                 if s and s not in picked_sources:
                     picked_sources.append(s)
+        # POOL COMPOSITION (added 2026-08-17). Every number here was already computed
+        # while filtering and then thrown away when the function returned -- so "how many
+        # articles did each feed supply?" could not be answered from any artifact, and the
+        # source of a CHOSEN item had to be inferred from the absence of a summary. The
+        # counters existed; nothing preserved them.
+        #
+        # `kept` is what entered the ranking pool, not what was fetched: an AV pull of 50
+        # with 1 fresh and an RSS pull of 12 with 4 fresh are very different situations
+        # that both read as "Alpha Vantage + Yahoo RSS" today.
+        av_kept = sum(1 for c in candidates if c.get("source", "alpha_vantage") == "alpha_vantage")
+        pool = {
+            "alpha_vantage": {"raw": len(feed), "kept": av_kept,
+                              "stale": stale, "undated": undated},
+            "yahoo_rss": {"raw": rss_raw, "kept": r_kept, "peer": r_peer,
+                          "stale": r_stale, "unnamed": r_unnamed},
+        }
         return "\n---\n".join(headlines), {
             "n_primary": n_primary, "n_catalyst": n_catalyst, "top_tier": top_tier,
             "n_background": len(headlines) - n_primary,
             "sources": picked_sources,
+            "pool": pool,
+            # Per-CHOSEN-item source, in slot order. `sources` says which feeds
+            # contributed at all; this says which feed supplied which headline, which is
+            # what actually settles "is RSS earning its place" without deduction.
+            "chosen_sources": [c.get("source", "alpha_vantage") for c, _ in chosen],
             "corroborated": sum(1 for c, _ in chosen if (c.get("corroboration") or 1) > 1)}
 
     except Exception as e:

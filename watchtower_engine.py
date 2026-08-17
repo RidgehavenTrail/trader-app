@@ -253,10 +253,39 @@ MATERIALITY_DEMOTIONS = [
 # The person test runs FIRST and wins outright, so "Goldman Sachs GROUP CEO Buys
 # 5,000 Shares" is read as an insider story despite the firm token in the employer's
 # name -- the same "demotions win outright" doctrine used above.
-_HOLD_VERB = (r"(buys?|bought|sell\w*|sold|acquires?|purchases?|lowers?|decreases?|"
-              r"increases?|reduces?|boosts?|trims?|raises?|cuts?|adds? to|grows?|"
-              r"offloads?|invests?|has|have|holds?|owns?|maintains?)")
+# TENSE, added 2026-08-17 — the fourth failure, and the one the rebuild missed.
+# Every verb above was PRESENT tense with an optional `s`. The word-order fix landed but
+# the tense fix did not, and passive voice is exactly where past participles appear, so
+# the two halves never met: `lowers?` does not match "Lowered". The header's own worked
+# example, "Holdings Lowered by Wedge Capital Management LLP", missed on the very rule
+# that cites it -- only "Shares Sold by ..." passed, because `sold` happens to be listed
+# separately.
+#
+# Observed live on MRVL, 2026-08-17: a +5.75% card whose ENTIRE pool was
+# "$MRVL Position Increased by Nisa Investment Advisors LLC" and "$MRVL Stock Position
+# Trimmed by Public Sector Pension Board" -- both scored (0, 'general'), the default,
+# meaning no rule matched rather than a judgement that they were immaterial. Tier 0 is
+# the aboutness-promotion rung and both headlines LEAD with the ticker, so on a quieter
+# day either was one promotion away from being offered as the cause of the move. That is
+# the insider-selling failure this rule exists to prevent.
+#
+# Written as explicit inflections rather than a trailing \w*: "trim" doubles its final
+# consonant and a greedy suffix would over-match ("cuts" vs "cutting-edge"). The NOUN is
+# still required, which is what keeps "Raises 2026 Guidance" out -- there is no holdings
+# noun in it -- and the actor guard still decides who gets demoted.
+_HOLD_VERB = (r"(buys?|bought|sell\w*|sold|acquir(e|es|ed)|purchas(e|es|ed)|"
+              r"lower(s|ed)?|decreas(e|es|ed)|increas(e|es|ed)|reduc(e|es|ed)|"
+              r"boost(s|ed)?|trim(s|med)?|rais(e|es|ed)|cuts?|adds? to|added to|"
+              r"grow(s|n)?|grew|offload(s|ed)?|invest(s|ed)?|has|have|had|"
+              r"hold(s)?|held|owns?|owned|maintain(s|ed)?)")
 _HOLD_NOUN = r"(stake|position|holdings|shares|investment)"
+# KNOWN RESIDUAL, left deliberately (2026-08-17): "First Trust Advisors LP Invests $2.26
+# Million in Advance Auto Parts" is a 13F in substance and is NOT demoted, because it
+# states no holdings noun -- the money goes straight to the company name. A noun-free
+# `invests $N in` branch would catch it and would also catch "Nvidia Corp Invests $1B in
+# ...", a genuine strategic-investment catalyst, since ACTOR_FIRM cannot tell an asset
+# manager's firm token from an operating company's. A missed demotion lets noise rank; a
+# false demotion deletes a real catalyst. The asymmetry decides it.
 HOLDINGS_SHAPE = (rf"\b13F\b|{_HOLD_VERB}\W+(\w+\W+){{0,4}}?{_HOLD_NOUN}\b|"
                   rf"{_HOLD_NOUN}\W+(\w+\W+){{0,3}}?{_HOLD_VERB}\b")
 ACTOR_PERSON = r"\b(CEO|CFO|COO|CTO|President|Director|Chairman|Chair|EVP|SVP|VP|" \

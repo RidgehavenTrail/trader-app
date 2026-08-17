@@ -1572,6 +1572,38 @@ def _published_at(item):
         return None
 
 
+def _is_about_us(c, ticker_symbol):
+    """Is this candidate about the company whose card we are building?
+
+    THE GAP THIS CLOSES (2026-08-17). `_band` decided PRIMARY vs BACKGROUND on TIER
+    alone. Tier answers "is this the KIND of thing that moves a stock" -- it never
+    answered WHOSE stock. So on 2026-08-17 a Truist price target on DYNATRACE was
+    banded PRIMARY on DDOG's card and offered to the model as a candidate cause for a
+    -4% move, and the card duly reached for it.
+
+    The engine already knew better. Every AV candidate carries `top_ticker` -- the
+    company AV itself scores as the article's subject -- which was DT. It also carries a
+    negative `gap` and a shared-coverage penalty that had driven the item's WEIGHT to
+    -0.5. Weight orders items inside a band; tier chooses the band; nothing reconciled
+    them, so an article the ranker scored below zero was still eligible to explain a
+    move.
+
+    EXEMPTION: the RSS peer read-across sets `top_ticker` to the PEER deliberately (see
+    where it is appended), because that is how it reuses _band's in-window earnings
+    guard. Those candidates are BUILT as sector context, already carry the shared-
+    coverage penalty, and their attribution note says to read them as sector-wide -- so
+    they stay eligible. They are identified by their own `peer` key, not by the ticker
+    comparison, which is exactly what tells a deliberate read-across apart from an
+    article that simply is not about us.
+
+    Anything without a `top_ticker` (the macro block, the peer-earnings block, the RSS
+    self path) defaults to the card's own ticker and passes.
+    """
+    if c.get("peer"):
+        return True
+    return (c.get("top_ticker") or ticker_symbol) == ticker_symbol
+
+
 def _materiality(title):
     """(weight, label) for how much this story could plausibly MOVE a stock.
 
@@ -2090,6 +2122,14 @@ def fetch_latest_news(ticker_symbol):
                 if c["label"] == "earnings" and not _reported_in_window(c["top_ticker"]):
                     print(f"[NEWS BAND] {ticker_symbol}: '{c['title'][:45]}...' claims "
                           f"earnings but {c['top_ticker']} did not report in-window")
+                    return "BACKGROUND"
+                # ABOUTNESS. A catalyst tier says what KIND of event this is, never whose
+                # company it happened to. An article whose own subject is someone else can
+                # still be useful sector context -- it just cannot be offered as the cause
+                # of THIS ticker's move. See _is_about_us for the case that prompted it.
+                if not _is_about_us(c, ticker_symbol):
+                    print(f"[NEWS BAND] {ticker_symbol}: '{c['title'][:45]}...' is about "
+                          f"{c.get('top_ticker')}, not {ticker_symbol} — background only")
                     return "BACKGROUND"
                 return "PRIMARY"
             if c["label"] == "macro":

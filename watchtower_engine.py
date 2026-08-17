@@ -1003,8 +1003,20 @@ def _earnings_calendar(tickers):
 
     yfinance is ~1s per name and there is no batch endpoint, so the first card in a
     group pays for its whole peer set and every later card that day is free. Cached to
-    disk rather than memory so an engine restart does not re-pay it. A name that fails
-    to resolve is cached as an empty list -- a missing calendar must not retry all day.
+    disk rather than memory so an engine restart does not re-pay it.
+
+    A FAILED LOOKUP CACHES `None`, NOT `[]` (2026-08-17). Both used to be the empty
+    list, which made "yfinance threw" and "yfinance answered, this name has no dates"
+    the same value -- and _reported_in_window reads that value to decide whether an
+    earnings article may be a cause. Its fail-open branch only catches an exception
+    ESCAPING this function, and this function catches everything per-ticker, so the
+    open path was unreachable: one transient failure demoted every earnings article for
+    that name until midnight, silently, which is the opposite of the documented rule
+    that unknown is not the same as no.
+
+    Still cached either way -- a missing calendar must not retry all day -- the two
+    outcomes are just now distinguishable. `None` means unknown; `[]` means asked and
+    answered with nothing.
     """
     from engine.common import atomic_write_json
     today = datetime.now(ET).date().isoformat()
@@ -1025,8 +1037,12 @@ def _earnings_calendar(tickers):
                     df = yf.Ticker(t).get_earnings_dates(limit=8)
                     known[t] = ([d.astimezone(ET).isoformat() for d in df.index.to_pydatetime()]
                                 if df is not None and len(df) else [])
-                except Exception:
-                    known[t] = []
+                except Exception as e:
+                    # None, not [] — see the docstring. Logged rather than swallowed
+                    # silently, so a name that goes unknown all day leaves a trace.
+                    print(f"[PEER EARNINGS] {t}: lookup failed "
+                          f"({type(e).__name__}: {e}) — treated as UNKNOWN, not 'no dates'")
+                    known[t] = None
             atomic_write_json(EARNINGS_CAL_FILE, cal)
         return known
 
@@ -1241,7 +1257,16 @@ def _reported_in_window(ticker, now=None):
         print(f"[NEWS BAND] earnings-window check unavailable for {ticker}: "
               f"{type(e).__name__}: {e}")
         return True
-    for iso in cal.get(ticker) or []:
+    # UNKNOWN IS NOT NO -- the same rule as the except branch above, applied to the
+    # answer as well as to the failure. `None` (or an absent key) means the lookup did
+    # not resolve, so the gate abstains and the tier stands; `[]` means yfinance
+    # answered and this name has no dates, which IS a real "it did not report".
+    dates = cal.get(ticker)
+    if dates is None:
+        print(f"[NEWS BAND] earnings-window unknown for {ticker} (no calendar data) "
+              f"— leaving the tier alone")
+        return True
+    for iso in dates:
         try:
             d = datetime.fromisoformat(iso)
         except ValueError:

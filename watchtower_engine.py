@@ -555,6 +555,55 @@ def archive_actionable_moves(label_date):
 
     print(f"[ARCHIVE] {len(current)} move(s) archived to {archive_path}.")
 
+# --- Prior-session close, resilient to a NaN daily bar (2026-08-18) ---------------
+_prev_close_cache = {}
+_prev_close_lock = threading.Lock()
+
+
+def _prior_session_close(stock, ticker, now_et):
+    """(close, date) of the most recent COMPLETED regular session, or None.
+
+    WHY THIS EXISTS. On 2026-08-18 Yahoo returned the 08-17 daily bar with real VOLUME
+    and a NaN close, on every ticker checked (14/14), on prepost=True and False alike,
+    and on an explicit start/end pull. `Ticker.info` agreed with the corruption --
+    regularMarketPreviousClose reported FRIDAY. The only endpoint still holding Monday
+    was the 1-minute series (312 regular bars, last at 15:59). So the anchor every
+    percentage on the board is measured against was silently two days old.
+
+    POSITIONAL INDEXING CANNOT SOLVE THIS. `iloc[-2]` reads the NaN itself; a naive
+    `dropna().iloc[-2]` reaches back to the session BEFORE the gap; and pre-market the
+    frame has no row for today at all, so dropna's last row is already yesterday. The
+    date has to be checked explicitly, which is what this returns.
+
+    CACHED PER TICKER PER ET DAY. Yesterday's close does not change during the session,
+    so this costs ONE extra request per ticker on a broken day and zero on a healthy one
+    (callers only consult it when the daily frame's newest prior close is older than
+    this date). Negative results are cached too -- a name that cannot resolve must not
+    retry every 60s pass.
+    """
+    key = (now_et.date().isoformat(), ticker)
+    with _prev_close_lock:
+        if key in _prev_close_cache:
+            return _prev_close_cache[key]
+    out = None
+    try:
+        m = stock.history(period="5d", interval="1m", prepost=False)
+        if not m.empty:
+            today = now_et.date()
+            prior = m[[d != today for d in m.index.date]]
+            if not prior.empty:
+                last_day = max(prior.index.date)
+                day = prior[[d == last_day for d in prior.index.date]]
+                closes = day['Close'].dropna()
+                if len(closes):
+                    out = (float(closes.iloc[-1]), last_day)
+    except Exception as e:
+        print(f"[PREV CLOSE] {ticker}: 1m recovery unavailable ({type(e).__name__}: {e})")
+    with _prev_close_lock:
+        _prev_close_cache[key] = out
+    return out
+
+
 def clear_actionable_moves(reason="manual", archive_date=None, clear_news_too=False):
     """Archives, then wipes ACTIONABLE_FILE clean. Called at midnight rollover and,
     conditionally, on startup (see startup_actionable_reconcile). News cache is only
@@ -2933,7 +2982,10 @@ def fetch_loop(test_mode=False):
                         # pre-market bar, so the live pre-market print lives only
                         # in the 1m series. See SESSIONS.md session 26 /
                         # CONTEXT.md pending_fixes (2026-07-14).
-                        intraday = stock.history(period="1d", interval="1m", prepost=True)
+                        # 5d, not 1d: ONE call now serves both the live pre-market
+                        # print AND the prior session's close (see the anchor-recovery
+                        # block below). Same request count as the 1d call it replaces.
+                        intraday = stock.history(period="5d", interval="1m", prepost=True)
                         if intraday.empty:
                             market_data[ticker] = {
                                 "price": f"${float(hist['Close'].iloc[-1]):,.2f}",
@@ -2964,10 +3016,74 @@ def fetch_loop(test_mode=False):
                             }
                             continue
                         prev_close    = float(clean_closes.iloc[-1])
+                        anchor_date   = clean_closes.index[-1].date()
+
+                        # RECOVER A NaN'd PRIOR SESSION FROM THE 1m SERIES (2026-08-18).
+                        # dropna() above was added for TODAY's not-yet-traded daily bar,
+                        # which yfinance appends with a NaN close. It cannot tell that
+                        # case apart from YESTERDAY's bar coming back NaN -- it just keeps
+                        # walking back -- so on 2026-08-18 the 08-17 daily bar carried real
+                        # VOLUME (SFIX 1,290,970) and a NaN close, and every pre-market card
+                        # on the board anchored to FRIDAY. That is a two-day move labelled
+                        # as a pre-market move: SFIX read -6.69% against Friday's 3.59 when
+                        # it was +0.90% against Monday's real 3.32. It manufactures triggers,
+                        # it does not merely mislabel them. Measured 14 of 14 tickers, and on
+                        # prepost=True/False alike; an explicit start/end daily pull is NaN
+                        # too, so the daily bar is broken upstream rather than a `period=`
+                        # artifact. fast_info is no use: regular_market_previous_close
+                        # returned Friday and previous_close returned neither close.
+                        #
+                        # The daily bar stays AUTHORITATIVE when it is valid. This only
+                        # reaches for the 1m series when that series holds a COMPLETED
+                        # regular session more recent than the newest valid daily close.
+                        try:
+                            _today = now_et.date()
+                            _prior = intraday[[d != _today for d in intraday.index.date]]
+                            _reg = _prior[[(t.hour > 9 or (t.hour == 9 and t.minute >= 30))
+                                           and t.hour < 16 for t in _prior.index]]
+                            if not _reg.empty:
+                                _last_day = max(_reg.index.date)
+                                if _last_day > anchor_date:
+                                    _day = _reg[[d == _last_day for d in _reg.index.date]]
+                                    _rec = float(_day['Close'].iloc[-1])
+                                    print(f"[PRE-MKT ANCHOR] {ticker}: daily close for "
+                                          f"{_last_day} is NaN — recovered {_rec:.2f} from "
+                                          f"the 1m series (was anchoring on {anchor_date} "
+                                          f"@ {prev_close:.2f})")
+                                    prev_close = _rec
+                        except Exception as _e:
+                            # Never let the recovery break a working path — the daily
+                            # anchor still stands, wrong-but-old rather than absent.
+                            print(f"[PRE-MKT ANCHOR] {ticker}: recovery skipped "
+                                  f"({type(_e).__name__}: {_e})")
                         session_label = state
                     else:
-                        current_price = float(hist['Close'].iloc[-1])
-                        prev_close    = float(hist['Close'].iloc[-2])
+                        # DATE-EXPLICIT, NOT POSITIONAL (2026-08-18). iloc[-2] reads the
+                        # NaN when a completed session's daily close is corrupt, and a
+                        # naive dropna().iloc[-2] silently reaches back PAST the gap to
+                        # the session before it. Take the newest valid close as current,
+                        # then the newest valid close strictly BEFORE that bar's date.
+                        _valid = hist['Close'].dropna()
+                        if len(_valid) < 2:
+                            raise ValueError("fewer than two valid closes in the 5d frame")
+                        current_price = float(_valid.iloc[-1])
+                        _cur_date     = _valid.index[-1].date()
+                        _before = _valid[[d < _cur_date for d in _valid.index.date]]
+                        if _before.empty:
+                            raise ValueError("no prior valid close")
+                        prev_close = float(_before.iloc[-1])
+                        _prev_date = _before.index[-1].date()
+
+                        # If a MORE RECENT completed session exists that the daily frame
+                        # NaN'd out, that session is the correct anchor. Cached per
+                        # ticker per day, so this is one extra request on a broken day
+                        # and none on a healthy one.
+                        _rec = _prior_session_close(stock, ticker, now_et)
+                        if _rec and _prev_date < _rec[1] < _cur_date:
+                            print(f"[PREV CLOSE] {ticker}: daily close for {_rec[1]} is "
+                                  f"NaN — anchoring on {_rec[0]:.2f} from the 1m series "
+                                  f"(was {_prev_date} @ {prev_close:.2f})")
+                            prev_close = _rec[0]
                         session_label = state
 
                     pct_change = ((current_price - prev_close) / prev_close) * 100

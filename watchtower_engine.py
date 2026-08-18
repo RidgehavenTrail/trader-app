@@ -2781,7 +2781,7 @@ def search_and_synthesize_fallback(ticker, opt_data, pct_change):
             )
             if text:
                 text = text.replace('```json', '').replace('```', '').strip()
-                return json.loads(text)
+                return _strip_tag_leaks(json.loads(text))
 
             print(f"[SYNTHESIS ERROR] {ticker}: no text in synthesis response.")
             return {"why": "Synthesis returned no data.", "structure": "N/A", "impact": "N/A"}
@@ -2792,6 +2792,78 @@ def search_and_synthesize_fallback(ticker, opt_data, pct_change):
         except Exception as e:
             print(f"[SYNTHESIS ERROR] {ticker}: {e}")
             return {"why": "Synthesis failed or timed out.", "structure": "N/A", "impact": "N/A"}
+
+# The band tags are markup the model reasons WITH and must never repeat. The prompt
+# says so; this is the belt to that brace, because compliance is probabilistic and a
+# regex is not. Measured 2026-08-18: nine live cards wrote "No [PRIMARY] news items
+# explain this move" / "the [BACKGROUND] context" / "The primary data contains no"
+# -- every one a card with NO catalyst, where the model, told to "say so plainly" and
+# never told what words to use, reached for the tag it had looked in. The two prior
+# archives (08-14, 08-17) had zero: cards WITH a cause name the cause. User: "it's
+# not natural language, which is what I want." Applied to the three prose keys only;
+# structure/impact are included because the same tag can leak there.
+_TAG_LEAK_RE = re.compile(
+    r"\s*\[?\b(PRIMARY|BACKGROUND|CONTEXT)\b\]?\s*(news\s+)?(items?|data|context|block)?\s*",
+    re.I)
+_TAG_LEAK_PHRASES = (
+    (re.compile(r"\bno \[?primary\]? (news )?items? explains? this move", re.I),
+     "no company-specific news explains this move"),
+    (re.compile(r"\bthere (is|are) no \[?primary\]? (news )?items?", re.I),
+     "there is no company-specific news"),
+    (re.compile(r"\bthe \[?primary\]? data contains no", re.I),
+     "there is no"),
+    (re.compile(r"\bthe \[?background\]? (context|items?) (of|discuss(es)?)", re.I),
+     "other coverage of"),
+    # "The primary news item regarding X" -> "The news item regarding X". Case is
+    # preserved by keeping the article the model wrote.
+    (re.compile(r"\b(the) \[?primary\]? (news )?(item|items|data|context)\b", re.I),
+     lambda m: m.group(1) + " " + (m.group(2) or "") + m.group(3)),
+)
+# The replacement phrases above, so a sentence that now BEGINS with one can be
+# re-capitalised without touching any text the model wrote.
+_TAG_LEAK_STARTS = tuple(sorted({p for _, p in _TAG_LEAK_PHRASES if isinstance(p, str)},
+                                key=len, reverse=True))
+
+
+def _strip_tag_leaks(synth):
+    """Rewrite the known leak phrases into plain language, then remove any bare tag
+    token that survives. Never touches keys other than the three prose fields, and
+    never raises -- a scrub must not cost a paid synthesis."""
+    if not isinstance(synth, dict):
+        return synth
+    for k in ('why', 'structure', 'impact'):
+        v = synth.get(k)
+        if not isinstance(v, str) or not v:
+            continue
+        orig = v
+        try:
+            for pat, plain in _TAG_LEAK_PHRASES:
+                v = pat.sub(plain, v)
+            # bare tokens: '[PRIMARY]', 'the [BACKGROUND] context', 'primary data' ...
+            v = re.sub(r"\[(PRIMARY|BACKGROUND|CONTEXT)\]\s*", "", v)
+            # UPPERCASE ONLY from here down: the lowercase words are English ("historical
+            # context", "the broader market") and must survive.
+            v = re.sub(r"\b(PRIMARY|BACKGROUND|CONTEXT)\b\s+(news\s+)?(items?|data|context|block)\b",
+                       lambda m: {'items': 'items', 'item': 'item', 'data': 'coverage',
+                                  'context': 'context', 'block': 'note'}.get(m.group(3).lower(), m.group(3)),
+                       v)
+            v = re.sub(r"\b(PRIMARY|BACKGROUND|CONTEXT)\b", "", v)
+            v = re.sub(r"\s{2,}", " ", v).strip()
+            v = re.sub(r"\s+([,.;:])", r"\1", v)
+            # A phrase rewrite can lowercase the first word of a sentence. Restore it ONLY
+            # for the phrases THIS function inserted -- a blanket "capitalise after a
+            # period" turned "U.S. manufacturers" into "U.S. Manufacturers" (measured on
+            # a clean card). The model's own text is never re-cased.
+            for _plain in _TAG_LEAK_STARTS:
+                v = re.sub(r"(^|[.!?]\s+)" + re.escape(_plain),
+                           lambda m, p=_plain: m.group(1) + p[0].upper() + p[1:], v)
+        except Exception:
+            v = orig
+        if v != orig:
+            print(f"[SYNTHESIS SCRUB] {k}: tag leak rewritten")
+            synth[k] = v
+    return synth
+
 
 def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
     if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":
@@ -2842,20 +2914,27 @@ def generate_ai_synthesis(ticker, opt_data, news_text, pct_change):
 Latest News:
 {news_text}
 
-Each item is tagged [PRIMARY] or [BACKGROUND]. ONLY a [PRIMARY] item may be offered as
-the cause of the move. [BACKGROUND] items are context you may mention for awareness —
-never as the explanation. An item marked as a routine filing or position disclosure is
-never a cause. If a CONTEXT block from the earnings calendar is present, it states only
-THAT a company reported, never how: do not assert or imply results you were not given.
-A SECTOR CO-MOVE block is a measurement that the peer group moved together; attribute
-the move to the sector and never supply a reason the sector moved.
-A [CONTEXT] block, when present, is the market's own move -- a measurement, not news.
+Each item carries a bracketed tag that tells you how it may be used. An item tagged
+PRIMARY may be offered as the cause of the move. An item tagged BACKGROUND is context
+you may mention for awareness, never as the explanation. An item marked as a routine
+filing or position disclosure is never a cause. A block from the earnings calendar
+states only THAT a company reported, never how: do not assert or imply results you were
+not given. A sector co-move block is a measurement that the peer group moved together;
+attribute the move to the sector and never supply a reason the sector moved. The
+market-wide block, when present, is the market's own move -- a measurement, not news.
 Use it only to state whether this stock moved WITH the market or AGAINST it; it is
 never itself the cause, and it never licenses a theory about why the market moved.
 If nothing here can explain the move, say so plainly.
 
+THE TAGS ARE FOR YOUR REASONING ONLY. Write in plain language, as an analyst would to a
+reader who has never seen this list. Never write the words PRIMARY, BACKGROUND or
+CONTEXT, with or without brackets, and never refer to "the primary item(s)", "the
+background context" or "the primary data". When nothing explains the move, say it the
+way a person would -- "no company-specific news accounts for this move" -- and never by
+naming a tag or describing what you were or were not given.
+
 Synthesize this data and return ONLY a valid JSON object with EXACTLY these three keys, and nothing else - no preamble, no markdown fences:
-"why": A 2-3 sentence fundamental or news-driven reason for the move, drawn from the [PRIMARY] items. If there are none, or they do not account for the move, say so plainly rather than speculating.
+"why": A 2-3 sentence fundamental or news-driven reason for the move, drawn only from items that may be offered as a cause. If there are none, or they do not account for the move, say so plainly, in plain language, rather than speculating.
 {structure_key}
 "impact": A strict 1-2 sentence actionable trading rule or portfolio impact warning."""
 
@@ -2891,7 +2970,7 @@ Synthesize this data and return ONLY a valid JSON object with EXACTLY these thre
         )
         if text:
             text = text.replace('```json', '').replace('```', '').strip()
-            return json.loads(text)
+            return _strip_tag_leaks(json.loads(text))
 
         print(f"[AI STRUCTURE ERROR] {ticker}: Unexpected response structure.")
         return {"why": "Synthesis returned no data.", "structure": "N/A", "impact": "N/A"}

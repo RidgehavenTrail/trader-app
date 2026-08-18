@@ -1023,6 +1023,16 @@ PEER_GROUPS = {
     "reits":     ["O", "VICI", "SPG", "PLD", "AMT", "WELL"],
     "retail":    ["SFIX", "AMZN", "M", "KSS", "GPS", "ANF", "URBN", "RL"],
     "auto_ev":   ["TSLA", "GM", "F", "RIVN", "LCID"],
+    # ADDED 2026-08-18 (user): the three watchlist names that belonged to no group
+    # and so could never get sector context, only the market-wide rung.
+    # yfinance files AVEX and SPCX under Industrials / Aerospace & Defense.
+    "aerospace": ["AVEX", "SPCX", "LMT", "RTX", "NOC", "GD", "LHX", "BA", "HII", "RKLB"],
+    # ETH here is the Grayscale Ethereum Mini Trust ETF (a listed equity wrapper), NOT
+    # spot ether -- so its peers are the other listed wrappers and crypto-beta equities,
+    # which trade the same 09:30-16:00 session. Spot pairs (BTC-USD, ETH-USD) trade
+    # 24/7 and would compare a different clock; kept out on purpose. All ten tickers
+    # verified live on yfinance before being written here.
+    "crypto":    ["ETH", "IBIT", "FBTC", "GBTC", "ETHA", "ETHE", "COIN", "MSTR", "MARA", "RIOT"],
 }
 # ticker -> its peers (itself excluded). Ungrouped tickers simply never get context.
 TICKER_PEERS = {t: [p for p in members if p != t]

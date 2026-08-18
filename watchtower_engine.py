@@ -1440,6 +1440,144 @@ def peer_earnings_context(ticker, now=None):
     )
 
 
+# --- Sector co-move: the peer group's own move, MEASURED, not read off a headline ---
+#
+# 2026-08-18: eight ai_semis names fired 1-sigma pre-market, every one down. The board
+# knew it was a sector move before any article said so, yet AMD's card -- pool 18 AV +
+# 6 RSS, PRIMARY a bullish product launch -- explained -3.66% with "profit-taking,
+# broader sector weakness, or disappointment": three theories, none evidenced. The
+# article that said it plainly ("Intel and AMD Fall 4% as 13F Filings Reveal
+# Concentrated Chip Bets", RSS 09:34) scored 0.0/general -- no materiality rule knows
+# a co-move headline -- and could never lead with AMD because it names two chipmakers.
+# The user's rule: "sector moves should outweigh any overall market explanation."
+#
+# So this supplies the SECTOR'S MOVE as a fact, the way macro_context() supplies the
+# market's. It is not parsed from prose. Same discipline: state the measurement, forbid
+# the story about why. And it is GATED on the group having actually moved together --
+# on a day AMD alone drops, it says nothing, and the homogeneity warning at
+# PEER_GROUPS (a plausible sector sentence on every card) does not apply, because the
+# block only exists when the sector sentence is TRUE.
+#
+# Tier 1.5 (user, 2026-08-18): above the market-wide rung (1) -- a sector reading is
+# more specific than "SPY fell" -- and below peer earnings (2.5), which is a CAUSE
+# where this is an observation, and below any genuine company event.
+#
+# The peers are the OFF-watchlist names in PEER_GROUPS, fetched in one batched call:
+# 28 of 31 watchlist names have a cohort of at least four (aerospace and crypto were
+# added the same day so AVEX/SPCX/ETH are covered). It runs on the NEWS-PULL path only
+# -- T+30 after a fire, or the 15:00 sweep -- never on the 60-second loop.
+
+# A group must have this many peers with a valid move before it can speak at all;
+# below it, "the sector" is two tickers and the word is not earned.
+SECTOR_MIN_PEERS = 4
+# ...and this fraction of them must move in the SAME direction as the ticker for the
+# co-move to be called. 0.70 of 6 is 5 (ceil): four with, two against, is not a
+# sector move, it is a mixed tape.
+SECTOR_AGREE_FRACTION = 0.70
+# ...and the peers' MEDIAN move must clear this, or a unanimous drift of -0.1% would
+# be called a co-move. Absolute; the ticker's own move is compared to it separately.
+SECTOR_MIN_MEDIAN_ABS_PCT = 1.0
+# The daily bar the peer moves come from is per-ticker-per-day cached; one batched
+# yfinance call per group per day is the whole cost. Keyed (group, ET date).
+_sector_move_cache = {}
+_sector_move_lock = threading.Lock()
+
+
+def _peer_group_of(ticker):
+    for g, members in PEER_GROUPS.items():
+        if ticker in members:
+            return g, [p for p in members if p != ticker]
+    return None, []
+
+
+def _peer_day_moves(group, peers, now):
+    """{peer: pct_change} for peers whose daily bar is usable; missing ones are simply
+    absent. Cached per (group, ET date) -- one batched download a day per group.
+
+    prev_close is the newest valid close strictly BEFORE the newest valid close --
+    date-explicit, the same rule the fetch loop uses (2026-08-18) -- because on that
+    morning yfinance NaN'd the prior session's close on 14 of 14 tickers, and a
+    positional iloc[-2] would have read the wrong day. A peer whose frame has fewer
+    than two valid closes is DROPPED, not guessed."""
+    key = (group, now.date())
+    with _sector_move_lock:
+        if key in _sector_move_cache:
+            return _sector_move_cache[key]
+    moves = {}
+    try:
+        df = yf.download(peers, period="5d", interval="1d", group_by="ticker",
+                         progress=False, threads=True, auto_adjust=False)
+        for p in peers:
+            try:
+                closes = df[p]["Close"].dropna() if p in df.columns.get_level_values(0) else None
+                if closes is None or len(closes) < 2:
+                    continue
+                cur, cur_date = float(closes.iloc[-1]), closes.index[-1].date()
+                before = closes[[d < cur_date for d in closes.index.date]]
+                if before.empty:
+                    continue
+                prev = float(before.iloc[-1])
+                if prev > 0:
+                    moves[p] = (cur - prev) / prev * 100.0
+            except Exception:
+                continue          # one bad peer must not cost the group
+    except Exception as e:
+        print(f"[SECTOR MOVE] {group}: batch download failed ({type(e).__name__}: {e})")
+    with _sector_move_lock:
+        _sector_move_cache[key] = moves
+    return moves
+
+
+def sector_comove_context(ticker, pct_change, now=None):
+    """A context block stating the peer group's own move, or None when the group did
+    not move together -- or did, but not the way this ticker did.
+
+    `pct_change` is THIS ticker's move as the fetch loop measured it (the trigger's
+    move, not the live one). Returns None rather than a weak or contrary reading:
+    silence is the correct output when the sector sentence would not be true."""
+    if pct_change is None:
+        return None
+    group, peers = _peer_group_of(ticker)
+    if not group or len(peers) < SECTOR_MIN_PEERS:
+        return None
+    now = now or datetime.now(ET)
+    moves = _peer_day_moves(group, peers, now)
+    valid = {p: m for p, m in moves.items() if m is not None}
+    if len(valid) < SECTOR_MIN_PEERS:
+        print(f"[SECTOR MOVE] {ticker}: only {len(valid)} of {len(peers)} {group} peers "
+              f"had a usable bar — not enough to call a sector move")
+        return None
+
+    sign = 1 if pct_change >= 0 else -1
+    agree = [m for m in valid.values() if (m >= 0) == (sign >= 0)]
+    vals = sorted(valid.values())
+    median = vals[len(vals) // 2] if len(vals) % 2 else (vals[len(vals) // 2 - 1] + vals[len(vals) // 2]) / 2
+    frac = len(agree) / len(valid)
+
+    if frac < SECTOR_AGREE_FRACTION or abs(median) < SECTOR_MIN_MEDIAN_ABS_PCT \
+            or (median >= 0) != (sign >= 0):
+        print(f"[SECTOR MOVE] {ticker}: {group} did not co-move — {len(agree)}/{len(valid)} "
+              f"same direction, median {median:+.2f}% vs {ticker} {pct_change:+.2f}% — silent")
+        return None
+
+    word = "down" if median < 0 else "up"
+    # Named peers, largest movers first, capped -- the sentence must stay a fact list.
+    named = sorted(valid.items(), key=lambda kv: -abs(kv[1]))[:5]
+    named_s = ", ".join(f"{p} {m:+.1f}%" for p, m in named)
+    print(f"[SECTOR MOVE] {ticker}: {group} co-move — {len(agree)}/{len(valid)} peers "
+          f"{word}, median {median:+.2f}% (ticker {pct_change:+.2f}%) — supplying context")
+    return (
+        f"CONTEXT — SECTOR CO-MOVE ({group.replace('_', ' ')}), A MEASUREMENT, NOT NEWS.\n"
+        f"{len(agree)} of {len(valid)} sector peers are {word} today; the group's median "
+        f"move is {median:+.2f}% (e.g. {named_s}). {ticker} is {pct_change:+.2f}%.\n"
+        "NOTE: this states only that the sector moved together. Attribute the move to "
+        "the sector, not to this company, and do NOT supply a reason the sector moved — "
+        "no theme, no rotation, no sentiment — unless a [PRIMARY] item states one. If "
+        f"{ticker}'s move is materially larger than the group's, say that it moved with "
+        "the sector AND beyond it, and leave the excess unexplained."
+    )
+
+
 def run_due_news_pulls():
     """One pass: execute any card whose next pull is due. Called by news_loop."""
     try:
@@ -2168,6 +2306,33 @@ def fetch_latest_news(ticker_symbol):
                 "raw": peer_block,
             })
 
+        # SECTOR CO-MOVE AT TIER 1.5 (user, 2026-08-18) -- see sector_comove_context.
+        # A CANDIDATE, ranked, unlike the market fact which rides in the reserved
+        # position: a sector reading is specific enough to compete for a slot, and
+        # sitting above analyst(1)/general(0) means it beats filler while a business
+        # event(2) or peer earnings(2.5) still outranks it. The move it compares against
+        # is the TRIGGER'S (trigger_pct), read off the card the same way the synthesis
+        # path does; a card minted before that field existed falls back to price_change.
+        try:
+            with actionable_file_lock:
+                _card = get_actionable_moves_local().get(ticker_symbol) or {}
+            _move = _card.get('trigger_pct')
+            if _move is None:
+                _move = _card.get('price_change')
+            sector_block = sector_comove_context(ticker_symbol, _move)
+        except Exception as e:
+            print(f"[NEWS CONTEXT] {ticker_symbol}: sector co-move unavailable "
+                  f"({type(e).__name__}: {e}) — continuing without it")
+            sector_block = None
+        if sector_block:
+            candidates.append({
+                "title": f"{ticker_symbol} sector peers moved together today",
+                "summary": "", "relevance": 1.0, "tier": 1.5, "label": "sector co-move",
+                "co_tagged": [], "leads": False, "named": False,
+                "top_ticker": ticker_symbol, "gap": 0.0, "weight": 1.5,
+                "raw": sector_block,
+            })
+
         # MACRO AT TIER 1 (user, 2026-08-12). Ranked, not gated: it sits above tier-0
         # filler and the demoted filings, and below business(2), peer earnings(2.5) and
         # any real company event(3-4).
@@ -2191,13 +2356,36 @@ def fetch_latest_news(ticker_symbol):
             print(f"[NEWS CONTEXT] {ticker_symbol}: macro context unavailable "
                   f"({type(e).__name__}: {e}) — continuing without it")
             macro_block = None
-        if macro_block:
-            candidates.append({
-                "title": "Market-wide context", "summary": "", "relevance": 1.0,
-                "tier": 1, "label": "macro", "co_tagged": [], "leads": False,
-                "named": False, "top_ticker": ticker_symbol, "gap": 0.0,
-                "weight": 1, "raw": macro_block,
-            })
+        # ADMISSION RULE (user, 2026-08-18). The block above used to be APPENDED AS A
+        # CANDIDATE and had to win one of the three headline slots. It only ever won
+        # when the pool was thin -- which made coverage inversely related to honesty.
+        # Measured that morning, three cards side by side:
+        #   LRCX  10 AV + 0 RSS  -> block promoted -> "fell 5.36% while SPY declined
+        #         only 0.96% ... no company-specific news or macro catalyst"
+        #   PM     7 AV + 0 RSS  -> block promoted -> the same honest sentence
+        #   AMD   18 AV + 6 RSS  -> block lost 4th behind three ticker-leading
+        #         headlines -> the model, given a BULLISH product launch against a
+        #         -3.66% move and nothing else, INVENTED "profit-taking, broader
+        #         sector weakness, or disappointment" -- three hedged theories,
+        #         none evidenced, one of which happened to be right, which is worse:
+        #         a guess that verifies is a guess that gets trusted next time.
+        # The prompt already says "if the PRIMARY items do not account for the move,
+        # say so plainly rather than speculating". The model complied when it had the
+        # market's own number on the page and speculated when it did not. The gate
+        # ("is the pool thin?") was asking the wrong question; the right one -- "does
+        # any of this explain the MOVE?" -- is a judgement Python cannot make without
+        # inventing an article-direction classifier, a fuzzy field that must never
+        # become a decision input (newsletter-schema-tightening.md 7.4).
+        #
+        # So the market fact is no longer a candidate at all. It is held aside and
+        # appended AFTER the three chosen headlines, in a position nothing competes
+        # for. It is a measurement, not a headline, and should not spend a headline
+        # slot; it does not count toward n_primary or n_catalyst. The homogeneity
+        # warning at PEER_GROUPS was about NARRATIVE context ("broader market
+        # concerns" on every card); a bare SPY figure carries no concern, only a
+        # number, and the block's own NOTE forbids explaining it. macro_context()
+        # already returns None when nothing fresh exists, so nothing is fabricated to
+        # fill the position. The ranking above is untouched.
 
         # ABOUTNESS FIRST, then materiality, then how much of the article is really
         # about us, then relevance. The lead key is gated on tier >= 0 so a demoted
@@ -2291,10 +2479,16 @@ def fetch_latest_news(ticker_symbol):
                           f"{c.get('top_ticker')}, not {ticker_symbol} — background only")
                     return "BACKGROUND"
                 return "PRIMARY"
+            if c["label"] == "sector co-move":
+                # A measurement that only exists when the group genuinely moved
+                # together (see sector_comove_context's gate). Offerable as the
+                # sector-level explanation; its NOTE forbids inventing why.
+                return "PRIMARY"
             if c["label"] == "macro":
-                # Only ever present when nothing else reached tier 0, so the choice is
-                # this or silence. Usable as an explanation -- but its own NOTE forces
-                # the attribution to be market-wide, never company-specific.
+                # UNREACHABLE since 2026-08-18: the market block is no longer a
+                # candidate (see the ADMISSION RULE above). Kept so a future caller
+                # that re-adds it as one gets the old, correct banding, not a silent
+                # fall-through to BACKGROUND.
                 return "PRIMARY"
             # tier 0 is BACKGROUND here. Aboutness can still promote it, but only as a
             # LAST RESORT -- see the promotion pass below.
@@ -2382,6 +2576,17 @@ def fetch_latest_news(ticker_symbol):
 
         if not headlines:
             return None, {"n_primary": 0, "n_catalyst": 0, "n_background": 0, "top_tier": -99}
+        # RESERVED POSITION for the market fact (ADMISSION RULE above). After the
+        # headlines, so it reads as the reference the model measures them against,
+        # not as one more item competing to be the cause. Tagged CONTEXT, neither
+        # PRIMARY nor BACKGROUND: it is not a headline and the prompt's band rules
+        # do not apply to it. Deliberately placed AFTER the `if not headlines`
+        # return: a pull with no articles is still not a successful pull, and a
+        # measurement cannot make it one.
+        if macro_block:
+            headlines.append(f"[CONTEXT] {macro_block}")
+            print(f"[NEWS CONTEXT] {ticker_symbol}: market reference appended in the "
+                  f"reserved position ({len(headlines) - 1} headline(s) ahead of it)")
         # WHICH SOURCES ACTUALLY CONTRIBUTED. Without this the two-source pool is
         # unauditable: DDOG's 2026-08-14 pull chose two headlines that BOTH feeds could
         # plausibly have supplied, and nothing in the card, the cache or the prompt
@@ -2411,7 +2616,9 @@ def fetch_latest_news(ticker_symbol):
         }
         return "\n---\n".join(headlines), {
             "n_primary": n_primary, "n_catalyst": n_catalyst, "top_tier": top_tier,
-            "n_background": len(headlines) - n_primary,
+            # len(chosen), not len(headlines): the reserved CONTEXT line is neither
+            # band and must not be counted as background.
+            "n_background": len(chosen) - n_primary,
             "sources": picked_sources,
             "pool": pool,
             # Per-CHOSEN-item source, in slot order. `sources` says which feeds
@@ -2640,6 +2847,11 @@ the cause of the move. [BACKGROUND] items are context you may mention for awaren
 never as the explanation. An item marked as a routine filing or position disclosure is
 never a cause. If a CONTEXT block from the earnings calendar is present, it states only
 THAT a company reported, never how: do not assert or imply results you were not given.
+A SECTOR CO-MOVE block is a measurement that the peer group moved together; attribute
+the move to the sector and never supply a reason the sector moved.
+A [CONTEXT] block, when present, is the market's own move -- a measurement, not news.
+Use it only to state whether this stock moved WITH the market or AGAINST it; it is
+never itself the cause, and it never licenses a theory about why the market moved.
 If nothing here can explain the move, say so plainly.
 
 Synthesize this data and return ONLY a valid JSON object with EXACTLY these three keys, and nothing else - no preamble, no markdown fences:

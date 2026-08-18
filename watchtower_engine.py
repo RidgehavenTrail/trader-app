@@ -2679,6 +2679,103 @@ Synthesize this data and return ONLY a valid JSON object with EXACTLY these thre
         return {"why": "Synthesis failed or timed out.", "structure": "N/A", "impact": "N/A"}
 
 # --- Options Analysis (SIMPLIFIED PREMIUM METHOD) ---
+# --- Carried ATM mark: the pre-market book does not exist ------------------------
+# Options do not quote before 09:30, so yfinance returns bid=0/ask=0 on EVERY
+# contract and the mark-price branch below cannot fire. What it fell through to was
+# lastPrice -- an arbitrary print from whenever that contract last traded. On
+# 2026-08-18 GEV's was a $20.00 print from 12:38 the PREVIOUS session, against a
+# $28.90 mid, and every 1-sigma threshold on the board was derived the same way.
+#
+# The error is not random, it is DIRECTIONAL: a gap-down morning makes puts worth
+# more than their last print, so every threshold sits too low on exactly the morning
+# most likely to fire. Measured that day, live mid vs what the cards carried:
+# GEV 2.80 vs 1.91, NVDA 2.94 vs 2.16, MRVL 6.42 vs 4.11 -- all understated. NVDA
+# fired at -2.18% against a stated 2.16% bar it would not have cleared at 2.94%.
+#
+# So the last LIVE book of the session is carried into the next pre-market. This
+# costs no extra API call: analyze_options_structure already computes that mark on
+# every one of the ~390 regular-session passes and threw all of them away.
+ATM_MARKS_FILE = 'atm_marks.json'
+atm_marks_lock = threading.Lock()
+_atm_marks = None            # in-memory mirror; one disk write per fetch_loop pass
+_atm_marks_dirty = False
+
+# A carried mark is good for the NEXT session, not indefinitely. Past that the
+# engine was down or the market was shut, and a multi-day-old volatility read is a
+# guess rather than a threshold. 5 calendar days covers Thu close -> Tue pre-market
+# across a two-day holiday. When no valid mark exists the 1-sigma trigger is
+# SUPPRESSED (user, 2026-08-18) -- never a fall back to lastPrice, which read 15.60
+# against a 28.90 mid on GEV even with a live book.
+ATM_MARK_MAX_AGE_DAYS = 5
+
+
+def _load_atm_marks():
+    """Caller must hold atm_marks_lock."""
+    global _atm_marks
+    if _atm_marks is None:
+        try:
+            with open(ATM_MARKS_FILE, 'r') as f:
+                _atm_marks = json.load(f)
+        except (FileNotFoundError, ValueError):
+            _atm_marks = {}
+    return _atm_marks
+
+
+def record_atm_mark(ticker, strike, bid, ask, spot, expiration, iv):
+    """Remember the last live ATM book seen this session. Called on every pass that
+    has one, so whatever survives to 16:00 is by construction the last good quote --
+    there is no capture time to schedule and therefore none to miss.
+
+    bid and ask are stored RAW, not merely their midpoint: GEV's book was
+    25.80/32.00 on 2026-08-18, a 21% spread, and a lone mid cannot tell you the
+    mark was soft."""
+    global _atm_marks_dirty
+    with atm_marks_lock:
+        _load_atm_marks()[ticker] = {
+            "strike": strike,
+            "bid": bid,
+            "ask": ask,
+            "mid": round((bid + ask) / 2, 4),
+            "spot": round(spot, 4),
+            "expiration": expiration,
+            "iv": iv,
+            "captured_at": datetime.now(ET).isoformat(),
+        }
+        _atm_marks_dirty = True
+
+
+def flush_atm_marks():
+    """One write per fetch_loop pass rather than one per ticker."""
+    global _atm_marks_dirty
+    with atm_marks_lock:
+        if not _atm_marks_dirty:
+            return
+        with open(ATM_MARKS_FILE, 'w') as f:
+            json.dump(_atm_marks, f, indent=2)
+        _atm_marks_dirty = False
+
+
+def get_atm_mark(ticker, expiration):
+    """The carried mark, or None when it cannot be trusted.
+
+    Rejected when it prices a DIFFERENT contract than today's chain selects. On a
+    roll morning the stored expiry no longer clears MIN_DTE_CALENDAR_DAYS, and a
+    shorter tenor carries a smaller premium -- which would quietly reintroduce the
+    understatement this whole block exists to remove."""
+    with atm_marks_lock:
+        mark = dict(_load_atm_marks().get(ticker) or {})
+    if not mark or mark.get("expiration") != expiration:
+        return None
+    if not mark.get("mid"):
+        return None
+    try:
+        age = (datetime.now(ET) - datetime.fromisoformat(mark["captured_at"])).days
+    except (KeyError, TypeError, ValueError):
+        return None
+    return mark if age <= ATM_MARK_MAX_AGE_DAYS else None
+
+
+
 def analyze_options_structure(ticker_symbol, current_price):
     try:
         stock = yf.Ticker(ticker_symbol)
@@ -2723,11 +2820,35 @@ def analyze_options_structure(ticker_symbol, current_price):
         if atm_put.empty: 
             return None
 
-        atm_put_price = float(atm_put['lastPrice'].values[0])
         bid = float(atm_put['bid'].values[0]) if 'bid' in atm_put.columns else 0
         ask = float(atm_put['ask'].values[0]) if 'ask' in atm_put.columns else 0
+        atm_strike = round(float(atm_put['strike'].values[0]), 2)
+        atm_iv = round(float(atm_put['impliedVolatility'].values[0]) * 100, 2)
+
         if bid > 0 and ask > 0:
-            atm_put_price = (bid + ask) / 2  # use mark price — lastPrice is stale
+            atm_put_price = (bid + ask) / 2      # the mark; lastPrice is stale
+            em_source, em_asof = "live", None
+            # Only a REGULAR-session book is worth carrying. A pre-market quote, on
+            # the rare name that shows one, is thin enough to be worse than the mark
+            # it would overwrite.
+            if market_state() == "open":
+                record_atm_mark(ticker_symbol, atm_strike, bid, ask,
+                                current_price, nearest_exp, atm_iv)
+        else:
+            # No book. Carry the prior session's mark or suppress; lastPrice is not
+            # a third option (see the ATM-mark block above).
+            carried = get_atm_mark(ticker_symbol, nearest_exp)
+            if not carried:
+                print(f"[OPTIONS] {ticker_symbol}: no live book and no carried mark "
+                      f"for {nearest_exp} - 1-sigma suppressed this pass.")
+                return None
+            atm_put_price = carried["mid"]
+            # IV off a quoteless chain is a solver artifact, not a volatility -- every
+            # card on the board read 3.13% or 6.25% on 2026-08-18. Carry the one that
+            # was measured against a real book instead.
+            atm_iv    = carried.get("iv")
+            em_source = "prior_close"
+            em_asof   = carried["captured_at"]
         
         # Calculate what percentage of the stock price that premium represents
         expected_move_pct = (atm_put_price / current_price) * 100
@@ -2741,12 +2862,18 @@ def analyze_options_structure(ticker_symbol, current_price):
 
         return {
             "expected_move_pct": round(expected_move_pct, 2),
-            "atm_strike": round(float(atm_put['strike'].values[0]), 2),
+            "atm_strike": atm_strike,
             "atm_put_price": round(atm_put_price, 2),
             "atm_expiration": nearest_exp,
+            # put/call walls come from openInterest, a settlement figure that IS
+            # populated without a book -- they need no carry.
             "put_wall": put_wall_strike,
             "call_wall": call_wall_strike,
-            "atm_iv": round(float(atm_put['impliedVolatility'].values[0]) * 100, 2)
+            "atm_iv": atm_iv,
+            # Whether the threshold rests on a live book or a carried one, and when
+            # that one was taken. Display state; nothing branches on it.
+            "em_source": em_source,
+            "em_asof": em_asof,
         }
     except Exception as e:
         print(f"Debug: Options analysis failed for {ticker_symbol}: {e}")
@@ -3192,6 +3319,8 @@ def fetch_loop(test_mode=False):
                             "atm_iv":        opt_data['atm_iv']         if opt_data else existing.get('atm_iv'),
                             "put_wall":      opt_data['put_wall']       if opt_data else existing.get('put_wall'),
                             "call_wall":     opt_data['call_wall']      if opt_data else existing.get('call_wall'),
+                            "em_source":     opt_data['em_source']      if opt_data else existing.get('em_source'),
+                            "em_asof":       opt_data['em_asof']        if opt_data else existing.get('em_asof'),
                         }
 
                         # --- 1-sigma: full card + synthesis on first sighting ---
@@ -3285,6 +3414,11 @@ def fetch_loop(test_mode=False):
 
         with open(DATA_FILE, 'w') as f:
             json.dump(market_data, f)
+
+        # Persist the session's latest ATM marks once per pass. Whatever is in the
+        # file when the loop stops at 16:00 is the last live book of the day, which
+        # is exactly what the next pre-market carries.
+        flush_atm_marks()
 
         # Mark this :15/:45 window done so the volume sweep fires once per window.
         if run_volume:

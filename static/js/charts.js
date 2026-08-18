@@ -358,7 +358,15 @@
         loadNewsArchive(ticker);
         document.getElementById('dd-structure').innerText = d.structure || 'Analyzing options chain...';
         document.getElementById('dd-impact').innerText = d.impact || 'Calculating optimal trade mechanics...';
-        document.getElementById('dd-sigma').innerText = d.expected_move ? '1σ bound: ±' + d.expected_move + '%' : '';
+        // Pre-market carries the prior session's mark; name it rather than let a
+        // stale-by-design number read as a live quote.
+        let sigmaNote = '';
+        if (d.em_source === 'prior_close' && d.em_asof) {
+            const t = new Date(d.em_asof);
+            sigmaNote = isNaN(t) ? ' · prior close' : ' · prior close ' +
+                t.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+        document.getElementById('dd-sigma').innerText = d.expected_move ? '1σ bound: ±' + d.expected_move + '%' + sigmaNote : '';
 
         document.getElementById('dd-atm-strike').innerText = d.atm_strike ? `$${d.atm_strike}` : '--';
         document.getElementById('dd-atm-put-price').innerText = d.atm_put_price ? `$${d.atm_put_price}` : '--';

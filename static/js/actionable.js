@@ -67,7 +67,13 @@
                     return `<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded ${b.cls}">${esc(b.text)}</span>`;
                 }).join('');
                 const badgeRow = badges ? `<div class="flex flex-wrap gap-1 mt-0.5">${badges}</div>` : '';
-                const emText = (data.expected_move != null) ? `±${data.expected_move}%` : '';
+                // A bound carried from the prior session's last live book (options do not
+                // quote pre-market) is marked, so the number is not read as live.
+                const emCarried = data.em_source === 'prior_close';
+                const emMark = emCarried
+                    ? `<span class="text-slate-500" title="Prior-session close mark — options do not quote pre-market">*</span>`
+                    : '';
+                const emText = (data.expected_move != null) ? `±${data.expected_move}%${emMark}` : '';
                 return `
                     <div class="glass-panel group relative rounded-xl cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderColor}${highlight} shadow-lg flex flex-col gap-0.5" onclick="updateContext('${ticker}')" ondragstart="return false">
                         <button class="dismiss-btn absolute top-0.5 right-1 invisible group-hover:visible text-slate-500 hover:text-red-400 text-xs leading-none" title="Dismiss card" onclick="event.stopPropagation(); dismissActionable('${esc(ticker)}')">✕</button>

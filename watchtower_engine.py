@@ -3008,6 +3008,9 @@ _atm_marks_dirty = False
 # SUPPRESSED (user, 2026-08-18) -- never a fall back to lastPrice, which read 15.60
 # against a 28.90 mid on GEV even with a live book.
 ATM_MARK_MAX_AGE_DAYS = 5
+# A one-sided book (bid 0) is priced at its ASK -- but an ask below this, with no bid,
+# is one tick of noise on an illiquid strike, not a price of protection. Suppress.
+ATM_MIN_ONE_SIDED_ASK = 0.10
 
 
 def _load_atm_marks():
@@ -3032,11 +3035,17 @@ def record_atm_mark(ticker, strike, bid, ask, spot, expiration, iv):
     mark was soft."""
     global _atm_marks_dirty
     with atm_marks_lock:
+        # `mid` is what the pre-market path reads back as the premium, so it must be
+        # the SAME number the live trigger used: the midpoint on a two-sided book, the
+        # ask on a one-sided one. `basis` says which, so a carried one-sided mark is
+        # visible in the store rather than dressed as a midpoint.
+        one_sided = not (bid > 0)
         _load_atm_marks()[ticker] = {
             "strike": strike,
             "bid": bid,
             "ask": ask,
-            "mid": round((bid + ask) / 2, 4),
+            "mid": round(ask if one_sided else (bid + ask) / 2, 4),
+            "basis": "ask" if one_sided else "mid",
             "spot": round(spot, 4),
             "expiration": expiration,
             "iv": iv,
@@ -3126,8 +3135,17 @@ def analyze_options_structure(ticker_symbol, current_price):
         atm_strike = round(float(atm_put['strike'].values[0]), 2)
         atm_iv = round(float(atm_put['impliedVolatility'].values[0]) * 100, 2)
 
-        if bid > 0 and ask > 0:
-            atm_put_price = (bid + ask) / 2      # the mark; lastPrice is stale
+        # THE MARK. Two-sided book -> midpoint. ONE-SIDED (bid 0, real ask) -> the ASK,
+        # not the mid (user, 2026-08-18). SFIX: a $3.32 stock whose ATM put quotes
+        # 0.00/0.15 -- an open book with no bidder, not a dead one. A midpoint of 0.075
+        # is halfway between a price and nothing; it understates the only real quote by
+        # half. The ask is the actual price of protection -- transactable, which 0.075
+        # is not -- and errs HIGH on the threshold, the safe direction. An ask under
+        # ATM_MIN_ONE_SIDED_ASK with no bid is uninformative and still gets no mark.
+        # `bid > 0 and ask > 0` used to be the whole test; it could not tell a one-sided
+        # book from the 0.00/0.00 that every contract shows pre-market.
+        if ask > 0 and (bid > 0 or ask >= ATM_MIN_ONE_SIDED_ASK):
+            atm_put_price = (bid + ask) / 2 if bid > 0 else ask
             em_source, em_asof = "live", None
             # Only a REGULAR-session book is worth carrying. A pre-market quote, on
             # the rare name that shows one, is thin enough to be worse than the mark

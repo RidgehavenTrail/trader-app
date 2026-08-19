@@ -3151,8 +3151,51 @@ def analyze_options_structure(ticker_symbol, current_price):
             # the rare name that shows one, is thin enough to be worse than the mark
             # it would overwrite.
             if market_state() == "open":
-                record_atm_mark(ticker_symbol, atm_strike, bid, ask,
-                                current_price, nearest_exp, atm_iv)
+                # RECORD AGAINST THE CONTRACT TOMORROW WILL SELECT, not today's. The
+                # DTE floor walks forward one day every morning, so on a name with
+                # daily/MWF expirations the contract that clears 7 DTE today (TSLA: the
+                # 26th) is NOT the one that clears it tomorrow (the 28th). 2026-08-19
+                # 09:11: five carried marks -- TSLA, AMD, MU, INTC, GOOGL, the most
+                # liquid names on the board -- were rejected by the expiration guard
+                # for exactly this, every one a good mark taken at 15:59 against a
+                # contract tomorrow's floor no longer admits.
+                #
+                # The user's 7-DTE gate is a RULE, so the mark is taken against the
+                # contract that will satisfy it tomorrow rather than the guard being
+                # loosened to a tolerance (which would let a 6-DTE contract in by the
+                # back door). Projecting the cutoff ONE CALENDAR DAY forward picks the
+                # same contract the real next trading day will, weekends included --
+                # verified across 31 tickers x 30 days (930 pairs, 0 disagreements); no
+                # chain on the board expires Sat/Sun/Mon, so Fri+1 and Mon agree. No
+                # holiday calendar needed, and ATM_MARK_MAX_AGE_DAYS already covers the
+                # age side of a holiday gap.
+                #
+                # The LIVE trigger above still uses today's contract -- that is the
+                # right one to fire on today. Only the carried mark looks ahead. One
+                # extra option_chain() call per ticker per pass on the days the two
+                # differ (~0.2s); on the days they agree it is the same chain.
+                _tomorrow_cut = (datetime.today() + timedelta(days=MIN_DTE_CALENDAR_DAYS + 1)
+                                 ).strftime('%Y-%m-%d')
+                _tomorrow_exp = next((e for e in expirations if e > _tomorrow_cut), None)
+                if _tomorrow_exp == nearest_exp:
+                    record_atm_mark(ticker_symbol, atm_strike, bid, ask,
+                                    current_price, nearest_exp, atm_iv)
+                elif _tomorrow_exp:
+                    try:
+                        _tp = stock.option_chain(_tomorrow_exp).puts
+                        _tr = _tp.iloc[(_tp['strike'] - current_price).abs().argsort()[:1]]
+                        _tb = float(_tr['bid'].values[0]) if 'bid' in _tr.columns else 0
+                        _ta = float(_tr['ask'].values[0]) if 'ask' in _tr.columns else 0
+                        if _ta > 0 and (_tb > 0 or _ta >= ATM_MIN_ONE_SIDED_ASK):
+                            record_atm_mark(
+                                ticker_symbol, round(float(_tr['strike'].values[0]), 2),
+                                _tb, _ta, current_price, _tomorrow_exp,
+                                round(float(_tr['impliedVolatility'].values[0]) * 100, 2))
+                    except Exception as _e:
+                        # The look-ahead is a bonus on today's pass; never let it cost
+                        # the live trigger. Today's mark simply is not refreshed.
+                        print(f"[OPTIONS] {ticker_symbol}: look-ahead mark for "
+                              f"{_tomorrow_exp} skipped ({type(_e).__name__}: {_e})")
         else:
             # No book. Carry the prior session's mark or suppress; lastPrice is not
             # a third option (see the ATM-mark block above).

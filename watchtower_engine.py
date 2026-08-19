@@ -155,6 +155,23 @@ MATERIALITY_RULES = [
                           r"congressional|senate|hearing"),
     (3,  "dilution",      r"public offering|shelf registration|convertible|"
                           r"at-the-market|dilut|secondary offering|prices? .*notes"),
+    # STRATEGIC STAKE (2026-08-19). "Marvell gives Google option to buy $12.2 billion
+    # stake in custom chip deal" -- a +10% gap on a name that fell 8% the day before --
+    # scored 0.0/general: corp action knows whole-business M&A (acquire/merger/divest),
+    # business(2) knows "deal with" but not bare "deal", and nothing knew a hyperscaler
+    # taking a MINORITY STAKE in a supplier, which is exactly the event that moves a
+    # chip name 10%. It lost all three slots on a 0.05 relevance tiebreak to a
+    # valuation rehash, and would have lost them at the 15:00 sweep too: being in the
+    # pool is not being on the card. Sized to corp action (3), not business (2) -- a
+    # $12B stake is M&A-scale, not launch-scale.
+    #
+    # Keyed on SIZE or on the STAKE verb, never on bare "invest" -- "invest" is the 13F
+    # vocabulary and _is_institutional_holdings runs first; "... LP Invests $2.26
+    # Million in <co>" is the documented residual deliberately left alone (session 45).
+    # "billion" is what separates the two, and the stake/option verbs name the event.
+    (3,  "strategic stake", r"\$ ?[\d.,]+ ?(billion|bn)\b.{0,40}?\b(stake|investment|deal)\b|"
+                            r"\b(option to (buy|acquire)|takes? a \w* ?stake|strategic "
+                            r"(stake|investment)|equity stake|minority stake)\b"),
     # business ABOVE analyst (user, 2026-08-10): a contract win or a product launch
     # is a real catalyst in a way a price-target tweak is not.
     (2,  "business",      r"contract|partnership|launch|unveil|collaborat|deal with"),

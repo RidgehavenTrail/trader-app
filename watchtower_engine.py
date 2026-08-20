@@ -3574,6 +3574,44 @@ def fetch_loop(test_mode=False):
                             raise ValueError("fewer than two valid closes in the 5d frame")
                         current_price = float(_valid.iloc[-1])
                         _cur_date     = _valid.index[-1].date()
+
+                        # TODAY'S BAR CAN BE THE MISSING ONE (2026-08-20). The 08-18 fix
+                        # stated "take the newest valid close as current" and never
+                        # asserted that close is TODAY'S. When Yahoo's frame lacks
+                        # today's row during open hours, the newest valid close is
+                        # YESTERDAY, prev walks to the day before, and the "day's move"
+                        # is yesterday's move relabelled as today's -- which FIRES.
+                        # Four cards minted exactly that way this morning (TSLA +4.23,
+                        # INTC -4.02, KHC +3.46, MRVL +9.85 -- each yesterday's move to
+                        # the decimal, on a day the stocks did -2.4/-2.1/-0.8/+1.7),
+                        # each spending an AV pull to explain a phantom. The recovery
+                        # below could not repair it: its guard wants the recovered
+                        # session strictly BETWEEN the anchors, and here it EQUALS
+                        # _cur_date. Mirror image of the 08-18 bug: same corrupt feed,
+                        # opposite anchor.
+                        #
+                        # The invariant, stated at last: during open hours `current` is
+                        # today or it is not a day's move. When today's bar is missing,
+                        # read the live price off the 1m series (what the pre-market
+                        # branch already trusts); correcting _cur_date to TODAY also
+                        # re-arms the recovery guard for a NaN'd yesterday behind it.
+                        # One extra request on a broken day, none on a healthy one --
+                        # the _prior_session_close pattern.
+                        if _cur_date != now_et.date():
+                            _live = stock.history(period="1d", interval="1m",
+                                                  prepost=True)
+                            if _live.empty:
+                                raise ValueError(
+                                    f"today's daily bar missing and no 1m data "
+                                    f"(newest valid close is {_cur_date})")
+                            _stale_close = current_price
+                            current_price = float(_live['Close'].iloc[-1])
+                            print(f"[TODAY BAR] {ticker}: daily frame's newest valid "
+                                  f"close is {_cur_date}, not today — live price "
+                                  f"{current_price:.2f} from the 1m series (would have "
+                                  f"used {_stale_close:.2f} and relabelled yesterday's "
+                                  f"move as today's)")
+                            _cur_date = now_et.date()
                         _before = _valid[[d < _cur_date for d in _valid.index.date]]
                         if _before.empty:
                             raise ValueError("no prior valid close")

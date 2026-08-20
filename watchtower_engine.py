@@ -2841,6 +2841,18 @@ _TAG_LEAK_PHRASES = (
 _TAG_LEAK_STARTS = tuple(sorted({p for _, p in _TAG_LEAK_PHRASES if isinstance(p, str)},
                                 key=len, reverse=True))
 
+# ABSENCE-ANNOUNCEMENT FILLER (user, 2026-08-20: "completely filler ... the remaining
+# verbiage still contains useful info"). The sentence came from THIS ENGINE: the
+# 717c00c prompt handed the model "no company-specific news accounts for this move" as
+# the approved wording, and it duly led every no-catalyst card with it (GEV and SNAP
+# verbatim, same day). The prompt no longer prescribes it; this strips a LEADING
+# occurrence if the model writes one anyway. Leading only — a mid-text variant is
+# rare and clause surgery there risks the grammar — and only when enough text
+# follows to stand alone: an empty why is worse than the filler.
+_ABSENCE_FILLER_RE = re.compile(
+    r"^\s*(?:There is |There was )?[Nn]o (?:company-specific|company specific) news "
+    r"(?:accounts? for|explains?|explaining) (?:this|the) move[.;:]\s*")
+
 
 def _strip_tag_leaks(synth):
     """Rewrite the known leak phrases into plain language, then remove any bare tag
@@ -2874,6 +2886,13 @@ def _strip_tag_leaks(synth):
             for _plain in _TAG_LEAK_STARTS:
                 v = re.sub(r"(^|[.!?]\s+)" + re.escape(_plain),
                            lambda m, p=_plain: m.group(1) + p[0].upper() + p[1:], v)
+            # Drop a leading absence announcement when real content follows it
+            # (see _ABSENCE_FILLER_RE above). why only -- structure/impact never
+            # carried this sentence and stripping there risks a different shape.
+            if k == 'why':
+                _af = _ABSENCE_FILLER_RE.match(v)
+                if _af and len(v) - _af.end() >= 20:
+                    v = v[_af.end():]
         except Exception:
             v = orig
         if v != orig:
@@ -2941,17 +2960,20 @@ attribute the move to the sector and never supply a reason the sector moved. The
 market-wide block, when present, is the market's own move -- a measurement, not news.
 Use it only to state whether this stock moved WITH the market or AGAINST it; it is
 never itself the cause, and it never licenses a theory about why the market moved.
-If nothing here can explain the move, say so plainly.
+If nothing here can explain the move, do NOT announce that — never write a sentence
+stating the absence of news ("no company-specific news accounts for this move" or any
+variant). State the measured context you DO have — the sector read, the market
+comparison — and stop. An unexplained move is shown by claiming no cause, not by
+narrating that there is none. And never speculate a cause to fill the gap.
 
 THE TAGS ARE FOR YOUR REASONING ONLY. Write in plain language, as an analyst would to a
 reader who has never seen this list. Never write the words PRIMARY, BACKGROUND or
 CONTEXT, with or without brackets, and never refer to "the primary item(s)", "the
-background context" or "the primary data". When nothing explains the move, say it the
-way a person would -- "no company-specific news accounts for this move" -- and never by
-naming a tag or describing what you were or were not given.
+background context" or "the primary data". Never describe what you were or were not
+given — no tags, and no sentences about the absence of news.
 
 Synthesize this data and return ONLY a valid JSON object with EXACTLY these three keys, and nothing else - no preamble, no markdown fences:
-"why": A 2-3 sentence fundamental or news-driven reason for the move, drawn only from items that may be offered as a cause. If there are none, or they do not account for the move, say so plainly, in plain language, rather than speculating.
+"why": A 2-3 sentence fundamental or news-driven reason for the move, drawn only from items that may be offered as a cause. If there are none, or they do not account for the move, lead with the sector or market context instead — without announcing the absence, and without speculating.
 {structure_key}
 "impact": A strict 1-2 sentence actionable trading rule or portfolio impact warning."""
 

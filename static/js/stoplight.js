@@ -177,6 +177,11 @@
                 { light: 'yellow', range: '35 – 50%', mean: 'premium eroding' },
                 { light: 'red',    range: '≥ 50%',    mean: 'premium intact' }
             ],
+            // The band edges as NUMBERS, for the sparkline's dashed gridlines (the
+            // prototype's 35/50 lines). Hand-written like the rest of AB_WHY —
+            // per-factor content is allowed to be per-factor (user, 2026-08-21); the
+            // definition promotion only moves where this data lives, not this shape.
+            edges: [35, 50],
             glyph: [
                 { sym: '+', arrow: 'plus',  mean: 'volume AGREES with the money' },
                 { sym: '−', arrow: 'minus', mean: 'volume CONTRADICTS it' }
@@ -403,12 +408,16 @@
     // A flat series (every value equal) would divide by zero on the y-scale, so it is
     // pinned to the mid-line instead of collapsing onto the baseline.
     const AB_SPARK_N = 10;   // how many observations the strip shows, not a unit of time
-    function abSparkSVG(days, sel, light) {
+    function abSparkSVG(days, sel, light, edges) {
         const pts = days.slice(0, AB_SPARK_N).filter(d => typeof d.value === 'number').reverse();
         if (pts.length < 2) return null;
         const W = 150, H = 24, PAD = 3;
         const vs = pts.map(d => d.value);
-        const lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo;
+        // Band edges join the scale as well as the drawing: an edge outside the data's
+        // own range must pull the scale open rather than draw off-canvas — the whole
+        // point of the 35 line is seeing how far ABOVE it the series is riding.
+        const es = (edges || []).filter(e => Number.isFinite(e));
+        const lo = Math.min(...vs, ...es), hi = Math.max(...vs, ...es), span = hi - lo;
         const x = i => PAD + i * ((W - 2 * PAD) / (pts.length - 1));
         const y = v => span ? (H - PAD) - ((v - lo) / span) * (H - 2 * PAD) : H / 2;
         const line = pts.map((d, i) => `${x(i).toFixed(1)},${y(d.value).toFixed(1)}`).join(' ');
@@ -419,6 +428,9 @@
         // clicking down the rail retints the strip to the day you are reading. The
         // area is the line closed to the baseline at 10% opacity; the dot's dark ring
         // is what keeps it legible on top of that fill.
+        const grid = es.map(e =>
+            `<line x1="0" y1="${y(e).toFixed(1)}" x2="${W}" y2="${y(e).toFixed(1)}" ` +
+            `class="ab-spk-gl"/>`).join('');
         const area = `<polygon points="${line} ${x(pts.length - 1).toFixed(1)},${H} ` +
                      `${x(0).toFixed(1)},${H}" fill="currentColor" opacity=".10"/>`;
         const mark = (si >= 0 && si < pts.length)
@@ -426,14 +438,11 @@
               `fill="currentColor" stroke="#0f172a" stroke-width="1.4"/>` : '';
         // The count comes back with the SVG so the label cannot claim a span the line
         // does not draw — a factor with six days of history says 6, not 10.
-        // (The prototype also drew dashed gridlines at the 35/50 band edges. Not
-        // ported: those numbers are premium_share's, hard-coded, and the generic
-        // renderer has no numeric thresholds until the `definition` promotion lands —
-        // that is where the gridlines come back.)
+        // Gridlines draw FIRST so the line and fill sit on top of them.
         return { n: pts.length, svg:
             `<svg class="ab-spk abh-${light}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
             `aria-label="last ${pts.length} readings">` +
-            `${area}<polyline points="${line}" fill="none" class="ab-spk-l"/>${mark}</svg>` };
+            `${grid}${area}<polyline points="${line}" fill="none" class="ab-spk-l"/>${mark}</svg>` };
     }
 
     // The rail is "history at this factor's cadence" — today that is DAYS for every
@@ -645,7 +654,7 @@
         const prevTx = ledDay
             ? (ledPrev ? ledPrev.share.toFixed(1) + '%' : '—')
             : (prior ? (prior.metric || '—') : '—');
-        const spark = abSparkSVG(days, sel, c);
+        const spark = abSparkSVG(days, sel, c, (AB_WHY[f.id] || {}).edges);
         const substrip =
             '<div class="ab-substrip">' +
               `<span><span class="k">Reading</span> <b class="abh-${c}">${esc(rd.metric || '—')}</b></span>` +

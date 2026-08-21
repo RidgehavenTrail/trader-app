@@ -146,19 +146,35 @@
         renderBubbleOverview();
     }
 
-    // WHAT A FACTOR MEASURES, AND WHY IT MATTERS — the one line under the header.
+    // WHAT A FACTOR MEASURES, AND WHY IT MATTERS. Rendered as a small box above the
+    // calendar, NOT in the header — as header prose it crowded the identity line
+    // (user, 2026-08-21). Split into two short fields so the box can label them.
     // Hand-written here for now, DELIBERATELY: the same text also lives in each
     // factor's module docstring, and the right home is a structured `definition`
     // block on the factor itself (with the light thresholds, which live only in
     // docstring prose today). Until that exists this map is the honest shortcut —
-    // an id absent from it renders no why-line rather than a wrong one.
+    // an id absent from it renders NO box rather than a wrong one.
     const AB_WHY = {
-        premium_share:
-            '<b>Measures</b> premium models’ revenue ÷ total revenue on OpenRouter. ' +
-            '<b>Why it matters</b> it is the commoditization kill-mechanism gauge — if quality ' +
-            'stops commanding a price premium, the capex case for frontier models goes with it. ' +
-            '<span class="pro">Green = pro-burst</span> on this board, not “all clear.”'
+        premium_share: {
+            measures: 'Premium models’ revenue ÷ total revenue on OpenRouter.',
+            why: 'The commoditization kill-mechanism gauge — if quality stops commanding a ' +
+                 'price premium, the capex case for frontier models goes with it.'
+        }
     };
+
+    // The note box. Empty string when no factor is selected or none is written,
+    // so it simply does not occupy the column.
+    function abFactorNoteHTML() {
+        const f = _abFactor && _slBoard
+            ? (_slBoard.factors || []).find(x => x.id === _abFactor) : null;
+        const w = f && AB_WHY[f.id];
+        if (!w) return '';
+        return '<div class="ab-sec"><h5>About</h5><div class="ab-box ab-about">' +
+            `<div class="ab-ab-r"><span class="ab-ab-k">Measures</span>${esc(w.measures)}</div>` +
+            `<div class="ab-ab-r"><span class="ab-ab-k">Why</span>${esc(w.why)}</div>` +
+            '<div class="ab-ab-p">Green = pro-burst on this board, not “all clear.”</div>' +
+            '</div></div>';
+    }
     const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
 
     // The panel header. No factor selected -> the board header, unchanged from what
@@ -180,7 +196,8 @@
         // The glyph is the row's own — slGlyph already normalizes up/down/plus/minus,
         // so the header cannot disagree with the sidebar about which way it points.
         const gl = slGlyph(f);
-        const why = AB_WHY[f.id];
+        // IDENTITY ONLY — what it measures and why now lives in the About box above
+        // the calendar (abFactorNoteHTML). One line, so the panel starts with data.
         return void (el.innerHTML =
             '<div class="abh">' +
               `<span class="abh-rank">#${f.rank}</span>` +
@@ -190,8 +207,7 @@
               `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
               (gl ? `<span class="abh-gl">${gl}</span>` : '') +
               '<button class="abh-back" onclick="openBubbleDetail(null)">← Tracker</button>' +
-            '</div>' +
-            (why ? `<div class="abh-why">${why}</div>` : ''));
+            '</div>');
     }
     function switchBubbleTab(tabName) {
         document.getElementById('ab-tabs').querySelectorAll('.view-tab')
@@ -345,6 +361,10 @@
                     `<div class="ab-sec"><h5>Earnings durability</h5><div class="ab-box">${dur}</div></div>` +
                 '</div>' +
                 '<div class="ab-col-cal">' +
+                    // The selected factor's own note sits ABOVE the calendar (user,
+                    // 2026-08-21) rather than in the header, which it made wordy.
+                    // Absent when no factor is selected, so the board view is unchanged.
+                    abFactorNoteHTML() +
                     `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
                 '</div>' +
             '</div>';

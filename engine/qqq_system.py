@@ -542,6 +542,129 @@ def _adapt_xle_avoidlow(spec, refresh=False):
     }
 
 
+def _adapt_mo_alldip(spec, refresh=False):
+    """MO: the ALL-DIP + CARRY baseline (live/mo_system.py, blessed 40b96a6).
+
+    Third sibling. Structurally different from both others in three ways, each of
+    which shows up below rather than in the shared helpers:
+
+    ONE MODULE, TWO OVERLAYS. There is no overlay sibling file — the dark 25%-dip
+    sleeve and the spread-carry switch live inside mo_system.py's own MO block, and
+    the module computes MO_STATE at import as the wiring contract. Everything here is
+    READ off what that script computed (T, _darks, _carry, _pos, _dkm, MO_STATE);
+    nothing is re-derived.
+
+    PURE_DIP HAS NO B1, so the shared `_phase` walk — which decides post_b1 by
+    finding a breakout1 trade — would report MO as hunting a breakout forever. Under
+    SYS_PURE_DIP the dip regime opens when the 63-td zone expires, full stop, so the
+    phase is computed here: gate while the zone holds, the dip regime after, dark in
+    a death era. `phase_state` in MO_SYSTEM deliberately has no b1_hunt entry.
+
+    SPIN FRAME, RAW TODAY. MO's signal arrays are spin-adjusted (the 2007/2008
+    Kraft/PM spinoffs), so `_entry_trigger`'s "o/h/l/c are raw" note does not hold
+    for this module — but the spin factor only rescales prices BEFORE the last
+    break, so every spin value dated after 2008-03-28 equals raw. Today's levels
+    and SMAs are therefore directly quotable, and a future spinoff cannot silently
+    shift them: the module's own `expected 2 spin-offs` guard refuses to run
+    instead. `ratio` (= ac/c) converts fills back to raw exactly as it does for
+    QQQ/XLE.
+
+    The two overlays stack on a FLAT core in priority order — dark position first
+    (it is a filled trade with an entry), then carry (a switch, so like XLE's day
+    filter it gets no entry_price: the buy would have been the PRIOR close, and
+    publishing the run's first close would be off by one bar).
+    """
+    (mo,) = _load(spec, refresh)
+    last_i = mo.n - 1
+    st = mo.MO_STATE
+    T = mo.T          # the module-level walk MO_STATE was built from — never re-run
+
+    era, era_start = _era(mo)
+
+    # --- phase, PURE_DIP-aware (see docstring) ---------------------------------
+    zone = int(getattr(mo, "HALO_WAIT_CAP", 0) or 0)
+    since = int(last_i - era_start)
+    if era == "death":
+        phase, phase_days = "dark", int(last_i - era_start + 1)
+    elif zone and since < zone:
+        phase, phase_days = "gate", since + 1
+    else:
+        phase, phase_days = "post_b1", since - zone + 1
+
+    if phase == "dark":
+        # The dark sleeve is a real resting bid, unlike XLE's day-filter dark era:
+        # tomorrow's level is today's 200 discounted (s200[last] is tomorrow's
+        # prior-day value, the same one-bar-forward convention _entry_trigger uses).
+        depth = float(mo.DARK_DIP_DEPTH)
+        trigger = round(float(mo.s200[last_i]) * (1.0 - depth / 100.0), 2)
+        basis = f"200 SMA −{depth:g}%"
+    else:
+        trigger, basis = _entry_trigger(mo, phase)
+
+    cycle = {
+        "phase": _sys(spec).get("phase_state", {}).get(phase, phase),
+        "phase_days": phase_days,
+        "trigger": trigger,
+        "trigger_basis": basis,
+    }
+
+    # --- core position (shared) -------------------------------------------------
+    pos = _core_position(mo, spec, T)
+    state = pos["state"]
+    entry_price, entry_date = pos["entry_price"], pos["entry_date"]
+    days_held, target, pnl_pct = pos["days_held"], pos["target"], pos["pnl_pct"]
+
+    cash = _sys(spec)["cash_state"]
+    if state == cash and st["dark_position"]:
+        t = next((d for d in reversed(mo._darks)
+                  if d["e"] <= last_i <= d["x"]), None)
+        if t is not None:
+            e = t["e"]
+            state = _sys(spec)["dark_state"]
+            entry_price = round(float(t["fill"] / mo.ratio[e]), 2)
+            entry_date = mo.dates[e].date().isoformat()
+            days_held = int(last_i - e)
+            pnl_pct = round(float(mo.ac[last_i] / t["fill"] - 1) * 100, 2)
+            # walk-back-#5 exit: the 200 while it is falling, 200 x 1.10 while rising
+            target = round(float(mo.s200p[last_i])
+                           * (1.0 if mo._fall[last_i] else 1.10), 2)
+    elif state == cash and st["carry_long"]:
+        run_start = last_i
+        while run_start > 0 and bool(mo._carry[run_start - 1]):
+            run_start -= 1
+        state = _sys(spec)["carry_state"]
+        entry_date = mo.dates[run_start].date().isoformat()
+        days_held = int(last_i - run_start + 1)
+        base = float(mo.ac[run_start - 1] if run_start > 0 else mo.ac[run_start])
+        pnl_pct = round((float(mo.ac[last_i]) / base - 1) * 100, 2)
+
+    # --- era P&L on the BASELINE (system + dark + carry, idle cash at the T-bill
+    # rate). MO has no precomputed combined series (XLE's ov.comb), so the curve is
+    # compounded here from the module's own masks and return arrays — the same
+    # day-level grading the backtest itself uses, reconstructed from nothing.
+    held = mo._pos | mo._dkm | mo._carry
+    era_pnl = 1.0
+    for i in range(era_start, last_i + 1):
+        r = mo.arets[i] if held[i] else mo.cash_d[i]
+        era_pnl *= (1.0 + float(r))
+
+    return {
+        **cycle,
+        "state": state,
+        "state_tier": _tier(state, spec),
+        "entry_price": entry_price,
+        "entry_date": entry_date,
+        "days_held": days_held,
+        "target": target,
+        "target_mult": _sys(spec)["target_mult"],
+        "pnl_pct": pnl_pct,
+        "era": era,
+        "era_days": int(last_i - era_start + 1),
+        "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        "asof": mo.dates[last_i].date().isoformat(),
+    }
+
+
 # --------------------------------------------------------------------------------------
 # THE REGISTRY — the one place a strategy is wired in.
 #
@@ -589,6 +712,21 @@ STRATEGIES = {
         # strategy_config.XLE_SYSTEM["env"], which `_spec_env()` reads first.
         "env":     {},
         "cfg_key": "XLE_SYSTEM",
+    },
+    # MO ADDED 2026-08-20, same recipe as XLE: env empty here (public remote), the
+    # real declaration is strategy_config.MO_SYSTEM["env"]. ONE module, not two — the
+    # dark and carry overlays live inside mo_system.py itself (see the adapter).
+    # NOTE: registering serves /get_ticker_strategy/MO; PORTFOLIOS["hold"]'s MO
+    # holding keeps strategy None — whether the rotation sleeve RUNS this system is
+    # an allocation decision the user has not made (mo_system.py header).
+    "mo_system": {
+        "key":     "mo_system",
+        "tag":     "MO",
+        "modules": ("mo_system",),
+        "adapter": _adapt_mo_alldip,
+        "ticker":  "MO",
+        "env":     {},
+        "cfg_key": "MO_SYSTEM",
     },
 }
 

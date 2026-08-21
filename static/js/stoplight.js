@@ -155,11 +155,26 @@
     // block on the factor itself (with the light thresholds, which live only in
     // docstring prose today). Until that exists this map is the honest shortcut —
     // an id absent from it renders NO box rather than a wrong one.
+    // `bands` is ordered pro-burst -> bubble-supportive (green .. red) and is a LIST,
+    // never a fixed trio: heavy_haul has four (green/yellow/orange/red), so the
+    // renderer must not assume three. `glyph` is omitted when a factor has none —
+    // only 5 of 17 carry one. Both are read generically by renderBubbleSubhead, so
+    // when a factor finally serves its own `definition` the data source changes and
+    // the renderer does not.
     const AB_WHY = {
         premium_share: {
             measures: 'Premium models’ revenue ÷ total revenue on OpenRouter.',
             why: 'The commoditization kill-mechanism gauge — if quality stops commanding a ' +
-                 'price premium, the capex case for frontier models goes with it.'
+                 'price premium, the capex case for frontier models goes with it.',
+            bands: [
+                { light: 'green',  range: '< 35%',    mean: 'commoditized' },
+                { light: 'yellow', range: '35 – 50%', mean: 'premium eroding' },
+                { light: 'red',    range: '≥ 50%',    mean: 'premium intact' }
+            ],
+            glyph: [
+                { sym: '+', arrow: 'plus',  mean: 'volume AGREES with the money' },
+                { sym: '−', arrow: 'minus', mean: 'volume CONTRADICTS it' }
+            ]
         }
     };
 
@@ -184,7 +199,39 @@
             `<div class="ab-ab-r"><span class="ab-ab-k">Measures</span>${esc(w.measures)}</div>` +
             `<div class="ab-ab-r"><span class="ab-ab-k">Why</span>${esc(w.why)}</div>` +
             '<div class="ab-ab-p">Green = pro-burst on this board, not “all clear.”</div>' +
-            '</div></div>';
+            '</div></div>' + abLegendHTML(f, w);
+    }
+
+    // The light scale, right of the About box. Each band is a segment; the one the
+    // factor is CURRENTLY in is lifted and carries the live metric, so the strip is
+    // the reading explained rather than a static key. Segments come from the list, so
+    // a four-band factor (heavy_haul) renders four with no change here.
+    // The glyph row is appended only when the factor has one, and its active side is
+    // matched off extras.arrow — the same field slGlyph reads for the sidebar, so the
+    // legend cannot disagree with the row that opened it.
+    function abLegendHTML(f, w) {
+        const bands = (w && w.bands) || [];
+        if (!bands.length) return '';
+        const lc = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
+        const segs = bands.map(b => {
+            const c = lc[b.light] || 'y';
+            const on = b.light === f.light;
+            return `<div class="ab-sc${on ? ' on abh-' + c : ''}">` +
+                '<div class="ab-sc-t">' +
+                  `<span class="abh-dot abh-bg-${c}"></span>` +
+                  `<span class="ab-sc-n abh-${c}">${esc(b.light)}</span>` +
+                  `<span class="ab-sc-r">${esc(b.range)}</span>` +
+                  (on ? `<span class="ab-sc-v abh-${c}">${esc(f.metric || '')}</span>` : '') +
+                '</div>' +
+                `<div class="ab-sc-m">${esc(b.mean)}</div></div>`;
+        }).join('');
+        const arrow = f.extras && f.extras.arrow;
+        const gl = (w.glyph || []).length && arrow
+            ? '<div class="ab-gl">' + w.glyph.map(g =>
+                `<span class="ab-gl-i${g.arrow === arrow ? ' on' : ''}">` +
+                `<b class="ab-gl-${g.arrow}">${g.sym}</b>${esc(g.mean)}</span>`).join('') + '</div>'
+            : '';
+        return `<div class="abh-legend"><div class="ab-scale">${segs}</div>${gl}</div>`;
     }
     const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
 

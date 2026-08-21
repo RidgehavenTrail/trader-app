@@ -478,6 +478,35 @@
        box is a SHORTER one — every line saved is vertical space not taken from the
        pane below. */
     .ab-about { padding:8px 11px; width:560px; max-width:100%; }
+    /* LIGHT SCALE — right of the About box, filling the rest of the band. Every band
+       the factor defines is a segment; the one it is currently in is lifted and shows
+       the live metric, so the strip explains the reading instead of being a static
+       key. flex:1 on the segments means 3 or 4 bands both fill the strip evenly. */
+    .abh-legend { flex:1; min-width:0; margin-left:14px; display:flex;
+                  flex-direction:column; gap:6px; }
+    .ab-scale { display:flex; background:rgba(30,41,59,0.5); border:1px solid #334155;
+                border-radius:8px; overflow:hidden; }
+    .ab-sc { flex:1; min-width:0; padding:6px 10px; display:flex; flex-direction:column; gap:2px;
+             border-right:1px solid rgba(51,65,85,.7); }
+    .ab-sc:last-child { border-right:0; }
+    .ab-sc.on { background:rgba(30,41,59,0.95); box-shadow:inset 0 2px 0 currentColor; }
+    .ab-sc-t { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    .ab-sc-n { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em;
+               text-transform:uppercase; }
+    .ab-sc-r { font-family:ui-monospace,monospace; font-size:11px; color:#e2e8f0;
+               font-variant-numeric:tabular-nums; }
+    .ab-sc-v { margin-left:auto; font-family:ui-monospace,monospace; font-size:11px;
+               font-weight:700; font-variant-numeric:tabular-nums; }
+    .ab-sc-m { font-size:11px; color:#94a3b8; white-space:nowrap; overflow:hidden;
+               text-overflow:ellipsis; }
+    .ab-sc.on .ab-sc-m { color:#e2e8f0; }
+    /* Glyph key — only rendered when the factor HAS one (5 of 17 do). The side that
+       matches extras.arrow is lit; the other stays dim so the pair reads as a scale. */
+    .ab-gl { display:flex; gap:16px; flex-wrap:wrap; padding:0 2px; }
+    .ab-gl-i { display:flex; align-items:baseline; gap:5px; font-size:10.5px; color:#64748b; }
+    .ab-gl-i.on { color:#cbd5e1; }
+    .ab-gl-i b { font-family:ui-monospace,monospace; font-size:12px; }
+    .ab-gl-plus { color:#4ade80; } .ab-gl-minus { color:#f87171; }
     .ab-ab-r { display:flex; gap:7px; font-size:11.5px; color:#cbd5e1; line-height:1.45; }
     .ab-ab-r + .ab-ab-r { margin-top:5px; }
     .ab-ab-k { flex:0 0 52px; font-family:ui-monospace,monospace; font-size:9px;
@@ -1151,18 +1180,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821m"></script>
-<script src="static/js/watchlist.js?v=20260821m"></script>
-<script src="static/js/macro.js?v=20260821m"></script>
-<script src="static/js/stoplight.js?v=20260821m"></script>
-<script src="static/js/strategy.js?v=20260821m"></script>
-<script src="static/js/strategy-dive.js?v=20260821m"></script>
-<script src="static/js/actionable.js?v=20260821m"></script>
-<script src="static/js/newsletter-cards.js?v=20260821m"></script>
-<script src="static/js/charts.js?v=20260821m"></script>
-<script src="static/js/news-archive.js?v=20260821m"></script>
-<script src="static/js/newsletter-dive.js?v=20260821m"></script>
-<script src="static/js/newsletter-digest.js?v=20260821m"></script>
-<script src="static/js/main.js?v=20260821m"></script>
+<script src="static/js/core.js?v=20260821n"></script>
+<script src="static/js/watchlist.js?v=20260821n"></script>
+<script src="static/js/macro.js?v=20260821n"></script>
+<script src="static/js/stoplight.js?v=20260821n"></script>
+<script src="static/js/strategy.js?v=20260821n"></script>
+<script src="static/js/strategy-dive.js?v=20260821n"></script>
+<script src="static/js/actionable.js?v=20260821n"></script>
+<script src="static/js/newsletter-cards.js?v=20260821n"></script>
+<script src="static/js/charts.js?v=20260821n"></script>
+<script src="static/js/news-archive.js?v=20260821n"></script>
+<script src="static/js/newsletter-dive.js?v=20260821n"></script>
+<script src="static/js/newsletter-digest.js?v=20260821n"></script>
+<script src="static/js/main.js?v=20260821n"></script>
 </body>
 </html>

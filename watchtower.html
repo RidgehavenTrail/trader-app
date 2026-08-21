@@ -509,6 +509,16 @@
     .ab-cols { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-top:14px; }
     .ab-col-prose { flex:0 1 50%; min-width:300px; }
     .ab-col-cal { flex:0 0 auto; margin-left:auto; }
+    /* SNAP THE RIGHT COLUMN UP UNDER THE HEADER RULE (2026-08-21). The tab strip's
+       buttons end ~600px in, so the whole right side of that band — tabs row, the
+       tally line, the grid's top margin — is dead space, and the About box started
+       120px below the rule with nothing above it. -84px lifts the column into that
+       gap so About sits directly under the rule and the calendar follows beneath.
+       Only a flex item moves: the prose column and everything below are untouched.
+       GUARDED because .ab-cols wraps (prose min-width 300 + cal 290 + 24 gap): once
+       the calendar stacks BELOW the prose column, a negative margin would drag it
+       over that column's last rows instead of into empty space. */
+    @media (min-width: 1100px) { .ab-col-cal { margin-top:-84px; } }
     /* Calendar: content-sized grid; rows are SUBGRID so each is a real box (still aligned
        to the parent columns) that can carry the this-week highlight. */
     .ab-cal { display:grid; grid-template-columns:auto auto auto auto; column-gap:14px; row-gap:2px; }
@@ -1127,18 +1137,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821e"></script>
-<script src="static/js/watchlist.js?v=20260821e"></script>
-<script src="static/js/macro.js?v=20260821e"></script>
-<script src="static/js/stoplight.js?v=20260821e"></script>
-<script src="static/js/strategy.js?v=20260821e"></script>
-<script src="static/js/strategy-dive.js?v=20260821e"></script>
-<script src="static/js/actionable.js?v=20260821e"></script>
-<script src="static/js/newsletter-cards.js?v=20260821e"></script>
-<script src="static/js/charts.js?v=20260821e"></script>
-<script src="static/js/news-archive.js?v=20260821e"></script>
-<script src="static/js/newsletter-dive.js?v=20260821e"></script>
-<script src="static/js/newsletter-digest.js?v=20260821e"></script>
-<script src="static/js/main.js?v=20260821e"></script>
+<script src="static/js/core.js?v=20260821f"></script>
+<script src="static/js/watchlist.js?v=20260821f"></script>
+<script src="static/js/macro.js?v=20260821f"></script>
+<script src="static/js/stoplight.js?v=20260821f"></script>
+<script src="static/js/strategy.js?v=20260821f"></script>
+<script src="static/js/strategy-dive.js?v=20260821f"></script>
+<script src="static/js/actionable.js?v=20260821f"></script>
+<script src="static/js/newsletter-cards.js?v=20260821f"></script>
+<script src="static/js/charts.js?v=20260821f"></script>
+<script src="static/js/news-archive.js?v=20260821f"></script>
+<script src="static/js/newsletter-dive.js?v=20260821f"></script>
+<script src="static/js/newsletter-digest.js?v=20260821f"></script>
+<script src="static/js/main.js?v=20260821f"></script>
 </body>
 </html>

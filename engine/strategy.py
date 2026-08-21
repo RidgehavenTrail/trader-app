@@ -339,7 +339,17 @@ def compute_dial():
         return dict(h, color=c.TICKER_COLOR.get(h["ticker"], c.TICKER_COLOR_DEFAULT))
 
     portfolios = c.PORTFOLIOS
-    holdings = [dict(_tint(h), state=_holding_state(h)) for h in portfolios[state]]
+    # NO state=... here (moved to serve time, 2026-08-21). It used to be baked into
+    # this payload, which the dial caches for SIX HOURS — so the one time a strategy
+    # build failed at dial-build time (^IRX stubbed at engine start), the failure
+    # froze inside an otherwise-successful payload and the sidebar showed QQQ as
+    # "unavailable" for the rest of the night while the strategy cache had long since
+    # healed. "Never cache a failure" could not fire: the DIAL build succeeded; the
+    # failure rode in as data. Same trap _with_day_moves documents for quotes —
+    # anything time-sensitive baked into a six-hour payload goes wrong in a way that
+    # looks right. Holding state now resolves on every serve (see _with_day_moves),
+    # riding get_state's own per-strategy TTL cache — a dict lookup when warm.
+    holdings = [_tint(h) for h in portfolios[state]]
     alternates = [{"state": r, "label": REGIME_LABEL[r], "color": REGIME_COLOR[r],
                    "holdings": [_tint(h) for h in portfolios[r]]}
                   for r in REGIME_ORDER if r != state]
@@ -404,8 +414,16 @@ def _with_day_moves(payload):
     def _fill(h):
         return dict(h, **(tech.get(h["symbol"]) or blank))
 
+    # Holding STATE resolves here, at serve time, for the LIVE column only — the same
+    # rule as quotes and for the same reason (see compute_dial's note, 2026-08-21: a
+    # strategy failure baked into the six-hour dial cache outlived its own recovery
+    # by six hours). get_state is TTL-cached per strategy, so a warm serve is a dict
+    # lookup and a recovered strategy is picked up on the next poll. Alternates stay
+    # state-free on purpose — their state is fetched ON SELECTION (2026-08-15);
+    # resolving it eagerly here would walk 26 years per alternate per cold poll.
     return dict(payload,
-                holdings=[_fill(h) for h in payload["holdings"]],
+                holdings=[dict(_fill(h), state=_holding_state(h))
+                          for h in payload["holdings"]],
                 alternates=[dict(a, holdings=[_fill(h) for h in (a.get("holdings") or [])])
                             for a in alts])
 

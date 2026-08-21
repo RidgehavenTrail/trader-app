@@ -100,8 +100,9 @@ def _spec_env(spec):
 
 
 TTL_SECONDS = 6 * 3600
+FAIL_TTL_SECONDS = 180            # cold-cache failure answers instantly this long (see get_state)
 _lock = threading.Lock()
-_cache = {}                       # strategy key -> {"payload": ..., "at": ...}
+_cache = {}                       # strategy key -> {"payload", "at", "fail", "fail_at"}
 
 # Containment is by PREFIX, not by list (2026-08-20). `_SYS_KEYS` used to enumerate
 # "every SYS_* the backtest modules read" and drifted the day a third strategy
@@ -811,18 +812,33 @@ def get_state(strategy=DEFAULT_STRATEGY):
     if spec is None:
         return {"ok": False, "error": f"unknown strategy {strategy!r}"}
     with _lock:
-        slot = _cache.setdefault(strategy, {"payload": None, "at": 0.0})
+        slot = _cache.setdefault(strategy, {"payload": None, "at": 0.0,
+                                            "fail": None, "fail_at": 0.0})
         if slot["payload"] and time.time() - slot["at"] < TTL_SECONDS:
             return slot["payload"]
+        # SHORT failure-memory (2026-08-21). Holding state moved to the dial's SERVE
+        # path, which polls — and with a cold cache during a feed outage, every poll
+        # would otherwise queue a fresh ~90s failing import behind this lock (the old
+        # bake-at-build accidentally rate-limited retries to once per 6h). A failed
+        # build with NO last-good payload answers instantly for FAIL_TTL_SECONDS,
+        # then retries. This is not "caching a failure" in the sense the docstring
+        # forbids: a last-good payload still always wins, and recovery is picked up
+        # at the first retry after the window (the ^IRX outage healed in minutes).
+        if (slot["payload"] is None and slot.get("fail")
+                and time.time() - slot["fail_at"] < FAIL_TTL_SECONDS):
+            return slot["fail"]
         try:
             # refresh on every REBUILD (not the first build — that import is already
             # fresh), so an expired TTL re-downloads instead of re-walking stale arrays.
             p = dict(spec["adapter"](spec, refresh=bool(slot["payload"])),
                      ok=True, stale=False)
             slot["payload"], slot["at"] = p, time.time()
+            slot["fail"] = None
             return p
         except Exception as e:
             print(f"[{spec['tag']}] state build failed: {type(e).__name__}: {e}")
             if slot["payload"]:
                 return dict(slot["payload"], stale=True)
-            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            slot["fail"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            slot["fail_at"] = time.time()
+            return slot["fail"]

@@ -664,9 +664,9 @@
     .ab-substrip b { color:#94a3b8; font-weight:400; }
     .ab-substrip .k { letter-spacing:.06em; text-transform:uppercase; font-size:9px; }
     .ab-substrip .sp { margin-left:auto; display:flex; align-items:center; gap:7px; }
-    .ab-spk-l { stroke:#94a3b8; stroke-width:1.25; }
-    .abh-fill-g { fill:#4ade80; } .abh-fill-y { fill:#fbbf24; }
-    .abh-fill-o { fill:#fb923c; } .abh-fill-r { fill:#f87171; }
+    /* The svg carries abh-<light>, so currentColor tints line, area and dot together —
+       one class, three parts, no way for them to disagree. */
+    .ab-spk-l { stroke:currentColor; stroke-width:1.4; stroke-linejoin:round; }
     /* EVIDENCE — the factor's extras as a key/value grid. The key column is
        max-content so it fits the longest key rather than a guessed width; chip lists
        wrap inside their own cell instead of pushing the grid wide. */
@@ -1454,7 +1454,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821ae"></script>
+<script src="static/js/stoplight.js?v=20260821af"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

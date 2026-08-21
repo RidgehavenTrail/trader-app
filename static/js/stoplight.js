@@ -414,15 +414,26 @@
         const line = pts.map((d, i) => `${x(i).toFixed(1)},${y(d.value).toFixed(1)}`).join(' ');
         // sel indexes the NEWEST-FIRST list; the polyline runs oldest-first.
         const si = pts.length - 1 - sel;
+        // Prototype treatment (Euphemus): the WHOLE spark — line, area, dot — carries
+        // the selected day's light via currentColor off the abh-* class on the svg, so
+        // clicking down the rail retints the strip to the day you are reading. The
+        // area is the line closed to the baseline at 10% opacity; the dot's dark ring
+        // is what keeps it legible on top of that fill.
+        const area = `<polygon points="${line} ${x(pts.length - 1).toFixed(1)},${H} ` +
+                     `${x(0).toFixed(1)},${H}" fill="currentColor" opacity=".10"/>`;
         const mark = (si >= 0 && si < pts.length)
-            ? `<circle cx="${x(si).toFixed(1)}" cy="${y(pts[si].value).toFixed(1)}" r="2.5" ` +
-              `class="ab-spk-pt abh-fill-${light}"/>` : '';
+            ? `<circle cx="${x(si).toFixed(1)}" cy="${y(pts[si].value).toFixed(1)}" r="2.6" ` +
+              `fill="currentColor" stroke="#0f172a" stroke-width="1.4"/>` : '';
         // The count comes back with the SVG so the label cannot claim a span the line
         // does not draw — a factor with six days of history says 6, not 10.
+        // (The prototype also drew dashed gridlines at the 35/50 band edges. Not
+        // ported: those numbers are premium_share's, hard-coded, and the generic
+        // renderer has no numeric thresholds until the `definition` promotion lands —
+        // that is where the gridlines come back.)
         return { n: pts.length, svg:
-            `<svg class="ab-spk" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
+            `<svg class="ab-spk abh-${light}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
             `aria-label="last ${pts.length} readings">` +
-            `<polyline points="${line}" fill="none" class="ab-spk-l"/>${mark}</svg>` };
+            `${area}<polyline points="${line}" fill="none" class="ab-spk-l"/>${mark}</svg>` };
     }
 
     // The rail is "history at this factor's cadence" — today that is DAYS for every

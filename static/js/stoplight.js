@@ -515,13 +515,16 @@
               `<span class="link${both ? '' : ' off'}">↔</span>` +
               `<span class="nm2">${esc(m.name)}</span>` +
               `<span class="fig">${fig}</span></div>`;
-        // Both sides quote a PERCENT and nothing else. `revs` is share of the day's
-        // dollars, `ts` share of its tokens — deliberately the same scale, so the two
-        // columns can be read against each other. Adding a dollar figure to the money
-        // side would break that symmetry and cost the name column ~55px it does not
-        // have beside the calendar.
-        const money = rev.map(m => row(m, inTok.has(m.slug), `<b>${m.revs.toFixed(1)}%</b>`)).join('');
-        const vol = tok.map(m => row(m, inRev.has(m.slug), `<b>${m.ts.toFixed(2)}%</b>`)).join('');
+        // Each lens LEADS with the figure it is sorted by, in that lens's own accent —
+        // gold for dollars on the money side, steel for token share on the volume side
+        // — then quotes the other figure muted behind it. So the coloured number is
+        // always the ranking key, and the pair still lets you see what a model earns
+        // against what it serves. Long names ellipsise; the figures do not shrink
+        // (user: a cut-off model name is acceptable, a cut-off number is not).
+        const money = rev.map(m => row(m, inTok.has(m.slug),
+            `<b>${abUSD(m.rev)}</b> <span class="alt">${m.revs.toFixed(1)}%</span>`)).join('');
+        const vol = tok.map(m => row(m, inRev.has(m.slug),
+            `<b>${m.ts.toFixed(2)}%</b> <span class="alt">${abUSD(m.rev)}</span>`)).join('');
         // The trend line is the point of the overlap count, so it is shown against the
         // oldest day the ledger carries rather than on its own.
         // The sentence is the point — the count alone reads as a stat, and this number

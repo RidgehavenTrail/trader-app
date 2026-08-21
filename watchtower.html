@@ -469,8 +469,7 @@
        LEFT-ALIGNED (user, 2026-08-21): the box starts at the panel's left edge, in
        line with the identity line above it and the tabs below, so the band reads as
        part of that stack rather than as something floating on the right. The free
-       space is now to its RIGHT — which is where the light-scale legend goes once
-       each factor carries its thresholds as data rather than docstring prose. */
+       space to its RIGHT is where the light-scale list now sits (.abh-legend). */
     #ab-subhead:not(:empty) { display:flex; align-items:flex-start; margin-bottom:12px; }
     .abh-note { min-width:0; }
     /* Wider than the 290px it used in the calendar column: there the column was
@@ -478,31 +477,53 @@
        box is a SHORTER one — every line saved is vertical space not taken from the
        pane below. */
     .ab-about { padding:8px 11px; width:560px; max-width:100%; }
-    /* LIGHT SCALE — right of the About box, filling the rest of the band. Every band
-       the factor defines is a segment; the one it is currently in is lifted and shows
-       the live metric, so the strip explains the reading instead of being a static
-       key. flex:1 on the segments means 3 or 4 bands both fill the strip evenly. */
-    .abh-legend { flex:1; min-width:0; margin-left:14px; display:flex;
-                  flex-direction:column; gap:6px; }
-    .ab-scale { display:flex; background:rgba(30,41,59,0.5); border:1px solid #334155;
+    /* LIGHT SCALE — a compact VERTICAL list beside the About box: one row per band,
+       three normally and FOUR for heavy_haul. The first cut was a horizontal strip
+       filling the rest of the band, and the width was wrong for this dashboard
+       (user, 2026-08-21) — side-by-side segments need room the panel does not have.
+       Stacked, the list is CONTENT-SIZED (flex:0 0 auto, deliberately NOT flex:1) so
+       it sits beside the About box instead of stretching to the panel's right edge.
+       PINNED FAR RIGHT (user, 2026-08-21) via margin-left:auto — the free space in the
+       band falls BETWEEN the two boxes rather than after them, so each is anchored to
+       an edge the eye already has: the About box to the panel's left, in line with the
+       identity line and the tabs, the list to the right rule. Left merely adjacent, a
+       content-sized list floated at whatever width its own thresholds happened to need
+       and moved from factor to factor.
+       A GRID, not stacked flex rows: the four columns (light / range / meaning / live
+       metric) then align across every band whatever the threshold text is. Cells are
+       flat children of .ab-scale — four per band, which is what the first-row border
+       reset counts on. */
+    .abh-legend { flex:0 0 auto; min-width:0; margin-left:auto; padding-left:14px;
+                  display:flex; flex-direction:column; gap:6px; }
+    .ab-scale { display:grid; align-items:center;
+                grid-template-columns:max-content max-content 1fr max-content;
+                background:rgba(30,41,59,0.5); border:1px solid #334155;
                 border-radius:8px; overflow:hidden; }
-    .ab-sc { flex:1; min-width:0; padding:6px 10px; display:flex; flex-direction:column; gap:2px;
-             border-right:1px solid rgba(51,65,85,.7); }
-    .ab-sc:last-child { border-right:0; }
-    .ab-sc.on { background:rgba(30,41,59,0.95); box-shadow:inset 0 2px 0 currentColor; }
-    .ab-sc-t { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    .ab-sc-c { padding:4px 9px; font-size:11px; white-space:nowrap;
+               border-top:1px solid rgba(51,65,85,.7); }
+    .ab-scale > .ab-sc-c:nth-child(-n+4) { border-top:0; }
+    .ab-sc-c.on { background:rgba(30,41,59,0.95); }
+    .ab-sc-l { display:flex; align-items:center; gap:6px; }
+    /* Inactive bands stay legible but recede — the list has one live row and three
+       reference rows, and the eye should find the live one without hunting. */
+    .ab-sc-l:not(.on) { opacity:.62; }
+    /* The active row is marked down its LEFT edge, not along a top bar as the strip
+       did: a stacked list is read down that edge. currentColor is the band's light,
+       set by the abh-* class the renderer puts on this same cell. */
+    .ab-sc-l.on { box-shadow:inset 3px 0 0 currentColor; }
     .ab-sc-n { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em;
                text-transform:uppercase; }
-    .ab-sc-r { font-family:ui-monospace,monospace; font-size:11px; color:#e2e8f0;
+    .ab-sc-r { font-family:ui-monospace,monospace; color:#94a3b8;
                font-variant-numeric:tabular-nums; }
-    .ab-sc-v { margin-left:auto; font-family:ui-monospace,monospace; font-size:11px;
-               font-weight:700; font-variant-numeric:tabular-nums; }
-    .ab-sc-m { font-size:11px; color:#94a3b8; white-space:nowrap; overflow:hidden;
-               text-overflow:ellipsis; }
-    .ab-sc.on .ab-sc-m { color:#e2e8f0; }
+    .ab-sc-m { color:#94a3b8; overflow:hidden; text-overflow:ellipsis; }
+    .ab-sc-r.on, .ab-sc-m.on { color:#e2e8f0; }
+    .ab-sc-v { font-family:ui-monospace,monospace; font-weight:700; text-align:right;
+               padding-left:14px; font-variant-numeric:tabular-nums; }
     /* Glyph key — only rendered when the factor HAS one (5 of 17 do). The side that
-       matches extras.arrow is lit; the other stays dim so the pair reads as a scale. */
-    .ab-gl { display:flex; gap:16px; flex-wrap:wrap; padding:0 2px; }
+       matches extras.arrow is lit; the other stays dim so the pair reads as a scale.
+       Stacked too: beside a content-sized list there is no width for a side-by-side
+       pair, and each entry is a full phrase rather than a token. */
+    .ab-gl { display:flex; flex-direction:column; gap:3px; padding:0 2px; }
     .ab-gl-i { display:flex; align-items:baseline; gap:5px; font-size:10.5px; color:#64748b; }
     .ab-gl-i.on { color:#cbd5e1; }
     .ab-gl-i b { font-family:ui-monospace,monospace; font-size:12px; }
@@ -551,6 +572,203 @@
     .ab-cols { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-top:14px; }
     .ab-col-prose { flex:0 1 50%; min-width:300px; }
     .ab-col-cal { flex:0 0 auto; margin-left:auto; }
+    /* FEATURED column — the factor view's left column (board view keeps .ab-col-prose).
+       flex:1, not a constrained half: .ab-col-prose is capped at 50% because PROSE
+       wants a measure, and a reading does not. This column holds a number, a state and
+       a list of evidence keys, all of which read better wide, so it takes everything
+       up to the calendar (user, 2026-08-21). The calendar's margin-left:auto is then
+       inert — flex:1 already claims the slack — and is left in place so the two
+       columns keep one rule between them. */
+    /* basis 300px, NOT auto: an auto basis is the CONTENT's width, and the evidence
+       chip list is wide enough that the calendar wrapped to its own row below.
+       A small basis lets flex-grow do the sizing instead of the content. */
+    .ab-col-feat { flex:1 1 300px; min-width:300px; }
+    /* NEWSLETTER PLAYS strip — heights live here rather than inline so collapsing is
+       a single class flip. Open is the 112px the strip has always been; collapsed is
+       the header row alone. Height is animated, not display:none'd, so the cards keep
+       their scroll position across a collapse and the panel below does not jump. */
+    .nl-strip { height:112px; transition:height .16s ease; overflow:hidden; }
+    .nl-strip.collapsed { height:26px; }
+    .nl-cards { height:calc(100% - 22px); }
+    .nl-strip.collapsed .nl-cards { visibility:hidden; }
+    .nl-bar { display:flex; align-items:center; gap:8px; width:100%; padding:6px 16px 2px;
+              background:none; border:0; cursor:pointer; text-align:left; }
+    .nl-bar:hover .nl-caret { color:#cbd5e1; }
+    .nl-bar:focus-visible { outline:2px solid #818cf8; outline-offset:-2px; }
+    .nl-caret { margin-left:auto; color:#64748b; font-size:10px; line-height:1;
+                transition:transform .16s ease; }
+    .nl-strip.collapsed .nl-caret { transform:rotate(-90deg); }
+    /* The count is the collapsed bar's whole content, so it only shows when closed —
+       open, the cards themselves are the count. */
+    .nl-count { font-family:ui-monospace,monospace; font-size:9.5px; color:#64748b;
+                letter-spacing:.06em; display:none; }
+    .nl-strip.collapsed .nl-count { display:inline; }
+
+    /* ── FACTOR EVIDENCE BLOCK ───────────────────────────────────────────────
+       Structure from Euphemus' prototype (artifact 0d4c13d9): a day RAIL down the
+       left, the day's reading as a SUBSTRIP, the evidence under it, and the nuance as
+       footnote columns at the bottom — all inside one bordered frame so it reads as a
+       single instrument rather than four stacked boxes.
+       Every colour here is a dashboard token; the prototype's :root vars map onto the
+       slate palette already in this file. */
+    .ab-frame { border:1px solid #1e293b; border-radius:10px; overflow:hidden;
+                background:rgba(11,20,36,.35); }
+    .ab-ev-hd { display:flex; align-items:center; gap:9px; padding:6px 13px;
+                border-bottom:1px solid #1e293b; background:rgba(11,20,36,.5); }
+    .ab-ev-hd .lbl { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.14em;
+                     text-transform:uppercase; color:#64748b; }
+    .ab-ev-hd .meta { font-family:ui-monospace,monospace; font-size:10px; color:#64748b; }
+    /* Names a past day's ledger as a RECONSTRUCTION — amber, because it is a caveat
+       on the number beside it, not a light. */
+    .ab-recon { color:#b0813a; }
+    /* The view switcher is rendered only when a factor has MORE than one view, so
+       these rules sit unused today by design — see the comment in abFeaturedHTML. */
+    .ab-vsw { display:flex; gap:5px; margin-left:auto; }
+    .ab-vbtn { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.05em;
+               text-transform:uppercase; color:#64748b; background:rgba(148,163,184,.08);
+               border:1px solid rgba(148,163,184,.22); border-radius:4px; padding:2px 8px;
+               cursor:pointer; }
+    .ab-vbtn:hover { color:#e2e8f0; background:rgba(148,163,184,.16); }
+    .ab-vbtn[aria-pressed="true"] { color:#c7d2fe; background:rgba(129,140,248,.14);
+                                    border-color:rgba(129,140,248,.42); }
+    .ab-evid { display:flex; min-height:250px; }
+    /* RAIL — history at this factor's cadence. Fixed width and its own scroll: thirty
+       days must not set the height of the block, and the detail beside it must not
+       reflow as you click down the days. */
+    /* 134px, not the prototype's 112: the rail carries the WEEKDAY as well as the date
+       here, and the weekday is the cue that a red Saturday is the calendar rather than
+       the market. */
+    .ab-rail { flex:0 0 134px; background:#0b1424; border-right:1px solid #1e293b;
+               display:flex; flex-direction:column; overflow-y:auto; max-height:340px; }
+    .ab-day { display:flex; align-items:center; gap:6px; padding:5px 9px; width:100%;
+              background:none; border:0; border-bottom:1px solid rgba(30,41,59,.6);
+              border-left:2px solid transparent; cursor:pointer; text-align:left;
+              color:#94a3b8; font-family:ui-monospace,monospace; font-size:11px; }
+    .ab-day:hover { background:rgba(148,163,184,.06); color:#e2e8f0; }
+    .ab-day[aria-current="true"] { background:#1a2942; color:#e2e8f0; border-left-color:#818cf8; }
+    .ab-day .d { font-variant-numeric:tabular-nums; }
+    .ab-day .wd { font-size:8.5px; color:#475569; }
+    /* Weekend rows read amber rather than slate — not a light (it is not a reading
+       about the market), just enough to be findable when a flip needs explaining. */
+    .ab-day .wd.we { color:#b0813a; }
+    .ab-day[aria-current="true"] .wd.we { color:#fbbf24; }
+    .ab-day .v { margin-left:auto; font-variant-numeric:tabular-nums; font-size:10px; color:#64748b; }
+    .ab-day[aria-current="true"] .v { color:#94a3b8; }
+    .ab-rail-e { padding:10px 9px; font-size:10.5px; color:#475569; }
+    .ab-detail { flex:1; min-width:0; display:flex; flex-direction:column; }
+    /* SUBSTRIP — the selected day's reading. Its own row above the evidence so the
+       "what am I looking at" line survives however the evidence below it is shaped. */
+    .ab-substrip { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;
+                   padding:5px 13px; border-bottom:1px solid #1e293b;
+                   font-family:ui-monospace,monospace; font-size:10.5px; color:#64748b; }
+    .ab-substrip b { color:#94a3b8; font-weight:400; }
+    .ab-substrip .k { letter-spacing:.06em; text-transform:uppercase; font-size:9px; }
+    .ab-substrip .sp { margin-left:auto; display:flex; align-items:center; gap:7px; }
+    .ab-spk-l { stroke:#94a3b8; stroke-width:1.25; }
+    .abh-fill-g { fill:#4ade80; } .abh-fill-y { fill:#fbbf24; }
+    .abh-fill-o { fill:#fb923c; } .abh-fill-r { fill:#f87171; }
+    /* EVIDENCE — the factor's extras as a key/value grid. The key column is
+       max-content so it fits the longest key rather than a guessed width; chip lists
+       wrap inside their own cell instead of pushing the grid wide. */
+    .ab-ev { padding:9px 13px 11px; flex:1; }
+    .ab-ev-g { display:grid; grid-template-columns:max-content 1fr; column-gap:16px;
+               row-gap:6px; align-items:baseline; }
+    .ab-ev-k { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em;
+               text-transform:uppercase; color:#64748b; }
+    .ab-ev-v { font-family:ui-monospace,monospace; font-size:11.5px; color:#e2e8f0;
+               font-variant-numeric:tabular-nums; min-width:0; }
+    .ab-ev-n { color:#475569; }
+    .ab-ev-chips { display:flex; flex-wrap:wrap; gap:5px; }
+    .ab-ev-chip { font-size:10px; color:#cbd5e1; background:rgba(148,163,184,.08);
+                  border:1px solid rgba(148,163,184,.2); border-radius:4px; padding:1px 6px; }
+    /* LEDGER TABLE — the priced per-model evidence for one day. Its own horizontal
+       scroller: six columns need ~610px and the panel column is ~780px today, but a
+       docked window must scroll the TABLE, never the page.
+       The premium/commodity pair gets its own two colours (gold / slate) rather than
+       reusing the stoplight palette — a tier is not a light, and green-vs-red here
+       would read as a verdict on the model instead of a side of the price line. */
+    .ab-scroller { overflow-x:auto; flex:1; }
+    .ab-ledger { border-collapse:collapse; width:100%; min-width:610px; }
+    .ab-ledger thead th { font-family:ui-monospace,monospace; font-size:9px;
+        letter-spacing:.1em; text-transform:uppercase; color:#64748b; font-weight:500;
+        text-align:right; padding:7px 10px 5px; border-bottom:1px solid #334155;
+        white-space:nowrap; }
+    .ab-ledger thead th.l { text-align:left; }
+    .ab-ledger tbody td { padding:6px 10px; border-bottom:1px solid rgba(30,41,59,.75);
+        font-family:ui-monospace,monospace; font-size:12px;
+        font-variant-numeric:tabular-nums; text-align:right; color:#e2e8f0; }
+    .ab-ledger tbody td.l { text-align:left; }
+    .ab-ledger tbody tr:hover { background:rgba(148,163,184,.05); }
+    .ab-ledger .rk { color:#64748b; font-size:11px; width:24px; }
+    .ab-ledger .mdl { display:flex; flex-direction:column; min-width:0; }
+    .ab-ledger .nm2 { font-family:'Inter',system-ui,sans-serif; font-size:12px; color:#e2e8f0;
+        font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        max-width:240px; line-height:1.3; }
+    .ab-ledger .sl { font-size:9px; color:#64748b; white-space:nowrap; overflow:hidden;
+        text-overflow:ellipsis; max-width:240px; line-height:1.3; }
+    .tier { font-size:8.5px; letter-spacing:.08em; text-transform:uppercase;
+        padding:1px 5px; border-radius:3px; white-space:nowrap; }
+    .tier.p { color:#e0b155; background:rgba(224,177,85,.12); border:1px solid rgba(224,177,85,.32); }
+    .tier.c { color:#5b7089; background:rgba(91,112,137,.14); border:1px solid rgba(91,112,137,.34); }
+    .revcell { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+    .revcell .amt { color:#94a3b8; font-size:10.5px; }
+    .revcell .bar { position:relative; height:5px; border-radius:2px; flex:1;
+        background:rgba(148,163,184,.13); min-width:50px; overflow:hidden; }
+    .revcell .bar i { position:absolute; inset:0 auto 0 0; border-radius:2px; display:block; }
+    .revcell .bar i.p { background:#e0b155; } .revcell .bar i.c { background:#5b7089; }
+    .revcell .pct { color:#94a3b8; font-size:10px; width:36px; text-align:right; }
+    /* TWO LENSES — the same day read by money and by volume, side by side, because the
+       factor's +/- glyph is precisely whether those two agree. A model on BOTH lists is
+       tinted indigo and carries the link mark; the mark is rendered TRANSPARENT rather
+       than omitted on the others so the name column starts at one x down the list. */
+    .ab-lenses { display:grid; grid-template-columns:1fr 1fr; flex:1; min-width:0; }
+    .ab-lens { min-width:0; display:flex; flex-direction:column; }
+    .ab-lens + .ab-lens { border-left:1px solid #1e293b; }
+    .ab-lens .lens-hd { padding:7px 12px 6px; border-bottom:1px solid #334155; }
+    .ab-lens .lens-hd .t { font-size:12px; font-weight:600; color:#e2e8f0; }
+    .ab-lens .lens-hd .s { font-family:ui-monospace,monospace; font-size:9.5px; color:#64748b; }
+    .ab-lrow { display:flex; align-items:center; gap:8px; padding:5px 12px;
+        border-bottom:1px solid rgba(30,41,59,.75); font-family:ui-monospace,monospace;
+        font-size:11px; color:#94a3b8; }
+    .ab-lrow:hover { background:rgba(148,163,184,.05); }
+    .ab-lrow .rk { width:18px; color:#64748b; }
+    .ab-lrow .link { width:8px; text-align:center; color:#818cf8; font-size:10px; flex:none; }
+    .ab-lrow .link.off { color:transparent; }
+    .ab-lrow .nm2 { flex:1; min-width:0; font-family:'Inter',system-ui,sans-serif;
+        font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ab-lrow .fig { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:10.5px; }
+    .ab-lrow.both { background:rgba(129,140,248,.07); }
+    .ab-lrow.both .nm2 { color:#c7d2fe; }
+    .ab-lens.money .fig b { color:#e0b155; font-weight:600; }
+    .ab-lens.vol .fig b { color:#5b7089; font-weight:600; }
+    .ab-overlapbar { padding:6px 13px; border-top:1px solid #1e293b; font-size:11.5px;
+        color:#94a3b8; background:rgba(21,33,54,.7); }
+    .ab-overlapbar b { color:#c7d2fe; font-family:ui-monospace,monospace; }
+    .ab-overlapbar .ago { color:#64748b; }
+    /* Narrow WINDOW: the lenses stack rather than squeeze two name columns to nothing.
+       The prototype stacked below 780px of CONTAINER; this breakpoint is on the
+       VIEWPORT, and beside the 274px calendar column the container is already under
+       780 at every ordinary window size — honouring that number literally would stack
+       the lenses always, which throws away the one thing view B is for. 1024 is where
+       the window itself is genuinely cramped. */
+    @media (max-width: 1024px) {
+      .ab-lenses { grid-template-columns:1fr; }
+      .ab-lens + .ab-lens { border-left:0; border-top:1px solid #1e293b; }
+    }
+    /* FOOTNOTES — auto-fit columns, so one column (provenance alone) fills the width
+       and three still fit; a factor that gains a Method note does not need a rule. */
+    .ab-foot { display:grid; grid-template-columns:repeat(auto-fit,minmax(232px,1fr));
+               border-top:1px solid #334155; background:rgba(11,20,36,.5); }
+    .ab-fc { padding:8px 13px; border-right:1px solid rgba(30,41,59,.85); min-width:0; }
+    .ab-fc:last-child { border-right:0; }
+    .ab-fc .k { font-family:ui-monospace,monospace; font-size:8.5px; letter-spacing:.14em;
+                text-transform:uppercase; color:#64748b; display:block; margin-bottom:3px; }
+    .ab-fc .b { font-size:11.5px; color:#94a3b8; line-height:1.45; }
+    .ab-fc .b b { color:#e2e8f0; font-weight:600; }
+    .ab-fc-err { color:#fbbf24; }
+    .ab-foot .prov { font-family:ui-monospace,monospace; font-size:10.5px; color:#94a3b8;
+                     line-height:1.6; }
+    .ab-foot .prov span { color:#475569; }
     /* The negative-margin lift that used to live here is GONE (2026-08-21). It tried
        to drag this column toward the header rule from INSIDE the scrolling pane,
        which could never work: the pane is overflow-y:auto, so the part lifted past
@@ -816,13 +1034,21 @@
             </div>
         </div>
 
-        <!-- NEW: Newsletter Plays strip — Watching first, then Active, then Closed -->
-        <div class="shrink-0 border-b border-slate-700 bg-slate-900/20" style="height: 112px;">
-            <div class="px-4 pt-1.5 pb-0.5 flex items-center gap-2">
+        <!-- NEW: Newsletter Plays strip — Watching first, then Active, then Closed.
+             COLLAPSIBLE (2026-08-21): the detail panel below is flex-1, so the 112px
+             this strip holds is 112px the panel does not get. Collapsed it keeps only
+             its header row, and the plays stay one click away rather than gone —
+             which is why the header carries a COUNT when closed: a collapsed bar that
+             cannot say what it is hiding reads as an empty bar. -->
+        <div id="newsletter-strip" class="shrink-0 border-b border-slate-700 bg-slate-900/20 nl-strip">
+            <button type="button" id="newsletter-bar-toggle" class="nl-bar" onclick="toggleNewsletterBar()"
+                    aria-expanded="true" aria-controls="newsletter-container">
                 <span class="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
                 <span class="text-[10px] font-bold text-violet-300 uppercase tracking-widest">Newsletter Plays</span>
-            </div>
-            <div id="newsletter-container" class="flex flex-row gap-2.5 overflow-x-scroll px-3 pb-2" style="height: calc(100% - 22px);">
+                <span id="newsletter-count" class="nl-count"></span>
+                <span class="nl-caret" aria-hidden="true">▾</span>
+            </button>
+            <div id="newsletter-container" class="flex flex-row gap-2.5 overflow-x-scroll px-3 pb-2 nl-cards">
                 <!-- Populated by renderNewsletterStrip() from NEWSLETTER_TRADES (real schema shape) -->
             </div>
         </div>
@@ -1183,11 +1409,11 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821n"></script>
+<script src="static/js/stoplight.js?v=20260821u"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
-<script src="static/js/newsletter-cards.js?v=20260821n"></script>
+<script src="static/js/newsletter-cards.js?v=20260821v"></script>
 <script src="static/js/charts.js?v=20260821n"></script>
 <script src="static/js/news-archive.js?v=20260821n"></script>
 <script src="static/js/newsletter-dive.js?v=20260821n"></script>

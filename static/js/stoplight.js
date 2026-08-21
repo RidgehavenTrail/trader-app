@@ -140,11 +140,17 @@
     // stays until another entity is selected — no close button, matching dd/nd.
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
+        _abHist = null; _abDay = 0;         // never show the PREVIOUS factor's rail
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
         renderBubbleHead();                 // title header: identity line only
         renderBubbleSubhead();              // band below it: the factor's About box
         switchBubbleTab('overview');
-        renderBubbleOverview();
+        renderBubbleOverview();             // paints immediately off the board row...
+        if (_abFactor) {                    // ...then again with the rail + the ledger
+            _abLedger = null; _abView = null;
+            loadFactorHistory(_abFactor);
+            loadFactorLedger(_abFactor);
+        }
     }
 
     // WHAT A FACTOR MEASURES, AND WHY IT MATTERS. Rendered as a small box above the
@@ -174,7 +180,13 @@
             glyph: [
                 { sym: '+', arrow: 'plus',  mean: 'volume AGREES with the money' },
                 { sym: '−', arrow: 'minus', mean: 'volume CONTRADICTS it' }
-            ]
+            ],
+            // Footnote prose, verbatim from the prototype. HTML, not escaped — it is
+            // a literal in this file, never anything a source produced. Like the rest
+            // of AB_WHY this belongs on the factor's own `definition`.
+            method: 'Revenue = tokens × the <b>80/20</b> in/out blend of listed prices. ' +
+                    'Premium = output ≥ <b>50×</b> the day’s commodity floor, re-read every ' +
+                    'pull, so price deflation cannot sweep models across the line.'
         }
     };
 
@@ -185,9 +197,9 @@
     // the pane's edge CLIPPED it), the tabs row (outside the pane and unclippable,
     // but not the header meant), and the title header itself (correct band, but it
     // put a ~100px box in the identity row and pushed the header to 114px).
-    // Its own band keeps the title header one line and leaves room for the legend
-    // strip to join it later. Empties on the board view, and #ab-subhead:not(:empty)
-    // means the band takes no height at all then.
+    // Its own band keeps the title header one line and leaves room beside the box for
+    // the light-scale list (abLegendHTML). Empties on the board view, and
+    // #ab-subhead:not(:empty) means the band takes no height at all then.
     function renderBubbleSubhead() {
         const el = document.getElementById('ab-subhead');
         if (!el) return;
@@ -202,10 +214,20 @@
             '</div></div>' + abLegendHTML(f, w);
     }
 
-    // The light scale, right of the About box. Each band is a segment; the one the
-    // factor is CURRENTLY in is lifted and carries the live metric, so the strip is
-    // the reading explained rather than a static key. Segments come from the list, so
-    // a four-band factor (heavy_haul) renders four with no change here.
+    // The light scale, right of the About box: a COMPACT VERTICAL LIST — one row per
+    // band, so three rows normally and FOUR for heavy_haul. It began as a horizontal
+    // strip of side-by-side segments, and the width was simply wrong for this
+    // dashboard (user, 2026-08-21): four columns only read at a width the panel does
+    // not have, and stretching three short phrases across the band made a key look
+    // like a banner. Stacked, it is content-sized and sits BESIDE the About box.
+    // The row the factor is CURRENTLY in is lifted and carries the live metric, so the
+    // list is the reading explained rather than a static key.
+    // Rows are GRID CELLS, not nested row boxes, so the four columns (light / range /
+    // meaning / live metric) align across every band whatever the threshold text is —
+    // a factor with wider ranges widens the column, it does not ragged the list. The
+    // metric cell is emitted EMPTY on inactive rows to hold its place; dropping it
+    // would shear the grid. Four cells per band is also what the first-row border
+    // reset (:nth-child(-n+4)) counts on.
     // The glyph row is appended only when the factor has one, and its active side is
     // matched off extras.arrow — the same field slGlyph reads for the sidebar, so the
     // legend cannot disagree with the row that opened it.
@@ -213,17 +235,16 @@
         const bands = (w && w.bands) || [];
         if (!bands.length) return '';
         const lc = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
-        const segs = bands.map(b => {
+        const rows = bands.map(b => {
             const c = lc[b.light] || 'y';
-            const on = b.light === f.light;
-            return `<div class="ab-sc${on ? ' on abh-' + c : ''}">` +
-                '<div class="ab-sc-t">' +
-                  `<span class="abh-dot abh-bg-${c}"></span>` +
-                  `<span class="ab-sc-n abh-${c}">${esc(b.light)}</span>` +
-                  `<span class="ab-sc-r">${esc(b.range)}</span>` +
-                  (on ? `<span class="ab-sc-v abh-${c}">${esc(f.metric || '')}</span>` : '') +
-                '</div>' +
-                `<div class="ab-sc-m">${esc(b.mean)}</div></div>`;
+            const on = b.light === f.light ? ' on' : '';
+            return `<span class="ab-sc-c ab-sc-l${on} abh-${c}">` +
+                     `<span class="abh-dot abh-bg-${c}"></span>` +
+                     `<span class="ab-sc-n">${esc(b.light)}</span></span>` +
+                   `<span class="ab-sc-c ab-sc-r${on}">${esc(b.range)}</span>` +
+                   `<span class="ab-sc-c ab-sc-m${on}">${esc(b.mean)}</span>` +
+                   `<span class="ab-sc-c ab-sc-v${on}${on ? ' abh-' + c : ''}">` +
+                     `${on ? esc(f.metric || '') : ''}</span>`;
         }).join('');
         const arrow = f.extras && f.extras.arrow;
         const gl = (w.glyph || []).length && arrow
@@ -231,7 +252,7 @@
                 `<span class="ab-gl-i${g.arrow === arrow ? ' on' : ''}">` +
                 `<b class="ab-gl-${g.arrow}">${g.sym}</b>${esc(g.mean)}</span>`).join('') + '</div>'
             : '';
-        return `<div class="abh-legend"><div class="ab-scale">${segs}</div>${gl}</div>`;
+        return `<div class="abh-legend"><div class="ab-scale">${rows}</div>${gl}</div>`;
     }
     const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
 
@@ -296,9 +317,387 @@
         return [...new Set((feeds || []).map(f => f.split('_')[0]))].join('·');
     }
 
+    // --- Featured content: the prototype's EVIDENCE BLOCK ---------------------
+    // Shape comes from Euphemus' published prototype ("Stoplight factor detail —
+    // compact shell", artifact 0d4c13d9): a day RAIL down the left, a SUBSTRIP of the
+    // day's reading with a 10-day sparkline, the evidence VIEW under it, and the
+    // nuance as footnote columns at the bottom. The prototype's own summary of the
+    // rule: only the evidence block changes shape per factor.
+    // The Overview tab has two modes and the switch is the same `_abFactor` the header
+    // and sub-header band already branch on. Board view is UNCHANGED — the light
+    // tally, the update banner, the thesis and the durability module are board-level,
+    // and that is the view they belong to.
+    // A factor view drops the tally (user, 2026-08-21): a count of how the other
+    // fifteen lights sit is not what you opened one factor to read.
+    // It also drops the UPDATE BANNER — the Update button fires every due pull on the
+    // board, not this factor's, so inside a single-factor view it would read as
+    // "update THIS" while billing the rest. The banner stays on the board view, where
+    // its scope is the truth.
+    // The calendar stays (user), board-wide and content-sized on the far right.
+    let _abHist = null;      // { factor, days:[newest-first] } for the OPEN factor only
+    let _abDay = 0;          // index into _abHist.days; 0 = today's reading
+    let _abLedger = null;    // { factor, has_ledger, days:[newest-first by DATE] }
+    let _abView = null;      // 'ledger' | 'lenses' | null (generic) — sticky per open
+
+    // History is fetched on panel open, not carried on the board payload — see the
+    // comment on /get_factor_history. A factor with no rows yet (silicon_e is 14 days
+    // old, some are 33) still renders: the rail simply has fewer days.
+    async function loadFactorHistory(fid) {
+        _abHist = null; _abDay = 0;
+        try {
+            const r = await fetch(`${API_BASE}/get_factor_history?factor=${encodeURIComponent(fid)}&days=30`);
+            const j = await r.json();
+            // A slow fetch that lands after the user has clicked ANOTHER factor must
+            // not paint this one's history under that one's header.
+            if (_abFactor !== fid) return;
+            _abHist = (j && j.days) ? j : null;
+        } catch (e) { console.error('factor history failed', e); _abHist = null; }
+        if (_abFactor === fid) renderBubbleOverview();
+    }
+
+    // The per-model evidence, when the factor has any. Fetched alongside the history
+    // and cached server-side per day, so clicking down the rail costs nothing.
+    // has_ledger:false is the NORMAL answer for 15 of 16 factors and is not an error —
+    // it is what suppresses the view switcher rather than showing a dead button.
+    async function loadFactorLedger(fid) {
+        _abLedger = null;
+        try {
+            const r = await fetch(`${API_BASE}/get_factor_ledger?factor=${encodeURIComponent(fid)}&days=10`);
+            const j = await r.json();
+            if (_abFactor !== fid) return;          // a later click won the race
+            _abLedger = (j && j.has_ledger) ? j : null;
+            if (_abLedger && !_abView) _abView = 'ledger';
+        } catch (e) { console.error('factor ledger failed', e); _abLedger = null; }
+        if (_abFactor === fid) renderBubbleOverview();
+    }
+
+    function abSetView(v) { _abView = v; renderBubbleOverview(); }
+
+    // Rail click. Re-renders the whole Overview body rather than patching the detail:
+    // the substrip, the sparkline marker and the evidence all key off the same index,
+    // and three partial updates is three chances for them to disagree.
+    function abPickDay(i) {
+        _abDay = i;
+        renderBubbleOverview();
+    }
+
+    function abHumanKey(k) { return k.replace(/_/g, ' '); }
+
+    // Values come straight off the factor's extras, which are per-factor and untyped.
+    // Formatting is by JS TYPE only — no per-factor knowledge here, deliberately, so a
+    // factor the map has never seen still renders. Lists become chips because the ones
+    // we have (premium_models) are sets of identifiers, not sentences.
+    function abEvValue(v) {
+        if (v == null) return '<span class="ab-ev-n">—</span>';
+        if (Array.isArray(v)) return v.length
+            ? '<span class="ab-ev-chips">' + v.map(x =>
+                `<span class="ab-ev-chip">${esc(String(x))}</span>`).join('') + '</span>'
+            : '<span class="ab-ev-n">none</span>';
+        if (typeof v === 'boolean') return v ? 'yes' : 'no';
+        if (typeof v === 'object') return `<span class="ab-ev-chip">${esc(JSON.stringify(v))}</span>`;
+        return esc(String(v));
+    }
+
+    // 10-day sparkline over the snapshot values. Drawn from the SAME rows the rail
+    // lists, so the marked point and the highlighted rail row cannot disagree.
+    // A flat series (every value equal) would divide by zero on the y-scale, so it is
+    // pinned to the mid-line instead of collapsing onto the baseline.
+    const AB_SPARK_N = 10;   // how many observations the strip shows, not a unit of time
+    function abSparkSVG(days, sel, light) {
+        const pts = days.slice(0, AB_SPARK_N).filter(d => typeof d.value === 'number').reverse();
+        if (pts.length < 2) return null;
+        const W = 150, H = 24, PAD = 3;
+        const vs = pts.map(d => d.value);
+        const lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo;
+        const x = i => PAD + i * ((W - 2 * PAD) / (pts.length - 1));
+        const y = v => span ? (H - PAD) - ((v - lo) / span) * (H - 2 * PAD) : H / 2;
+        const line = pts.map((d, i) => `${x(i).toFixed(1)},${y(d.value).toFixed(1)}`).join(' ');
+        // sel indexes the NEWEST-FIRST list; the polyline runs oldest-first.
+        const si = pts.length - 1 - sel;
+        const mark = (si >= 0 && si < pts.length)
+            ? `<circle cx="${x(si).toFixed(1)}" cy="${y(pts[si].value).toFixed(1)}" r="2.5" ` +
+              `class="ab-spk-pt abh-fill-${light}"/>` : '';
+        // The count comes back with the SVG so the label cannot claim a span the line
+        // does not draw — a factor with six days of history says 6, not 10.
+        return { n: pts.length, svg:
+            `<svg class="ab-spk" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
+            `aria-label="last ${pts.length} readings">` +
+            `<polyline points="${line}" fill="none" class="ab-spk-l"/>${mark}</svg>` };
+    }
+
+    // The rail is "history at this factor's cadence" — today that is DAYS for every
+    // factor, because the snapshot log records one row per ET date whatever the factor's
+    // own cadence is. A quarterly factor therefore shows ninety identical days rather
+    // than the reported periods it should. Nothing here hard-codes a count (the caller
+    // passes whatever it fetched); collapsing days to periods is the change that turns
+    // this into the general thing, and it belongs in the STORE, not the renderer.
+    const AB_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    function abRailHTML(days, sel) {
+        if (!days.length) return '<div class="ab-rail-e">no history yet</div>';
+        return days.map((d, i) => {
+            const c = AB_LC[d.light] || 'y';
+            // The weekday is shown, not just derived, because for at least one factor
+            // it is load-bearing: premium_share reads RED on Saturdays — commodity
+            // coding traffic drops, so premium's revenue share rises mechanically — and
+            // its highlight is state-change, which makes that flip a calendar artifact
+            // wearing a signal's colour. Naming the day is what lets you see it. The
+            // UTC noon parse keeps the name off the local timezone, which would slide a
+            // date across midnight and mislabel exactly the weekend rows that matter.
+            const wd = new Date(d.date + 'T12:00:00Z').getUTCDay();
+            const we = (wd === 0 || wd === 6) ? ' we' : '';
+            return `<button class="ab-day" onclick="abPickDay(${i})"` +
+                   `${i === sel ? ' aria-current="true"' : ''}>` +
+                   `<span class="abh-dot abh-bg-${c}"></span>` +
+                   `<span class="d">${esc(d.date.slice(5))}</span>` +
+                   `<span class="wd${we}">${AB_DOW[wd]}</span>` +
+                   `<span class="v">${esc(d.metric || (d.value != null ? String(d.value) : ''))}</span>` +
+                   '</button>';
+        }).join('');
+    }
+
+    // Dollars-per-day run to seven figures; the table has one column for them and the
+    // lens rows have half of one. Compact is the only thing that fits, and the exact
+    // figure is never the point — the SHARE beside it is.
+    function abUSD(v) {
+        if (v == null) return '—';
+        const a = Math.abs(v);
+        if (a >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+        if (a >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+        if (a >= 1e3) return '$' + Math.round(v / 1e3) + 'k';
+        return '$' + Math.round(v);
+    }
+
+    // LEDGER — the full priced table for one day: who earned what, at what price, on
+    // which side of the premium line. This is the view that shows the light being
+    // computed rather than asserted.
+    function abLedgerHTML(day) {
+        const rows = day.by_rev || [];
+        if (!rows.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
+        const top = Math.max(...rows.map(m => m.rev)) || 1;
+        const body = rows.map(m =>
+            '<tr>' +
+              `<td class="rk">${m.r}</td>` +
+              '<td class="l"><div class="mdl">' +
+                `<div class="nm2">${esc(m.name)}</div><div class="sl">${esc(m.slug)}</div>` +
+              '</div></td>' +
+              `<td>${m.out ? '$' + m.out.toFixed(2) : '—'}</td>` +
+              '<td class="l"><div class="revcell">' +
+                `<span class="amt">${abUSD(m.rev)}</span>` +
+                `<span class="bar"><i class="${m.prem ? 'p' : 'c'}" ` +
+                  `style="width:${Math.max(2, Math.round(m.rev / top * 100))}%"></i></span>` +
+                `<span class="pct">${m.revs.toFixed(1)}%</span>` +
+              '</div></td>' +
+              `<td>${m.ts.toFixed(2)}%</td>` +
+              `<td class="l"><span class="tier ${m.prem ? 'p' : 'c'}">` +
+                `${m.prem ? 'premium' : 'commodity'}</span></td>` +
+            '</tr>').join('');
+        return '<div class="ab-scroller"><table class="ab-ledger">' +
+            '<thead><tr><th class="l" colspan="2">Model</th><th>Out $/M</th>' +
+            '<th class="l">Est. revenue / day</th><th>Tokens</th><th class="l">Tier</th></tr></thead>' +
+            `<tbody>${body}</tbody></table></div>`;
+    }
+
+    // TWO LENSES — the same day read twice: top 10 by money, top 10 by volume. The
+    // factor's whole +/- glyph is whether those two agree, so putting them side by side
+    // is the glyph shown rather than stated. A model on BOTH lists is marked, and the
+    // count of those is the line that has been falling.
+    function abLensesHTML(day, oldest) {
+        const rev = day.by_rev || [], tok = day.by_tok || [];
+        if (!rev.length || !tok.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
+        const inRev = new Set(rev.map(m => m.slug)), inTok = new Set(tok.map(m => m.slug));
+        const row = (m, both, fig) =>
+            `<div class="ab-lrow${both ? ' both' : ''}">` +
+              `<span class="rk">${m.r}</span>` +
+              `<span class="link${both ? '' : ' off'}">↔</span>` +
+              `<span class="nm2">${esc(m.name)}</span>` +
+              `<span class="fig">${fig}</span></div>`;
+        // Both sides quote a PERCENT and nothing else. `revs` is share of the day's
+        // dollars, `ts` share of its tokens — deliberately the same scale, so the two
+        // columns can be read against each other. Adding a dollar figure to the money
+        // side would break that symmetry and cost the name column ~55px it does not
+        // have beside the calendar.
+        const money = rev.map(m => row(m, inTok.has(m.slug), `<b>${m.revs.toFixed(1)}%</b>`)).join('');
+        const vol = tok.map(m => row(m, inRev.has(m.slug), `<b>${m.ts.toFixed(2)}%</b>`)).join('');
+        // The trend line is the point of the overlap count, so it is shown against the
+        // oldest day the ledger carries rather than on its own.
+        // The sentence is the point — the count alone reads as a stat, and this number
+        // is the thesis. The trailing comparison is what makes it a TREND rather than a
+        // reading: 4 down to 1 over ten days is the money and the volume separating.
+        const then = oldest && oldest.date !== day.date
+            ? ` <span class="ago">was <b>${oldest.overlap}</b> on ${esc(abMD(oldest.date))}</span>` : '';
+        return '<div class="ab-lenses">' +
+            '<div class="ab-lens money"><div class="lens-hd"><div class="t">Where the money is</div>' +
+              '<div class="s">top 10 by estimated revenue</div></div>' + money + '</div>' +
+            '<div class="ab-lens vol"><div class="lens-hd"><div class="t">Where the volume is</div>' +
+              '<div class="s">top 10 by tokens served</div></div>' + vol + '</div>' +
+            '</div>' +
+            `<div class="ab-overlapbar"><b>${day.overlap}</b> of ${rev.length} models appear in ` +
+            'both lists — the rest earn without volume, or serve volume without earning.' +
+            `${then}</div>`;
+    }
+
+    function abFeaturedHTML(f) {
+        // The rail's rows ARE the history; the live board row is only the newest of
+        // them. Reading the selected day out of the history (rather than special-casing
+        // index 0 to the board row) keeps one code path for "what am I looking at".
+        const days = (_abHist && _abHist.days) || [];
+        const sel = Math.min(_abDay, Math.max(days.length - 1, 0));
+        const d = days[sel] || { date: f.asof, light: f.light, metric: f.metric,
+                                 state: f.state, extras: f.extras, value: f.value };
+        const prior = days[sel + 1] || null;
+        const today = sel === 0;
+
+        // The ledger is keyed by the day the DATA is for, the rail by the day the
+        // snapshot was taken — premium_share's 08-21 snapshot carries asof 08-20. Match
+        // on asof so a rail click lands on the ledger row it is actually about.
+        const led = (_abLedger && _abLedger.days) || [];
+        const ledDay = led.find(x => x.date === (d.asof || d.date)) || null;
+        // A PAST ledger day is a RECONSTRUCTION, not the record. ledger() re-prices old
+        // token volumes with TODAY's price list, and this factor's premium line is a
+        // multiple of a floor that deflates fast — so a floor move sweeps whole models
+        // across the line and the recomputed share can miss the recorded one badly
+        // (2026-08-13: recorded 27.1%, recomputed 45.9% — different BANDS, green vs
+        // yellow). Today's day agrees by construction; older ones need not.
+        // The pane is therefore made self-consistent on the LEDGER's own numbers — the
+        // table, the strip and the reading all come from one computation — and the
+        // recorded value is named beside it rather than quietly overwritten. The rail
+        // keeps showing what the board actually recorded, because that is the history.
+        // `basis` is the server's own answer and is authoritative: 'recorded' means the
+        // day was captured at the prices its light was decided on, 'reconstructed'
+        // means it was re-derived later. The numeric fallback covers a payload served
+        // before the ledgers table existed, where the disagreement is all we have.
+        const recon = ledDay && (ledDay.basis
+            ? ledDay.basis === 'reconstructed'
+            : (d.value != null && Math.abs(ledDay.share - d.value) >= 0.05))
+            ? d : null;
+        const rd = ledDay
+            ? { metric: ledDay.share.toFixed(1) + '%', light: ledDay.light }
+            : d;
+        const c = AB_LC[rd.light] || 'y';
+
+        // --- evidence header: label, what day is on screen, view switcher ---------
+        // The switcher renders only when a factor HAS more than one view. 15 of 16 have
+        // none — a per-item ledger is something a factor either keeps or does not — and
+        // an always-visible switcher over a single view is chrome that promises a
+        // second one. `views` is a LIST for the same reason `bands` is: a factor that
+        // grows a ledger gets the switcher with no change here.
+        const views = ledDay
+            ? [{ key: 'ledger', label: 'Ledger' }, { key: 'lenses', label: 'Two lenses' }]
+            : [];
+        const view = _abView || (views.length ? views[0].key : null);
+        const vsw = views.length > 1
+            ? '<span class="ab-vsw">' + views.map(v =>
+                `<button class="ab-vbtn" aria-pressed="${v.key === view}" ` +
+                `onclick="abSetView('${v.key}')">${esc(v.label)}</button>`).join('') +
+              '</span>'
+            : '';
+        const evHd =
+            '<div class="ab-ev-hd"><span class="lbl">Evidence</span>' +
+            `<span class="meta">${esc(d.date || '')}${today ? '' : ' · historical'}` +
+            `${d.asof && d.asof !== d.date ? ' · as of ' + esc(d.asof) : ''}` +
+            `${ledDay ? ' · ' + ledDay.n_models + ' models' : ''}` +
+            `${recon ? ' · <span class="ab-recon">re-priced today' +
+                       (recon.metric ? ' · recorded ' + esc(recon.metric) : '') +
+                       '</span>' : ''}</span>` + vsw + '</div>';
+
+        // --- substrip: the day's reading, the one before it, its headline figures and
+        // the shape of the run. The scalar extras ride here rather than in the view
+        // below, as the prototype has them (Comm tokens / Prem line / Est rev / Prev):
+        // they are the numbers you read AT the reading, not evidence for it.
+        const ex = d.extras || {};
+        const skip = { source: 1, arrow: 1 };
+        // When a ledger day is on screen its figures WIN over the snapshot's. The two
+        // are computed at different moments — the snapshot froze that day's floor, the
+        // ledger re-derives it from today's price list — so premium_share's stored
+        // line (8.11) and its recomputed one (7.97) can differ by a few cents. Sourcing
+        // the strip from the ledger keeps the line quoted above the table identical to
+        // the line the table's own tiers were cut on, which is the same rule the legend
+        // follows: nothing on screen may disagree with the thing it explains.
+        const fig = ledDay
+            ? [['comm tokens', ledDay.comm_tok + '%'],
+               ['prem line', '$' + ledDay.line],
+               ['est rev', abUSD(ledDay.total_rev)]]
+            : Object.keys(ex)
+                .filter(k => !skip[k] && ex[k] != null && typeof ex[k] !== 'object')
+                .slice(0, 4).map(k => [abHumanKey(k), String(ex[k])]);
+        // Prev follows the SAME computation as Reading. Mixing them — a re-priced
+        // reading against a recorded previous — would invent a day-over-day move that
+        // neither series actually shows.
+        const ledPrev = ledDay ? led[led.indexOf(ledDay) + 1] : null;
+        const prevTx = ledDay
+            ? (ledPrev ? ledPrev.share.toFixed(1) + '%' : '—')
+            : (prior ? (prior.metric || '—') : '—');
+        const spark = abSparkSVG(days, sel, c);
+        const substrip =
+            '<div class="ab-substrip">' +
+              `<span><span class="k">Reading</span> <b class="abh-${c}">${esc(rd.metric || '—')}</b></span>` +
+              fig.map(([k, v]) => `<span><span class="k">${esc(k)}</span> <b>${esc(v)}</b></span>`).join('') +
+              `<span><span class="k">Prev</span> <b>${esc(prevTx)}</b></span>` +
+              (spark ? `<span class="sp"><span class="k">${spark.n}d</span>${spark.svg}</span>` : '') +
+            '</div>';
+
+        // --- the view itself. A factor with a ledger gets the real thing; the rest get
+        // the generic grid of whatever the substrip did NOT already show — the arrays
+        // (premium_models, basket constituents) and any scalars past the first four.
+        // Keys render raw-but-despaced on purpose: a real label and unit per key belongs
+        // in the `definition` promotion, and inventing prettier names here would put a
+        // second, drifting copy of that vocabulary in the frontend.
+        const shown = new Set(fig.map(([k]) => k));
+        const rest = Object.keys(ex).filter(k => !skip[k] && !shown.has(abHumanKey(k)));
+        const generic = rest.length
+            ? '<div class="ab-ev"><div class="ab-ev-g">' +
+              rest.map(k => `<div class="ab-ev-k">${esc(abHumanKey(k))}</div>` +
+                            `<div class="ab-ev-v">${abEvValue(ex[k])}</div>`).join('') +
+              '</div></div>'
+            : '<div class="ab-ev"><div class="ab-tbd">every figure this reading carried is on ' +
+              'the line above</div></div>';
+        const viewHTML = !ledDay ? generic
+            : view === 'lenses' ? abLensesHTML(ledDay, led[led.length - 1])
+            : abLedgerHTML(ledDay);
+
+        const body =
+            '<div class="ab-evid">' +
+              `<nav class="ab-rail" aria-label="Reading history">${abRailHTML(days, sel)}</nav>` +
+              `<section class="ab-detail">${substrip}${viewHTML}</section>` +
+            '</div>';
+
+        // --- footnotes: the nuance, at the bottom, in columns ---------------------
+        // The prototype's third column is the GLYPH key. It is not repeated here: the
+        // legend in the sub-header band already carries it, and two copies on one
+        // screen is worse than either placement. Whether it belongs up there or down
+        // here is the open call (user, 2026-08-21).
+        const w = AB_WHY[f.id] || {};
+        const src = (d.extras && d.extras.source) || (f.extras && f.extras.source) || '';
+        const prov = [
+            src ? esc(src) : '',
+            f.cadence ? `<span>cadence</span> ${esc(f.cadence)}` : '',
+            f.highlight ? `<span>highlight</span> ${esc(f.highlight)}` : '',
+            f.updated_at ? `<span>updated</span> ${esc(String(f.updated_at).replace('T', ' ').slice(0, 16))}` : '',
+            `<span>fails</span> ${f.consecutive_failures || 0}`,
+            f.stale_days ? `<span>stale</span> ${f.stale_days}d` : ''
+        ].filter(Boolean).join(' · ');
+        // An errored factor says so in the footnotes, not quietly in a log: the number
+        // on screen is then the last good one, not a current one.
+        const err = f.error
+            ? `<div class="ab-fc"><span class="k">Error</span><div class="b ab-fc-err">⚠ ${esc(f.error)}</div></div>`
+            : '';
+        const method = w.method
+            ? `<div class="ab-fc"><span class="k">Method</span><div class="b">${w.method}</div></div>`
+            : '';
+        const foot = '<div class="ab-foot">' + method +
+            `<div class="ab-fc"><span class="k">Provenance</span><div class="prov">${prov}</div></div>` +
+            err + '</div>';
+
+        return `<div class="ab-frame">${evHd}${body}${foot}</div>`;
+    }
+
     function renderBubbleOverview() {
         const b = _slBoard;
         if (!b) return;
+
+        // A factor is selected -> the board-level tally / banner / thesis are not what
+        // this view is for. Everything below still runs for the BOARD view only.
+        const _f = _abFactor ? (b.factors || []).find(x => x.id === _abFactor) : null;
 
         // Headline tally from the live lights.
         const c = { green: 0, yellow: 0, orange: 0, red: 0 };
@@ -414,20 +813,36 @@
                 `<span class="ab-cal-cd">${cd}</span></div>`;
         }).join('') : '<div class="ab-tbd" style="padding:12px 0">no upcoming catalysts</div>';
 
-        // Two constrained columns (prose ~half left, calendar ~third right); each
-        // section boxed like the ticker deep-dive panels.
+        // The calendar column is identical in both modes — same board-wide 90d list,
+        // same content-sized column on the far right. Only the LEFT column changes.
+        const calCol =
+            '<div class="ab-col-cal">' +
+                // The factor note is NOT here — it lives in the sub-header band
+                // (renderBubbleSubhead), outside this scrolling pane.
+                `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
+            '</div>';
+
+        // FACTOR VIEW — no tally, no update banner, and the featured column takes all
+        // the width up to the calendar (.ab-col-feat is flex:1, where the board's
+        // .ab-col-prose is a constrained half; prose wants a measure, a reading does
+        // not, and the extras lists need the room).
+        if (_f) {
+            document.getElementById('ab-overview-body').innerHTML =
+                '<div class="ab-cols">' +
+                    `<div class="ab-col-feat">${abFeaturedHTML(_f)}</div>` + calCol +
+                '</div>';
+            return;
+        }
+
+        // BOARD VIEW — unchanged. Two constrained columns (prose ~half left, calendar
+        // ~third right); each section boxed like the ticker deep-dive panels.
         document.getElementById('ab-overview-body').innerHTML =
             tally + upd +
             '<div class="ab-cols">' +
                 '<div class="ab-col-prose">' +
                     `<div class="ab-sec"><h5>Thesis</h5><div class="ab-box ab-thesis">${AB_THESIS_HTML}</div></div>` +
                     `<div class="ab-sec"><h5>Earnings durability</h5><div class="ab-box">${dur}</div></div>` +
-                '</div>' +
-                '<div class="ab-col-cal">' +
-                    // The factor note is NOT here — it lives in the sub-header band
-                    // (renderBubbleSubhead), outside this scrolling pane.
-                    `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
-                '</div>' +
+                '</div>' + calCol +
             '</div>';
     }
 

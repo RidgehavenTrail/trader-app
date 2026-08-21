@@ -554,6 +554,11 @@
         });
         visible.sort((a, b) => getStatusMeta(a).order - getStatusMeta(b).order);
 
+        // Recorded before the empty-state early return below, so a collapsed bar
+        // reports "0 plays" rather than silently keeping the last non-zero count.
+        container.dataset.count = visible.length;
+        syncNewsletterBar();
+
         if (!visible.length) {
             container.innerHTML = `<div class="flex items-center h-full text-slate-500 text-xs italic px-3">
                 No newsletter plays yet — use the Import icon in the digest strip to bring in an issue.</div>`;
@@ -600,6 +605,48 @@
                 </div>`;
         }).join('');
     }
+
+    // --- Collapsible plays bar ------------------------------------------------
+    // The detail panel underneath is flex-1, so every pixel this strip gives up goes
+    // straight to it — which is the whole reason to collapse rather than hide: the
+    // plays are still one click away, and the panel gets the 86px.
+    // Same localStorage grammar as persistCollapse() uses for the sidebar sections
+    // ('1' open / '0' closed), but written by hand because that helper drives a
+    // <details> element's .open and this is a div.
+    const NL_BAR_KEY = 'newsletterBarOpen';
+
+    function syncNewsletterBar() {
+        const strip = document.getElementById('newsletter-strip');
+        const el = document.getElementById('newsletter-count');
+        if (!strip || !el) return;
+        // Before the first render there is no count yet, and a collapsed bar reading
+        // "0 plays" during load would be a claim, not a blank. Say nothing until the
+        // strip has actually counted.
+        const raw = (document.getElementById('newsletter-container') || {}).dataset?.count;
+        const n = raw === undefined ? null : +raw;
+        el.textContent = n === null ? '' : n === 1 ? '1 play' : `${n} plays`;
+        const open = !strip.classList.contains('collapsed');
+        const btn = document.getElementById('newsletter-bar-toggle');
+        if (btn) btn.setAttribute('aria-expanded', String(open));
+    }
+
+    function toggleNewsletterBar(force) {
+        const strip = document.getElementById('newsletter-strip');
+        if (!strip) return;
+        const collapse = force === undefined ? !strip.classList.contains('collapsed') : !force;
+        strip.classList.toggle('collapsed', collapse);
+        localStorage.setItem(NL_BAR_KEY, collapse ? '0' : '1');
+        syncNewsletterBar();
+    }
+
+    // Restore before first paint of the cards. Defaults to OPEN when unset, matching
+    // every other collapsible section in the dashboard.
+    (function initNewsletterBar() {
+        const strip = document.getElementById('newsletter-strip');
+        if (!strip) return;
+        if (localStorage.getItem(NL_BAR_KEY) === '0') strip.classList.add('collapsed');
+        syncNewsletterBar();
+    })();
 
     // Per-view state: which entity is active, and the chart instance (so we
     // don't recreate it on every tab click — only when the entity changes).

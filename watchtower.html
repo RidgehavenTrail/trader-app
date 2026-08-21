@@ -748,16 +748,14 @@
     .ab-lrow .link.off { color:transparent; }
     /* Names carry the pane's brightest text, not the row's muted grey: in a list whose
        other content is numbers, the NAME is what you are scanning for. */
-    /* HUGS its text — flex:0 1 auto, never grows (user, twice: the figures were too far
-       from the names). A stretching name box is what put them there: it filled the row
-       and pinned the numbers to the far edge, so "Tencent: Hy3" sat 129px from its own
-       figures. Now every row's numbers sit one 8px gap after the name, whatever the
-       name's length.
-       The cost is that the figures no longer form a straight column down the lens —
-       they step with the names. That is the trade: a number column costs a fixed name
-       box, and a fixed name box IS the gap. Closeness won.
-       max-width still caps a runaway slug so one long name cannot set the lens width. */
-    .ab-lrow .nm2 { flex:0 1 auto; min-width:0; max-width:230px; color:#e2e8f0;
+    /* GROWS to fill its lens — which is what right-anchors the figures and makes them
+       a straight column, the prototype's behaviour and the one the user wants. The
+       160px cap is the other half: it is what keeps the LENS narrow, and a narrow lens
+       is what puts the two figure columns near each other instead of a half-panel
+       apart. Tighter than 160 buys a little more closeness at the cost of readable
+       names; this is the practical point between them. Names ellipsise, which the user
+       has accepted twice. */
+    .ab-lrow .nm2 { flex:1 1 auto; min-width:0; max-width:160px; color:#e2e8f0;
         font-family:'Inter',system-ui,sans-serif;
         font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     /* flex:none — the figures keep their width and the NAME gives up space when a slug
@@ -1453,7 +1451,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821aa"></script>
+<script src="static/js/stoplight.js?v=20260821ab"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

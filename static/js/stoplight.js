@@ -601,6 +601,13 @@
             ? { metric: ledDay.share.toFixed(1) + '%', light: ledDay.light }
             : d;
         const c = AB_LC[rd.light] || 'y';
+        // The SPARK tints by the day's RECORDED light, not the ledger's re-priced one.
+        // The strip plots the recorded series and the rail dot just clicked is the
+        // recorded light — on 08-15 recorded red (54.3) re-prices yellow (49.7), and a
+        // red click turning the graph yellow read as broken (user, 2026-08-21; they
+        // liked the tint and asked for it to be consistent). The Reading keeps the
+        // re-priced light: 49.7 painted red would mislabel the number actually shown.
+        const sc = AB_LC[d.light] || 'y';
 
         // --- evidence header: label, what day is on screen, view switcher ---------
         // The switcher renders only when a factor HAS more than one view. 15 of 16 have
@@ -654,7 +661,7 @@
         const prevTx = ledDay
             ? (ledPrev ? ledPrev.share.toFixed(1) + '%' : '—')
             : (prior ? (prior.metric || '—') : '—');
-        const spark = abSparkSVG(days, sel, c, (AB_WHY[f.id] || {}).edges);
+        const spark = abSparkSVG(days, sel, sc, (AB_WHY[f.id] || {}).edges);
         const substrip =
             '<div class="ab-substrip">' +
               `<span><span class="k">Reading</span> <b class="abh-${c}">${esc(rd.metric || '—')}</b></span>` +

@@ -709,7 +709,9 @@
     .tier { font-size:8.5px; letter-spacing:.08em; text-transform:uppercase;
         padding:1px 5px; border-radius:3px; white-space:nowrap; }
     .tier.p { color:#e0b155; background:rgba(224,177,85,.12); border:1px solid rgba(224,177,85,.32); }
-    .tier.c { color:#5b7089; background:rgba(91,112,137,.14); border:1px solid rgba(91,112,137,.34); }
+    /* Chip TEXT takes the lifted steel for the same reason the lens lead does; the
+       tint and border keep the deep value so the chip still reads as commodity. */
+    .tier.c { color:#93aecb; background:rgba(91,112,137,.14); border:1px solid rgba(91,112,137,.34); }
     .revcell { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
     /* The dollar figure carries the table's own text colour, not the muted grey —
        it is a value in the row, not an annotation on one. The PERCENT is the muted
@@ -745,11 +747,27 @@
        runs long, which is the trade the user chose. */
     .ab-lrow .fig { flex:none; font-variant-numeric:tabular-nums; white-space:nowrap;
         font-size:10.5px; }
-    .ab-lrow .fig .alt { color:#64748b; }
+    /* The trailing figure gets a slot too. Without it the .fig block's WIDTH varies
+       with the muted text ("14.5%" vs "7.2%"), and since the block is right-anchored
+       that shifts the leading figure — the dollars would still land at two different
+       x even with a fixed slot of their own. */
+    .ab-lrow .fig .alt { display:inline-block; min-width:44px; text-align:right;
+        color:#64748b; }
     .ab-lrow.both { background:rgba(129,140,248,.07); }
     .ab-lrow.both .nm2 { color:#c7d2fe; }
+    /* Gold and steel are a semantic pair, but a FILL and a LABEL cannot share one
+       luminance: #5b7089 works as the commodity bar in the ledger and behind the
+       chip's own tint, and was fine here while this figure was the trailing value.
+       Leading the row it sat around 3:1 on the panel ground — same hue, lifted
+       (user, 2026-08-21). The deep steel stays on the fills. */
     .ab-lens.money .fig b { color:#e0b155; font-weight:600; }
-    .ab-lens.vol .fig b { color:#5b7089; font-weight:600; }
+    .ab-lens.vol .fig b { color:#93aecb; font-weight:600; }
+    /* The leading figure gets a fixed slot, left-aligned, so the column starts at one x
+       instead of raggedly right-anchoring off each row's own width. There is room for
+       it beside the name (user, on the money lens); the volume lens takes the same rule
+       because its own lead was ragged by the same 6px and one lens aligned against one
+       that is not reads as a bug. */
+    .ab-lrow .fig b { display:inline-block; min-width:52px; text-align:left; }
     .ab-overlapbar { padding:6px 13px; border-top:1px solid #1e293b; font-size:11.5px;
         color:#94a3b8; background:rgba(21,33,54,.7); }
     .ab-overlapbar b { color:#c7d2fe; font-family:ui-monospace,monospace; }
@@ -1418,7 +1436,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821x"></script>
+<script src="static/js/stoplight.js?v=20260821y"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

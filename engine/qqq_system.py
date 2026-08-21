@@ -103,15 +103,20 @@ TTL_SECONDS = 6 * 3600
 _lock = threading.Lock()
 _cache = {}                       # strategy key -> {"payload": ..., "at": ...}
 
-# Every SYS_* the backtest modules read. `_env()` clears the lot and applies only what
-# the strategy declares, so neither a stray value in the engine's environment nor a
-# module-level os.environ write in one strategy's wrapper can reach another's import.
-_SYS_KEYS = (
-    "SYS_END", "SYS_HALO_ENTRY", "SYS_HALO_MIN_DECLINE", "SYS_HALO_WAIT_CAP",
-    "SYS_HALO_ZONE_DIP", "SYS_PHASES", "SYS_PREHALO", "SYS_PREHALO_CONFIRM",
-    "SYS_PREHALO_MIN_DECLINE", "SYS_PREHALO_ONCE", "SYS_PREHALO_ONLY",
-    "SYS_PREHALO_TURN", "SYS_RETEST", "SYS_START", "SYS_TICKER", "SYS_ZONE_WARN",
-)
+# Containment is by PREFIX, not by list (2026-08-20). `_SYS_KEYS` used to enumerate
+# "every SYS_* the backtest modules read" and drifted the day a third strategy
+# arrived: seven of MO's declared keys (SYS_PURE_DIP, SYS_SIGNALS, ...) were absent
+# from it, so `_env()` applied them for MO's import and its restore never removed
+# them -- and the next strategy imported in the same process inherited
+# SYS_PURE_DIP=1. QQQ rendered as a pure-dip strategy the same evening MO was
+# registered; the user caught it on the panel. The modules also read a DYNAMIC
+# family (SYS_PHASE_<phase>_<param>, mo_system.py's per-phase overrides) that no
+# static list can enumerate even in principle. So the working set is now "anything
+# starting with SYS_": save it all, clear it all, apply exactly what the strategy
+# declares, and on exit sweep the prefix again -- which also catches a module-level
+# os.environ write made DURING a strategy's own import -- then restore what was
+# saved. There is no list left to forget to update.
+_SYS_PREFIX = "SYS_"
 
 
 @contextlib.contextmanager
@@ -132,22 +137,23 @@ def _env(spec):
     failure the guard actually exists to catch.
     """
     declared = _spec_env(spec)
-    saved = {k: os.environ.get(k) for k in _SYS_KEYS}
-    stray = {k: v for k, v in saved.items() if v is not None and declared.get(k) != v}
+    saved = {k: v for k, v in os.environ.items() if k.startswith(_SYS_PREFIX)}
+    stray = {k: v for k, v in saved.items() if declared.get(k) != v}
     if stray:
         print(f"[{spec['tag']}] note: ignoring SYS_* from the environment for this "
               f"import -- {', '.join(f'{k}={v!r}' for k, v in stray.items())}")
     try:
-        for k in _SYS_KEYS:
+        for k in list(saved):
             os.environ.pop(k, None)
         os.environ.update(declared)
         yield
     finally:
-        for k, v in saved.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+        # Sweep the PREFIX, not a remembered list: this removes the declared keys AND
+        # anything the module's own import wrote, then puts back exactly what existed
+        # before. The set of keys present cannot drift from the set restored.
+        for k in [k for k in os.environ if k.startswith(_SYS_PREFIX)]:
+            os.environ.pop(k, None)
+        os.environ.update(saved)
 
 
 def _tier(state, spec):

@@ -481,11 +481,15 @@
                 `<div class="nm2">${esc(m.name)}</div><div class="sl">${esc(m.slug)}</div>` +
               '</div></td>' +
               `<td>${m.out ? '$' + m.out.toFixed(2) : '—'}</td>` +
+              // Order is pct - bar - dollars (Euphemus' prototype). The share leads
+              // because it is what the light is computed from; the bar reads left-to-
+              // right off it, and the dollar figure lands at the column's right edge
+              // where the eye scans a money column.
               '<td class="l"><div class="revcell">' +
-                `<span class="amt">${abUSD(m.rev)}</span>` +
+                `<span class="pct">${m.revs.toFixed(1)}%</span>` +
                 `<span class="bar"><i class="${m.prem ? 'p' : 'c'}" ` +
                   `style="width:${Math.max(2, Math.round(m.rev / top * 100))}%"></i></span>` +
-                `<span class="pct">${m.revs.toFixed(1)}%</span>` +
+                `<span class="amt">${abUSD(m.rev)}</span>` +
               '</div></td>' +
               `<td>${m.ts.toFixed(2)}%</td>` +
               `<td class="l"><span class="tier ${m.prem ? 'p' : 'c'}">` +

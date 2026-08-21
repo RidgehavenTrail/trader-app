@@ -711,12 +711,15 @@
     .tier.p { color:#e0b155; background:rgba(224,177,85,.12); border:1px solid rgba(224,177,85,.32); }
     .tier.c { color:#5b7089; background:rgba(91,112,137,.14); border:1px solid rgba(91,112,137,.34); }
     .revcell { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
-    .revcell .amt { color:#94a3b8; font-size:10.5px; }
+    /* The dollar figure carries the table's own text colour, not the muted grey —
+       it is a value in the row, not an annotation on one. The PERCENT is the muted
+       half of the pair. */
+    .revcell .amt { color:#e2e8f0; font-size:10.5px; }
     .revcell .bar { position:relative; height:5px; border-radius:2px; flex:1;
         background:rgba(148,163,184,.13); min-width:50px; overflow:hidden; }
     .revcell .bar i { position:absolute; inset:0 auto 0 0; border-radius:2px; display:block; }
     .revcell .bar i.p { background:#e0b155; } .revcell .bar i.c { background:#5b7089; }
-    .revcell .pct { color:#94a3b8; font-size:10px; width:36px; text-align:right; }
+    .revcell .pct { color:#94a3b8; font-size:10px; width:36px; text-align:right; flex:none; }
     /* TWO LENSES — the same day read by money and by volume, side by side, because the
        factor's +/- glyph is precisely whether those two agree. A model on BOTH lists is
        tinted indigo and carries the link mark; the mark is rendered TRANSPARENT rather
@@ -1409,7 +1412,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821u"></script>
+<script src="static/js/stoplight.js?v=20260821w"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

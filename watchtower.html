@@ -66,10 +66,10 @@
        The compact header from the 2026-08-21 prototype: one identity line, then
        one line of what-it-measures / why-it-matters. The board header (no factor
        selected) keeps the original AI Bubble / Tracker treatment. */
-    /* flex-start, not center: the About box beside the identity line is ~100px tall,
-       and centering would drag the line and the Tracker button down to its midpoint.
-       The identity spans keep their own centering inside .abh-id. */
-    .abh { display:flex; align-items:flex-start; gap:9px; flex-wrap:wrap; }
+    /* Back to center: the title header is one identity line again — the About box
+       moved to its own sub-header band below (#ab-subhead), so nothing tall shares
+       this row. .abh-id survives as the grouping wrapper. */
+    .abh { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
     .abh-id { display:flex; align-items:center; gap:9px; flex-wrap:wrap; min-width:0; }
     .abh-rank { font-family:ui-monospace,monospace; font-size:11px; color:#64748b; }
     .abh-name { font-size:15px; font-weight:700; color:#f1f5f9; letter-spacing:-.01em; }
@@ -84,10 +84,6 @@
                 background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.22);
                 border-radius:4px; padding:2px 7px; cursor:pointer; }
     .abh-back:hover { color:#e2e8f0; background:rgba(148,163,184,.16); }
-    /* With a box present IT takes the auto margin, so the button must drop its own or
-       the free space splits between the two and the box drifts to mid-header. This
-       keeps the button tight to the box's right and the corner its own. */
-    .abh-note + .abh-back { margin-left:18px; }
     /* .abh-why is GONE (2026-08-21): the measures/why prose moved out of the header
        into the About box above the calendar (.ab-about). The header is identity only. */
     .abh-g { color:#4ade80; } .abh-r { color:#f87171; }
@@ -468,15 +464,17 @@
     /* ABOUT box — the selected factor's measures/why, above the calendar (2026-08-21).
        Sits in the narrow right column, so it is set tighter than .ab-thesis and the
        labels are a fixed gutter rather than inline bold, which kept wrapping badly. */
-    /* The About box lives in the TITLE HEADER itself (user, 2026-08-21) — the same
-       block as the identity line and the Tracker button, above the rule. It sat in
-       the tabs band first; that was still "a header", but not the one meant.
-       .abh is align-items:flex-start so the identity line stays on the top line
-       while the box sets the header's height beside it. */
+    /* SUB-HEADER BAND — per-factor chrome between the title header and the tabs.
+       Empty (and zero-height) on the board view, so that layout is untouched.
+       Right-aligned: the left of this band is deliberately free, because that is
+       where the light-scale legend goes once each factor carries its thresholds as
+       data rather than docstring prose. */
+    #ab-subhead:not(:empty) { display:flex; align-items:flex-start; margin-bottom:12px; }
     .abh-note { margin-left:auto; min-width:0; }
     /* Wider than the 290px it used in the calendar column: there the column was
        flex:0 0 auto and a wider box stretched it, here there is room, and a WIDER
-       box is a SHORTER one — every line saved is header height not taken. */
+       box is a SHORTER one — every line saved is vertical space not taken from the
+       pane below. */
     .ab-about { padding:8px 11px; width:560px; max-width:100%; }
     .ab-ab-r { display:flex; gap:7px; font-size:11.5px; color:#cbd5e1; line-height:1.45; }
     .ab-ab-r + .ab-ab-r { margin-top:5px; }
@@ -526,7 +524,7 @@
        to drag this column toward the header rule from INSIDE the scrolling pane,
        which could never work: the pane is overflow-y:auto, so the part lifted past
        its edge was clipped, not moved. The About box is now rendered in the
-       title header instead (.abh-note), outside the pane entirely. */
+       sub-header band instead (#ab-subhead), outside the pane entirely. */
     /* Calendar: content-sized grid; rows are SUBGRID so each is a real box (still aligned
        to the parent columns) that can carry the this-week highlight. */
     .ab-cal { display:grid; grid-template-columns:auto auto auto auto; column-gap:14px; row-gap:2px; }
@@ -1122,6 +1120,12 @@
                      it carries the board header when opened from the panel button and
                      the FACTOR header when opened by clicking a factor row. -->
                 <div id="ab-head" class="border-b border-slate-700 pb-3 mb-3 shrink-0"></div>
+                <!-- SUB-HEADER: per-factor chrome, between the title header and the
+                     tabs (user, 2026-08-21). Its own band rather than crowding either
+                     one — the title header stays a single identity line, and this is
+                     where the legend strip lands when the definitions become data.
+                     Outside the scrolling pane, so nothing here can be clipped. -->
+                <div id="ab-subhead" class="shrink-0"></div>
                 <div class="view-tabs shrink-0 mb-3" id="ab-tabs">
                     <button class="view-tab active" data-view="overview" onclick="switchBubbleTab('overview')">Overview</button>
                     <button class="view-tab" data-view="tbd1" onclick="switchBubbleTab('tbd1')">TBD</button>
@@ -1145,18 +1149,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821j"></script>
-<script src="static/js/watchlist.js?v=20260821j"></script>
-<script src="static/js/macro.js?v=20260821j"></script>
-<script src="static/js/stoplight.js?v=20260821j"></script>
-<script src="static/js/strategy.js?v=20260821j"></script>
-<script src="static/js/strategy-dive.js?v=20260821j"></script>
-<script src="static/js/actionable.js?v=20260821j"></script>
-<script src="static/js/newsletter-cards.js?v=20260821j"></script>
-<script src="static/js/charts.js?v=20260821j"></script>
-<script src="static/js/news-archive.js?v=20260821j"></script>
-<script src="static/js/newsletter-dive.js?v=20260821j"></script>
-<script src="static/js/newsletter-digest.js?v=20260821j"></script>
-<script src="static/js/main.js?v=20260821j"></script>
+<script src="static/js/core.js?v=20260821k"></script>
+<script src="static/js/watchlist.js?v=20260821k"></script>
+<script src="static/js/macro.js?v=20260821k"></script>
+<script src="static/js/stoplight.js?v=20260821k"></script>
+<script src="static/js/strategy.js?v=20260821k"></script>
+<script src="static/js/strategy-dive.js?v=20260821k"></script>
+<script src="static/js/actionable.js?v=20260821k"></script>
+<script src="static/js/newsletter-cards.js?v=20260821k"></script>
+<script src="static/js/charts.js?v=20260821k"></script>
+<script src="static/js/news-archive.js?v=20260821k"></script>
+<script src="static/js/newsletter-dive.js?v=20260821k"></script>
+<script src="static/js/newsletter-digest.js?v=20260821k"></script>
+<script src="static/js/main.js?v=20260821k"></script>
 </body>
 </html>

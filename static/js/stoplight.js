@@ -141,7 +141,8 @@
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
-        renderBubbleHead();                 // identity + the factor's About box
+        renderBubbleHead();                 // title header: identity line only
+        renderBubbleSubhead();              // band below it: the factor's About box
         switchBubbleTab('overview');
         renderBubbleOverview();
     }
@@ -162,16 +163,24 @@
         }
     };
 
-    // The note box, rendered INSIDE THE TITLE HEADER beside the identity line — not
-    // in the tabs band (tried, and it is "a header" but not the one meant) and not in
-    // the scrolling pane (where it could never sit closer than the tab strip's height
-    // to the rule, and lifting it past the pane's edge CLIPPED it rather than moving
-    // it). Empty string when no factor is selected or none is written, so the header
-    // collapses back to the identity line and the board view is unchanged.
-    function abNoteHTML(f) {
+    // The note box, painted into the SUB-HEADER band (#ab-subhead) between the title
+    // header and the tabs. Three placements were tried before this one and each was
+    // wrong for a specific reason worth not repeating: the scrolling pane (could
+    // never sit closer than the tab strip's height to the rule, and lifting it past
+    // the pane's edge CLIPPED it), the tabs row (outside the pane and unclippable,
+    // but not the header meant), and the title header itself (correct band, but it
+    // put a ~100px box in the identity row and pushed the header to 114px).
+    // Its own band keeps the title header one line and leaves room for the legend
+    // strip to join it later. Empties on the board view, and #ab-subhead:not(:empty)
+    // means the band takes no height at all then.
+    function renderBubbleSubhead() {
+        const el = document.getElementById('ab-subhead');
+        if (!el) return;
+        const f = _abFactor && _slBoard
+            ? (_slBoard.factors || []).find(x => x.id === _abFactor) : null;
         const w = f && AB_WHY[f.id];
-        if (!w) return '';
-        return '<div class="abh-note"><div class="ab-box ab-about">' +
+        el.innerHTML = !w ? '' :
+            '<div class="abh-note"><div class="ab-box ab-about">' +
             `<div class="ab-ab-r"><span class="ab-ab-k">Measures</span>${esc(w.measures)}</div>` +
             `<div class="ab-ab-r"><span class="ab-ab-k">Why</span>${esc(w.why)}</div>` +
             '<div class="ab-ab-p">Green = pro-burst on this board, not “all clear.”</div>' +
@@ -199,7 +208,7 @@
         // so the header cannot disagree with the sidebar about which way it points.
         const gl = slGlyph(f);
         // IDENTITY ONLY — what it measures and why now lives in the About box above
-        // the About box beside it (abNoteHTML), so the identity line stays one line.
+        // the sub-header band below it (renderBubbleSubhead); this stays one line.
         // Three children only — identity line, note box, back button — so the row can
         // align them to the TOP. Left flat, the box's height would drag the line and
         // the button to its midpoint.
@@ -213,7 +222,6 @@
                 `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
                 (gl ? `<span class="abh-gl">${gl}</span>` : '') +
               '</div>' +
-              abNoteHTML(f) +
               '<button class="abh-back" onclick="openBubbleDetail(null)">← Tracker</button>' +
             '</div>');
     }
@@ -369,8 +377,8 @@
                     `<div class="ab-sec"><h5>Earnings durability</h5><div class="ab-box">${dur}</div></div>` +
                 '</div>' +
                 '<div class="ab-col-cal">' +
-                    // The factor note is NOT here — it lives in the title header
-                    // (abNoteHTML), outside this scrolling pane.
+                    // The factor note is NOT here — it lives in the sub-header band
+                    // (renderBubbleSubhead), outside this scrolling pane.
                     `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
                 '</div>' +
             '</div>';

@@ -53,6 +53,24 @@ rebuilt to **XTN methodology** (equal weight, quarterly rebalance, fixed base �
 rejected: 3 rails are 71.4% of basket cap and would have read RED into a 13-of-16 rollover). See
 SESSIONS.md 38-41 + memory [[stoplight-build-next-action]].
 
+**Session 46 (2026-08-21) — the PER-FACTOR DETAIL PANEL started (`c6fbdd1`..`f9cb005` on master, NOT
+pushed).** A BUILT factor row in the sidebar is now clickable and opens the shared AI-bubble panel with
+its own header, plus a SUB-HEADER BAND (between the title header and the tabs, outside the scrolling
+pane) holding an About box (measures / why) on the left and the LIGHT-SCALE LEGEND on the right — every
+band a segment, the current one lifted carrying the live metric, glyph pair beneath when the factor has
+one. The renderer is GENERIC: `bands` is a LIST, not a fixed trio (verified against heavy_haul's four,
+incl. orange), and a factor with no definition renders a zero-height band.
+**THE ONE SHORTCUT, AND THE NEXT TASK:** the definitions are hand-written in `static/js/stoplight.js`'s
+`AB_WHY` with ONLY `premium_share` filled. Every factor's thresholds live as docstring prose plus loose
+constants (`GREEN_BELOW`, `RED_AT_OR_ABOVE`, `GREEN_BPS`...) and `stoplight_state.json` carries none at
+all. Promote a structured `definition` (measures / why / bands / glyph) into the 16 factor modules and
+the legend renders for all of them — the source changes, the render does not. Settle the glyph
+vocabulary in the same pass: `capex_pressure` emits `down`, `silicon_e`/`regulatory` emit `up`,
+`premium_share` emits `plus`; `slGlyph` normalizes for display but a definition block should pick one
+pair (plus/minus — the glyph means AGREEMENT, not direction).
+A prototype of the full four-band shell (both Ledger and Two-lenses evidence views, 10 days of real
+OpenRouter data) is published at claude.ai/code/artifact/0d4c13d9-266e-4953-adcc-7b7fc49b5d7c.
+
 ## READ BEFORE BUILDING (in this order)
 1. `AI Stoplight/STOPLIGHT_SOURCES.md` — every factor's exact URL/method + the 3-axis taxonomy
    (cadence / catalyst / highlight). This is the "where do I get everything" authority.

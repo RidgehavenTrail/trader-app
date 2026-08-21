@@ -30,7 +30,7 @@ where noted below.
 | `core.js` | shared helpers (`esc`, `initHorizontalScrollStrip`), `API_BASE`, **the detail-panel switch** | `API_BASE`, **`DETAIL_PANELS`/`showOnlyPanel`** |
 | `watchlist.js` | left panel / market-data sidebar (`renderDashboard`, `addStock`, …) | `categories`, `openStates` |
 | `macro.js` | macro panel + self-waking poll clock | `MACRO_*` consts |
-| `stoplight.js` | AI Bubble sidebar section + its detail panel (`openBubbleDetail`, `switchBubbleTab`) | `_abFactor` |
+| `stoplight.js` | AI Bubble sidebar section + its detail panel — incl. the PER-FACTOR view (`openBubbleDetail(factorId)`, `renderBubbleHead`, `renderBubbleSubhead`) | `_abFactor` (live since 2026-08-21, was reserved) |
 | `actionable.js` | Actionable Moves strip + ticker deep-dive triggers | `dynamicContextData`, `TRIGGER_DEFS` |
 | `newsletter-cards.js` | plays strip + all card/trade rendering | **`NEWSLETTER_TRADES`/`NEWSLETTER_ISSUE`/`newsletterEditions`** |
 | `charts.js` | tab control + chart tab + `updateContext` (ticker dive) | `viewState` |

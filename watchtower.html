@@ -466,11 +466,13 @@
        labels are a fixed gutter rather than inline bold, which kept wrapping badly. */
     /* SUB-HEADER BAND — per-factor chrome between the title header and the tabs.
        Empty (and zero-height) on the board view, so that layout is untouched.
-       Right-aligned: the left of this band is deliberately free, because that is
-       where the light-scale legend goes once each factor carries its thresholds as
-       data rather than docstring prose. */
+       LEFT-ALIGNED (user, 2026-08-21): the box starts at the panel's left edge, in
+       line with the identity line above it and the tabs below, so the band reads as
+       part of that stack rather than as something floating on the right. The free
+       space is now to its RIGHT — which is where the light-scale legend goes once
+       each factor carries its thresholds as data rather than docstring prose. */
     #ab-subhead:not(:empty) { display:flex; align-items:flex-start; margin-bottom:12px; }
-    .abh-note { margin-left:auto; min-width:0; }
+    .abh-note { min-width:0; }
     /* Wider than the 290px it used in the calendar column: there the column was
        flex:0 0 auto and a wider box stretched it, here there is room, and a WIDER
        box is a SHORTER one — every line saved is vertical space not taken from the
@@ -1149,18 +1151,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821k"></script>
-<script src="static/js/watchlist.js?v=20260821k"></script>
-<script src="static/js/macro.js?v=20260821k"></script>
-<script src="static/js/stoplight.js?v=20260821k"></script>
-<script src="static/js/strategy.js?v=20260821k"></script>
-<script src="static/js/strategy-dive.js?v=20260821k"></script>
-<script src="static/js/actionable.js?v=20260821k"></script>
-<script src="static/js/newsletter-cards.js?v=20260821k"></script>
-<script src="static/js/charts.js?v=20260821k"></script>
-<script src="static/js/news-archive.js?v=20260821k"></script>
-<script src="static/js/newsletter-dive.js?v=20260821k"></script>
-<script src="static/js/newsletter-digest.js?v=20260821k"></script>
-<script src="static/js/main.js?v=20260821k"></script>
+<script src="static/js/core.js?v=20260821m"></script>
+<script src="static/js/watchlist.js?v=20260821m"></script>
+<script src="static/js/macro.js?v=20260821m"></script>
+<script src="static/js/stoplight.js?v=20260821m"></script>
+<script src="static/js/strategy.js?v=20260821m"></script>
+<script src="static/js/strategy-dive.js?v=20260821m"></script>
+<script src="static/js/actionable.js?v=20260821m"></script>
+<script src="static/js/newsletter-cards.js?v=20260821m"></script>
+<script src="static/js/charts.js?v=20260821m"></script>
+<script src="static/js/news-archive.js?v=20260821m"></script>
+<script src="static/js/newsletter-dive.js?v=20260821m"></script>
+<script src="static/js/newsletter-digest.js?v=20260821m"></script>
+<script src="static/js/main.js?v=20260821m"></script>
 </body>
 </html>

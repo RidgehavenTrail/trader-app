@@ -635,10 +635,14 @@ def _adapt_mo_alldip(spec, refresh=False):
             # walk-back-#5 exit: the 200 while it is falling, 200 x 1.10 while rising
             target = round(float(mo.s200p[last_i])
                            * (1.0 if mo._fall[last_i] else 1.10), 2)
-    elif state == cash and st["carry_long"]:
+    carry_on = bool(state == cash and st["carry_long"])
+    if carry_on:
         run_start = last_i
         while run_start > 0 and bool(mo._carry[run_start - 1]):
             run_start -= 1
+        # NOMENCLATURE (user, 2026-08-20): in a carry claim the ERA is "Carry" and
+        # the STATE is "B&H" -- the trend era only returns to the Era row once the
+        # carry exits. Labels + color come from MO_SYSTEM (the display contract).
         state = _sys(spec)["carry_state"]
         entry_date = mo.dates[run_start].date().isoformat()
         days_held = int(last_i - run_start + 1)
@@ -668,6 +672,31 @@ def _adapt_mo_alldip(spec, refresh=False):
     # boundary. If the switch is LONG today the engine has no tenure to grade and
     # the clock falls back to the trend flip (the carry-display-priority question,
     # noted in memory, owns that day).
+    # IN A CARRY CLAIM the era IS the claim: one B&H hold, so the era ledger is the
+    # position's own ledger and the timing-engine grading below never runs (its
+    # tenure is zero by definition -- the two-regime reduction).
+    if carry_on:
+        era = _sys(spec).get("carry_era", "Carry")
+        return {
+            **cycle,
+            "state": state,
+            "state_tier": _tier(state, spec),
+            "entry_price": entry_price,
+            "entry_date": entry_date,
+            "days_held": days_held,
+            "target": target,
+            "target_mult": _sys(spec)["target_mult"],
+            "pnl_pct": pnl_pct,
+            "era": era,
+            "era_color": _sys(spec).get("carry_era_color"),
+            "era_days": days_held,
+            "era_pnl_pct": pnl_pct,
+            "carry_level": st["carry_exit_px_raw"],
+            "carry_level_label": "Carry exit",
+            "spread_today": st["spread_today"],
+            "asof": mo.dates[last_i].date().isoformat(),
+        }
+
     engine_start = era_start
     if not bool(mo._sw[last_i]):
         sw_exit = last_i
@@ -718,6 +747,11 @@ def _adapt_mo_alldip(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - engine_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        # the standing carry RE-ENTRY order (the only carry order that exists while
+        # the claim is off -- MO_STATE nulls the other side)
+        "carry_level": st["carry_enter_px_raw"],
+        "carry_level_label": "Carry entry",
+        "spread_today": st["spread_today"],
         "asof": mo.dates[last_i].date().isoformat(),
     }
 

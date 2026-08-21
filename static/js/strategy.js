@@ -150,7 +150,11 @@
     const _strStateWait = {};   // ticker -> true while a fetch is in flight
 
     function strStateFor(h) {
-        if (!h || !h.strategy) return null;   // no rule declared -> nothing to fetch
+        // DISPLAY IS DECOUPLED FROM ALLOCATION (user, 2026-08-20): a holding with no
+        // `strategy` (an open allocation decision, e.g. MO) still asks the endpoint,
+        // which answers has_strategy:false for genuinely unwired names and that
+        // negative is cached. The rotation's own mechanics never read this.
+        if (!h || !h.ticker) return null;
         if (h.state) return h.state;          // live column already carries it
 
         const hit = _strState[h.ticker];
@@ -230,7 +234,10 @@
         // strStateFor returns the live column's own `state` untouched, and only reaches
         // for the endpoint when the selected vehicle is an alternate.
         const st = strStateFor(h) || h.state || {};
-        const hasStrategy = !!h.strategy && st.ok && !st.no_strategy;
+        // A strategy renders when the ENDPOINT knows one, whether or not the holding
+        // allocates to it (h.strategy) -- MO displays its baseline while the
+        // rotation sleeve decision stays open.
+        const hasStrategy = st.ok && !st.no_strategy && st.state !== undefined;
         // Era: the STRATEGY's own reading wins for the name it governs. It walks the
         // full unadjusted history the system actually trades on, where the generic
         // technicals use a 5-year window — they can differ by a bar, and only one
@@ -239,7 +246,10 @@
         const eraDays = hasStrategy ? st.era_days : h.era_days;
         // golden renders in GOLD (user, 2026-08-10) — the same #d4af37 token the GC
         // pill uses. WARNING amber, death red.
-        const eraColor = { golden: '#d4af37', WARNING: '#fbbf24', death: '#f87171' }[era]
+        // st.era_color first: a strategy may DECLARE its era's color (the Carry era
+        // wears MO's own brown) -- the renderer still learns no vocabulary.
+        const eraColor = (hasStrategy && st.era_color)
+                       || { golden: '#d4af37', WARNING: '#fbbf24', death: '#f87171' }[era]
                        || '#64748b';
 
         // Era carries how long the name has been in it, in trading days — same unit
@@ -293,7 +303,7 @@
                 rows += strRow('target', st.target.toFixed(2),
                                st.target_mult ? `fill ×${st.target_mult}` : 'target');
             }
-        } else if (h.strategy && _strStateWait[h.ticker]) {
+        } else if (_strStateWait[h.ticker]) {
             // A DECLARED strategy whose first read is still running. Without this branch
             // the block fell through to "no strategy" for the ~minute the build takes —
             // asserting the vehicle has no rule at the exact moment it is proving it has
@@ -309,6 +319,19 @@
         // already knows, and the exiting State covers the case where it binds.
         rows += strRow('gap', strPctPlain(h.gap_pct), '50/200 MA');
         rows += strRow('depth', strPctPlain(h.depth_pct), 'vs 50 SMA');
+        // THE STANDING CARRY ORDER (user, 2026-08-20): between depth and Era P&L.
+        // Only one side can exist at a time -- re-entry while the claim is off, exit
+        // while it is on; the adapter labels which. The spread rides as the footnote
+        // so the level carries its own justification. Generic: renders only when a
+        // strategy emits it, no vocabulary learned here.
+        if (hasStrategy && st.carry_level !== null && st.carry_level !== undefined) {
+            const sprd = (st.spread_today !== null && st.spread_today !== undefined)
+                ? `sprd ${st.spread_today >= 0 ? '+' : '−'}${Math.abs(st.spread_today).toFixed(2)}`
+                : null;
+            rows += strRow(esc(st.carry_level_label || 'Carry'),
+                           st.carry_level.toFixed(2), sprd,
+                           strHexToRgba(h.color, 0.55));
+        }
         // Era P&L last, by request. DEFINITION (user, 2026-08-10): the COMPOUNDED
         // return of everything the strategy did inside the current era — halo, then
         // B1, then any false-warning breakout — PLUS the open position marked to

@@ -739,7 +739,10 @@
     .ab-lens .lens-hd { padding:7px 12px 6px; border-bottom:1px solid #334155; }
     .ab-lens .lens-hd .t { font-size:12px; font-weight:600; color:#e2e8f0; }
     .ab-lens .lens-hd .s { font-family:ui-monospace,monospace; font-size:9.5px; color:#64748b; }
-    .ab-lrow { display:flex; align-items:center; gap:8px; padding:5px 12px;
+    /* Right padding trimmed to 6px — the pair rides as close to the lens edge as the
+       row can put it (user). The left stays at 12 so the rank column is not jammed
+       against the divider. */
+    .ab-lrow { display:flex; align-items:center; gap:8px; padding:5px 6px 5px 12px;
         border-bottom:1px solid rgba(30,41,59,.75); font-family:ui-monospace,monospace;
         font-size:11px; color:#94a3b8; }
     .ab-lrow:hover { background:rgba(148,163,184,.05); }
@@ -755,16 +758,17 @@
     .ab-lrow .nm2 { flex:1 1 auto; min-width:0; color:#e2e8f0;
         font-family:'Inter',system-ui,sans-serif;
         font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    /* ONE fixed 100px column at the row's right edge (user: the values are four or five
-       characters, they do not need more). Fixed width is what makes the figures a
-       COLUMN — the name absorbs every other pixel, so without it the numbers would step
-       with the name lengths. Inside: ranked value left, muted value right, justified
-       apart. 100 is a real fit, not a guess — widest lead $1.13M at 53px, widest trail
-       14.5% at 43px. */
-    .ab-lrow .fig { flex:0 0 100px; display:flex; align-items:baseline;
-        justify-content:space-between; gap:4px;
+    /* The two figures sit ADJACENT at the row's right edge, not spread across a fixed
+       box: space-between was pushing them to opposite ends of 100px, so a short dollar
+       value left a ~30px hole in the middle of its own pair (user). Now each has a slot
+       just wide enough for its widest value — $1.13M at 53px, 14.5% at 43px — with a
+       6px gap, and the pair is content-width, right-anchored by the name's flex:1.
+       The slots are still what keep the two COLUMNS aligned; only the space between
+       them is gone. */
+    .ab-lrow .fig { flex:0 0 auto; display:flex; align-items:baseline; gap:6px;
         font-variant-numeric:tabular-nums; white-space:nowrap; font-size:10.5px; }
-    .ab-lrow .fig .alt { text-align:right; color:#64748b; }
+    .ab-lrow .fig .alt { display:inline-block; min-width:43px; text-align:right;
+        color:#64748b; }
     .ab-lrow.both { background:rgba(129,140,248,.07); }
     .ab-lrow.both .nm2 { color:#c7d2fe; }
     /* Gold and steel are a semantic pair, but a FILL and a LABEL cannot share one
@@ -774,7 +778,7 @@
        (user, 2026-08-21). The deep steel stays on the fills. */
     .ab-lens.money .fig b { color:#e0b155; font-weight:600; }
     .ab-lens.vol .fig b { color:#93aecb; font-weight:600; }
-    .ab-lrow .fig b { text-align:left; }
+    .ab-lrow .fig b { display:inline-block; min-width:53px; text-align:left; }
     .ab-overlapbar { padding:6px 13px; border-top:1px solid #1e293b; font-size:11.5px;
         color:#94a3b8; background:rgba(21,33,54,.7); }
     .ab-overlapbar b { color:#c7d2fe; font-family:ui-monospace,monospace; }
@@ -1443,7 +1447,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821ac"></script>
+<script src="static/js/stoplight.js?v=20260821ad"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

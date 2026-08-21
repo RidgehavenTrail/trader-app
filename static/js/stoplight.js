@@ -142,6 +142,7 @@
         _abFactor = factorId || null;
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
         renderBubbleHead();
+        renderBubbleNote();                 // sub-header band, outside the scroll pane
         switchBubbleTab('overview');
         renderBubbleOverview();
     }
@@ -162,18 +163,25 @@
         }
     };
 
-    // The note box. Empty string when no factor is selected or none is written,
-    // so it simply does not occupy the column.
-    function abFactorNoteHTML() {
+    // The note box, painted into the SUB-HEADER band beside the tabs (#ab-about-slot)
+    // — not into the scrolling pane. Inside that pane it could never sit closer than
+    // 52px to the header rule (the tab strip's height), and lifting it past the edge
+    // got it CLIPPED by overflow-y:auto rather than moved. As chrome it also survives
+    // a tab switch, which is right: it describes the FACTOR, not the tab.
+    // Empties the slot when no factor is selected or none is written, so the band is
+    // just the tab strip and the board view is unchanged.
+    function renderBubbleNote() {
+        const el = document.getElementById('ab-about-slot');
+        if (!el) return;
         const f = _abFactor && _slBoard
             ? (_slBoard.factors || []).find(x => x.id === _abFactor) : null;
         const w = f && AB_WHY[f.id];
-        if (!w) return '';
-        return '<div class="ab-sec"><h5>About</h5><div class="ab-box ab-about">' +
+        el.innerHTML = !w ? '' :
+            '<div class="ab-box ab-about">' +
             `<div class="ab-ab-r"><span class="ab-ab-k">Measures</span>${esc(w.measures)}</div>` +
             `<div class="ab-ab-r"><span class="ab-ab-k">Why</span>${esc(w.why)}</div>` +
             '<div class="ab-ab-p">Green = pro-burst on this board, not “all clear.”</div>' +
-            '</div></div>';
+            '</div>';
     }
     const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
 
@@ -197,7 +205,7 @@
         // so the header cannot disagree with the sidebar about which way it points.
         const gl = slGlyph(f);
         // IDENTITY ONLY — what it measures and why now lives in the About box above
-        // the calendar (abFactorNoteHTML). One line, so the panel starts with data.
+        // the sub-header band (renderBubbleNote). One line, so the panel starts with data.
         return void (el.innerHTML =
             '<div class="abh">' +
               `<span class="abh-rank">#${f.rank}</span>` +
@@ -361,10 +369,8 @@
                     `<div class="ab-sec"><h5>Earnings durability</h5><div class="ab-box">${dur}</div></div>` +
                 '</div>' +
                 '<div class="ab-col-cal">' +
-                    // The selected factor's own note sits ABOVE the calendar (user,
-                    // 2026-08-21) rather than in the header, which it made wordy.
-                    // Absent when no factor is selected, so the board view is unchanged.
-                    abFactorNoteHTML() +
+                    // The factor note is NOT here — it lives in the sub-header band
+                    // (renderBubbleNote), outside this scrolling pane.
                     `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
                 '</div>' +
             '</div>';

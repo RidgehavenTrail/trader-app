@@ -460,11 +460,15 @@
     /* ABOUT box — the selected factor's measures/why, above the calendar (2026-08-21).
        Sits in the narrow right column, so it is set tighter than .ab-thesis and the
        labels are a fixed gutter rather than inline bold, which kept wrapping badly. */
-    /* WIDTH IS LOAD-BEARING: .ab-col-cal is flex:0 0 auto, so it sizes to its widest
-       child. Unconstrained, this box's prose stretched the column 290px -> 845px and
-       ate the prose column beside it. 290px is the calendar's own natural width, so
-       the box matches the block below it and the two-column layout is unchanged. */
-    .ab-about { padding:9px 11px; width:290px; max-width:100%; }
+    /* SUB-HEADER BAND — tabs left, About box right, both under the header rule and
+       OUTSIDE the scrolling pane. align-items:flex-start so the tabs stay pinned to
+       the top while the box sets the band's height. */
+    .ab-subhead { display:flex; align-items:flex-start; gap:18px; }
+    #ab-about-slot { margin-left:auto; min-width:0; }
+    /* Wider than the 290px it used in the calendar column, because here the band has
+       ~1000px of dead space to the right of the tabs and a WIDER box is a SHORTER
+       one — every line it saves is vertical space taken from the pane below. */
+    .ab-about { padding:8px 11px; width:560px; max-width:100%; }
     .ab-ab-r { display:flex; gap:7px; font-size:11.5px; color:#cbd5e1; line-height:1.45; }
     .ab-ab-r + .ab-ab-r { margin-top:5px; }
     .ab-ab-k { flex:0 0 52px; font-family:ui-monospace,monospace; font-size:9px;
@@ -509,23 +513,11 @@
     .ab-cols { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-top:14px; }
     .ab-col-prose { flex:0 1 50%; min-width:300px; }
     .ab-col-cal { flex:0 0 auto; margin-left:auto; }
-    /* LIFT THE RIGHT COLUMN TOWARD THE HEADER RULE (2026-08-21). The tab strip's
-       buttons end ~600px in, so the right side of that band — tabs row, tally line,
-       grid margin — is dead space, and the About box started 120px below the rule
-       with nothing above it. This lifts the column into that gap; only this flex
-       item moves, so the prose column is untouched.
-       -40px, NOT MORE, AND THE CEILING IS NOT COSMETIC: the pane below the tabs is
-       `overflow-y:auto`, so anything lifted past its top edge is CLIPPED, not shown.
-       A first pass at -84px hid 40px — the whole "About" heading and the top of the
-       box (user: "something swallowed the top end"). The scroller's edge sits 52px
-       under the rule, which is the tab strip plus its margins, so 52px is the FLOOR
-       for anything rendered inside it; -40 leaves 4px of clearance against rounding.
-       Closing that last 52px means moving the box OUT of the scroller (into the
-       header block), which costs header height on every tab — not done.
-       GUARDED because .ab-cols wraps (prose min-width 300 + cal 290 + 24 gap): once
-       the calendar stacks BELOW the prose column, a negative margin would drag it
-       over that column's last rows instead of into empty space. */
-    @media (min-width: 1100px) { .ab-col-cal { margin-top:-40px; } }
+    /* The negative-margin lift that used to live here is GONE (2026-08-21). It tried
+       to drag this column toward the header rule from INSIDE the scrolling pane,
+       which could never work: the pane is overflow-y:auto, so the part lifted past
+       its edge was clipped, not moved. The About box is now rendered in the
+       sub-header band instead (.ab-subhead), outside the pane entirely. */
     /* Calendar: content-sized grid; rows are SUBGRID so each is a real box (still aligned
        to the parent columns) that can carry the this-week highlight. */
     .ab-cal { display:grid; grid-template-columns:auto auto auto auto; column-gap:14px; row-gap:2px; }
@@ -1121,10 +1113,17 @@
                      it carries the board header when opened from the panel button and
                      the FACTOR header when opened by clicking a factor row. -->
                 <div id="ab-head" class="border-b border-slate-700 pb-3 mb-3 shrink-0"></div>
-                <div class="view-tabs shrink-0 mb-3" id="ab-tabs">
+                <!-- Sub-header band: tabs on the left, the selected factor's About box
+                     off to the right. OUTSIDE the scrolling pane below on purpose (user,
+                     2026-08-21) — inside it, anything lifted toward the rule was clipped
+                     by overflow-y:auto. This is chrome, so it also persists across tabs. -->
+                <div class="ab-subhead shrink-0 mb-3">
+                <div class="view-tabs" id="ab-tabs">
                     <button class="view-tab active" data-view="overview" onclick="switchBubbleTab('overview')">Overview</button>
                     <button class="view-tab" data-view="tbd1" onclick="switchBubbleTab('tbd1')">TBD</button>
                     <button class="view-tab" data-view="charts" onclick="switchBubbleTab('charts')">Charts</button>
+                </div>
+                    <div id="ab-about-slot"></div>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-1">
                     <div id="ab-pane-overview" class="view-pane"><div id="ab-overview-body"></div></div>
@@ -1144,18 +1143,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821g"></script>
-<script src="static/js/watchlist.js?v=20260821g"></script>
-<script src="static/js/macro.js?v=20260821g"></script>
-<script src="static/js/stoplight.js?v=20260821g"></script>
-<script src="static/js/strategy.js?v=20260821g"></script>
-<script src="static/js/strategy-dive.js?v=20260821g"></script>
-<script src="static/js/actionable.js?v=20260821g"></script>
-<script src="static/js/newsletter-cards.js?v=20260821g"></script>
-<script src="static/js/charts.js?v=20260821g"></script>
-<script src="static/js/news-archive.js?v=20260821g"></script>
-<script src="static/js/newsletter-dive.js?v=20260821g"></script>
-<script src="static/js/newsletter-digest.js?v=20260821g"></script>
-<script src="static/js/main.js?v=20260821g"></script>
+<script src="static/js/core.js?v=20260821h"></script>
+<script src="static/js/watchlist.js?v=20260821h"></script>
+<script src="static/js/macro.js?v=20260821h"></script>
+<script src="static/js/stoplight.js?v=20260821h"></script>
+<script src="static/js/strategy.js?v=20260821h"></script>
+<script src="static/js/strategy-dive.js?v=20260821h"></script>
+<script src="static/js/actionable.js?v=20260821h"></script>
+<script src="static/js/newsletter-cards.js?v=20260821h"></script>
+<script src="static/js/charts.js?v=20260821h"></script>
+<script src="static/js/news-archive.js?v=20260821h"></script>
+<script src="static/js/newsletter-dive.js?v=20260821h"></script>
+<script src="static/js/newsletter-digest.js?v=20260821h"></script>
+<script src="static/js/main.js?v=20260821h"></script>
 </body>
 </html>

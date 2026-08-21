@@ -638,15 +638,65 @@ def _adapt_mo_alldip(spec, refresh=False):
         base = float(mo.ac[run_start - 1] if run_start > 0 else mo.ac[run_start])
         pnl_pct = round((float(mo.ac[last_i]) / base - 1) * 100, 2)
 
-    # --- era P&L on the BASELINE (system + dark + carry, idle cash at the T-bill
-    # rate). MO has no precomputed combined series (XLE's ov.comb), so the curve is
-    # compounded here from the module's own masks and return arrays — the same
-    # day-level grading the backtest itself uses, reconstructed from nothing.
-    held = mo._pos | mo._dkm | mo._carry
+    # --- era clock and era P&L: THE TIMING ENGINE'S TENURE, not the trend regime's
+    # (user, 2026-08-20: "the strategy is dip -- start the golden-era P&L clock with
+    # the end of the carry era"). Under the two-regime reduction, the stretch of this
+    # golden era spent inside a carry claim belongs to the carry's multi-year ledger,
+    # not to the dip engine's -- folding it in made era_pnl describe neither. The
+    # clock starts at the LATER of the trend flip and the carry switch's exit.
+    #
+    # LEDGER BOUNDARIES AT THE HANDOFF (user's correction of a wrong first draft):
+    # carry's last earned close is the SIGNAL day's (sw[t+1]=False -- the exit day
+    # earns nothing), the overnight gap to the next fill is CASH and nobody's loss,
+    # and the engine grades FROM ITS FILLS. So the era is compounded trade-by-trade
+    # ((exit or today) / fill, both adjusted) with T-bill days between -- NOT from
+    # close-to-close arets, which would charge the engine for a gap it dodged. When
+    # one open trade spans the whole engine era, era_pnl equals the trade's pnl_pct
+    # exactly, which is the consistency check.
+    #
+    # era/phase labels stay structural (golden drives the phase arithmetic and the
+    # trigger display); only the P&L window re-clocks, and era_days moves WITH it so
+    # numerator and denominator agree. phase_days staying larger than era_days is
+    # the honest rendering of a strategy whose regime boundary is not the trend
+    # boundary. If the switch is LONG today the engine has no tenure to grade and
+    # the clock falls back to the trend flip (the carry-display-priority question,
+    # noted in memory, owns that day).
+    engine_start = era_start
+    if not bool(mo._sw[last_i]):
+        sw_exit = last_i
+        while sw_exit > 0 and not bool(mo._sw[sw_exit - 1]):
+            sw_exit -= 1
+        engine_start = max(era_start, sw_exit)
+
+    trades = [t for t in T] + [dict(d, kind="dark") for d in mo._darks]
     era_pnl = 1.0
-    for i in range(era_start, last_i + 1):
-        r = mo.arets[i] if held[i] else mo.cash_d[i]
-        era_pnl *= (1.0 + float(r))
+    covered = [False] * (last_i - engine_start + 1)
+    for t in sorted(trades, key=lambda t: t["e"]):
+        e, x = t["e"], min(t["x"], last_i)
+        if x < engine_start:
+            continue
+        if e < engine_start:
+            # opened inside the carry claim, still on at the handoff: the engine
+            # takes the shares over at the handoff's prior close, not at a fill
+            # it never made.
+            base = float(mo.ac[engine_start - 1]) if engine_start > 0 else float(mo.ac[0])
+            e = engine_start
+        else:
+            base = float(t["fill"])
+        # A trade still HELD is marked to today's adjusted close; a finished one to
+        # its exit fill. Held = an OPEN system trade, a capped hunt that ran out of
+        # data (_core_position's rule), or an open dark trade (whose xf is already
+        # today's ac by the module's own construction — either branch is identical).
+        why = str(t.get("why", ""))
+        still_held = (why == "OPEN" or (why.endswith("->capped") and t["x"] >= last_i)
+                      or (t["kind"] == "dark" and t["x"] >= last_i))
+        end_val = float(mo.ac[last_i]) if still_held else float(t["xf"])
+        era_pnl *= end_val / base
+        for i in range(e, x + 1):
+            covered[i - engine_start] = True
+    for i in range(engine_start, last_i + 1):
+        if not covered[i - engine_start]:
+            era_pnl *= (1.0 + float(mo.cash_d[i]))
 
     return {
         **cycle,
@@ -659,7 +709,7 @@ def _adapt_mo_alldip(spec, refresh=False):
         "target_mult": _sys(spec)["target_mult"],
         "pnl_pct": pnl_pct,
         "era": era,
-        "era_days": int(last_i - era_start + 1),
+        "era_days": int(last_i - engine_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
         "asof": mo.dates[last_i].date().isoformat(),
     }

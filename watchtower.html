@@ -767,7 +767,14 @@
        them is gone. */
     .ab-lrow .fig { flex:0 0 auto; display:flex; align-items:baseline; gap:6px;
         font-variant-numeric:tabular-nums; white-space:nowrap; font-size:10.5px; }
-    .ab-lrow .fig .alt { display:inline-block; min-width:43px; text-align:right;
+    /* Dollars RIGHT-aligned, percents LEFT-aligned — the opposite of the first cut,
+       and the whole fix (user, twice, with screenshots). Slot slack is the gap: a
+       short value's leftover pools on whichever side the text is pushed away from,
+       and $-left/%-right pooled BOTH leftovers in the middle of the pair — up to
+       ~25px between $265k and 3.4%. Flipped, the two texts meet at the shared 6px
+       gap on every row, and the slack falls at the outside edges where it reads as
+       margin. The columns still line up: dollar RIGHT edges now, percent left edges. */
+    .ab-lrow .fig .alt { display:inline-block; min-width:43px; text-align:left;
         color:#64748b; }
     .ab-lrow.both { background:rgba(129,140,248,.07); }
     .ab-lrow.both .nm2 { color:#c7d2fe; }
@@ -778,7 +785,7 @@
        (user, 2026-08-21). The deep steel stays on the fills. */
     .ab-lens.money .fig b { color:#e0b155; font-weight:600; }
     .ab-lens.vol .fig b { color:#93aecb; font-weight:600; }
-    .ab-lrow .fig b { display:inline-block; min-width:53px; text-align:left; }
+    .ab-lrow .fig b { display:inline-block; min-width:53px; text-align:right; }
     .ab-overlapbar { padding:6px 13px; border-top:1px solid #1e293b; font-size:11.5px;
         color:#94a3b8; background:rgba(21,33,54,.7); }
     .ab-overlapbar b { color:#c7d2fe; font-family:ui-monospace,monospace; }
@@ -1447,7 +1454,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821ad"></script>
+<script src="static/js/stoplight.js?v=20260821ae"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

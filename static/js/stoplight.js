@@ -452,10 +452,17 @@
     // passes whatever it fetched); collapsing days to periods is the change that turns
     // this into the general thing, and it belongs in the STORE, not the renderer.
     const AB_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    function abRailHTML(days, sel) {
+    // `backed` — the Set of data-dates the factor's LEDGER covers, or null when the
+    // factor has no ledger (or it hasn't loaded yet). A rail day outside it still has
+    // its recorded reading, but clicking it opens a panel with no evidence behind it —
+    // so its colour is MUTED (user, 2026-08-21): the light stays visible as history,
+    // it just stops advertising a depth that is not there. For the 15 no-ledger
+    // factors backed is null and nothing mutes — every day there backs itself.
+    function abRailHTML(days, sel, backed) {
         if (!days.length) return '<div class="ab-rail-e">no history yet</div>';
         return days.map((d, i) => {
             const c = AB_LC[d.light] || 'y';
+            const dim = backed && !backed.has(d.asof || d.date) ? ' dim' : '';
             // The weekday is shown, not just derived, because for at least one factor
             // it is load-bearing: premium_share reads RED on Saturdays — commodity
             // coding traffic drops, so premium's revenue share rises mechanically — and
@@ -465,7 +472,7 @@
             // date across midnight and mislabel exactly the weekend rows that matter.
             const wd = new Date(d.date + 'T12:00:00Z').getUTCDay();
             const we = (wd === 0 || wd === 6) ? ' we' : '';
-            return `<button class="ab-day" onclick="abPickDay(${i})"` +
+            return `<button class="ab-day${dim}" onclick="abPickDay(${i})"` +
                    `${i === sel ? ' aria-current="true"' : ''}>` +
                    `<span class="abh-dot abh-bg-${c}"></span>` +
                    `<span class="d">${esc(d.date.slice(5))}</span>` +
@@ -691,7 +698,8 @@
 
         const body =
             '<div class="ab-evid">' +
-              `<nav class="ab-rail" aria-label="Reading history">${abRailHTML(days, sel)}</nav>` +
+              `<nav class="ab-rail" aria-label="Reading history">` +
+              `${abRailHTML(days, sel, led.length ? new Set(led.map(x => x.date)) : null)}</nav>` +
               `<section class="ab-detail">${substrip}${viewHTML}</section>` +
             '</div>';
 

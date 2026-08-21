@@ -155,7 +155,12 @@
         // which answers has_strategy:false for genuinely unwired names and that
         // negative is cached. The rotation's own mechanics never read this.
         if (!h || !h.ticker) return null;
-        if (h.state) return h.state;          // live column already carries it
+        // The live column's state short-circuits ONLY when it carries a real
+        // strategy read. A no_strategy marker is the engine reporting the HOLDING
+        // has no allocation -- which says nothing about whether the TICKER has a
+        // registered strategy to display, so fall through to the endpoint (MO: the
+        // rotation sleeve says "hold", the Rocket block shows the baseline).
+        if (h.state && !h.state.no_strategy) return h.state;
 
         const hit = _strState[h.ticker];
         if (hit && (Date.now() - hit.at) < STR_STATE_TTL_MS) return hit.payload;
@@ -341,11 +346,16 @@
         // position's return when held and the ^IRX daily rate when flat — exactly
         // what qqq_full_system.py's series() already builds as `dly`.
         // The era runs from the golden cross to the death cross.
+        // A strategy may DECLARE what its era P&L is measured from — MO re-bases the
+        // clock to the carry exit, so the cross language would misdescribe it. The
+        // two cross labels stay as the fallback for strategies that say nothing.
         rows += strRow('Era P&L',
                        hasStrategy ? strPct(st.era_pnl_pct)
                                    : '<span class="str-st-off">—</span>',
-                       hasStrategy ? (era === 'death' ? 'since death cross'
-                                                      : 'since golden cross') : null);
+                       hasStrategy ? esc(st.era_pnl_basis
+                                         || (era === 'death' ? 'since death cross'
+                                                             : 'since golden cross'))
+                                   : null);
 
         box.innerHTML =
             `<div class="str-blk-hd">` +

@@ -691,6 +691,7 @@ def _adapt_mo_alldip(spec, refresh=False):
             "era_color": _sys(spec).get("carry_era_color"),
             "era_days": days_held,
             "era_pnl_pct": pnl_pct,
+            "era_pnl_basis": "since carry entry",
             "carry_level": st["carry_exit_px_raw"],
             "carry_level_label": "Carry exit",
             "spread_today": st["spread_today"],
@@ -747,6 +748,13 @@ def _adapt_mo_alldip(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - engine_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        # WHAT THE ERA P&L IS MEASURED FROM. The renderer's default says "since
+        # golden/death cross", which is wrong whenever the clock re-based to the
+        # carry exit -- the number then covers the timing engine's tenure, not the
+        # trend era's. Say so rather than letting the footnote misdescribe it.
+        "era_pnl_basis": ("since carry exit" if engine_start > era_start
+                          else ("since death cross" if era == "death"
+                                else "since golden cross")),
         # the standing carry RE-ENTRY order (the only carry order that exists while
         # the claim is off -- MO_STATE nulls the other side)
         "carry_level": st["carry_enter_px_raw"],

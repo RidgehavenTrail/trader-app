@@ -63,15 +63,21 @@ RED_AT_OR_ABOVE = 50.0
 IN_OUT_BLEND = (0.8, 0.2)   # total-token split assumption: 80% input / 20% output
 
 
-def compute():
-    rows = rankings_daily()
-    latest = max(r["date"] for r in rows)
-    today = [r for r in rows if r["date"] == latest]
-    prices = model_prices()
+def _day_stats(today, prices):
+    """Everything ONE day's ranking rows imply: the light's inputs AND the per-model
+    ledger behind them.
+
+    compute() and ledger() both go through here, deliberately. The floor is re-read per
+    day (see the docstring's anti-rot rule), so the premium line moves; if the table
+    that EXPLAINS a reading computed its own line, the tiers in the table could disagree
+    with the share above it on exactly the days that matter. One function, one line, one
+    definition of premium.
+    Returns the aggregate figures plus `models` — every ranked row with its price, its
+    revenue, its token share and which side of the line it fell on."""
+    day_total = sum(r["total_tokens"] for r in today)
 
     # commodity floor: cheapest nonzero OUTPUT price among ranked models with
-    # >=1% token share (volume-qualified — see docstring)
-    day_total = sum(r["total_tokens"] for r in today)
+    # >=1% token share (volume-qualified — see module docstring)
     ranked_out_prices = [prices[r["model_permaslug"]]["completion_per_m"]
                          for r in today
                          if r["model_permaslug"] in prices
@@ -86,24 +92,36 @@ def compute():
     floor_blend = floor
 
     prem_rev = total_rev = prem_tok = total_tok = 0.0
-    premium_models, unmatched = [], []
+    premium_models, unmatched, models = [], [], []
     for r in today:
         slug, tok = r["model_permaslug"], r["total_tokens"]
         total_tok += tok
         p = prices.get(slug)
         if p is None and slug.endswith(":free"):
-            continue                     # $0 revenue; stays in token totals
+            # $0 revenue; stays in token totals. Kept in `models` because the
+            # VOLUME lens is exactly where a free model belongs — it is the
+            # commodity tide the factor is measuring.
+            models.append({"slug": slug, "name": slug, "rev": 0.0,
+                           "out": 0.0, "tok": tok, "prem": False, "priced": False})
+            continue
         if p is None:                    # "other" aggregate + non-chat models
             unmatched.append(slug)
-            total_rev += tok / 1e6 * floor_blend
+            rev = tok / 1e6 * floor_blend
+            total_rev += rev
+            models.append({"slug": slug, "name": slug, "rev": rev,
+                           "out": floor, "tok": tok, "prem": False, "priced": False})
             continue
         blended = w_in * p["prompt_per_m"] + w_out * p["completion_per_m"]
         rev = tok / 1e6 * blended
         total_rev += rev
-        if p["completion_per_m"] >= premium_line:
+        is_prem = p["completion_per_m"] >= premium_line
+        if is_prem:
             prem_rev += rev
             prem_tok += tok
             premium_models.append(slug)
+        models.append({"slug": slug, "name": p.get("name") or slug, "rev": rev,
+                       "out": p["completion_per_m"], "tok": tok,
+                       "prem": is_prem, "priced": True})
 
     share = round(prem_rev / total_rev * 100, 1)
     commodity_tok_share = round((1 - prem_tok / total_tok) * 100, 1)
@@ -117,25 +135,98 @@ def compute():
 
     # +/- : does the VOLUME picture agree with the MONEY picture?
     agree = (share >= 50) == ((100 - commodity_tok_share) >= 50)
-    arrow = "plus" if agree else "minus"
+
+    return {
+        "share": share, "light": light, "state": state,
+        "commodity_tok_share": commodity_tok_share,
+        "floor": floor, "premium_line": premium_line,
+        "premium_models": premium_models, "unmatched": unmatched,
+        "arrow": "plus" if agree else "minus",
+        "total_rev": total_rev, "total_tok": total_tok,
+        "models": models,
+    }
+
+
+def compute():
+    rows = rankings_daily()
+    latest = max(r["date"] for r in rows)
+    today = [r for r in rows if r["date"] == latest]
+    d = _day_stats(today, model_prices())
 
     return {
         "id": "premium_share",
-        "light": light,
-        "value": share,
-        "metric": f"{share:.1f}%",
-        "state": state,
+        "light": d["light"],
+        "value": d["share"],
+        "metric": f"{d['share']:.1f}%",
+        "state": d["state"],
         "asof": latest,
         "extras": {
-            "arrow": arrow,
-            "commodity_token_share_pct": commodity_tok_share,
-            "floor_out_per_m": round(floor, 3),
-            "premium_line_out_per_m": round(premium_line, 2),
-            "premium_models": premium_models,
-            "n_unmatched_floor_priced": len(unmatched),
+            "arrow": d["arrow"],
+            "commodity_token_share_pct": d["commodity_tok_share"],
+            "floor_out_per_m": round(d["floor"], 3),
+            "premium_line_out_per_m": round(d["premium_line"], 2),
+            "premium_models": d["premium_models"],
+            "n_unmatched_floor_priced": len(d["unmatched"]),
             "source": "OpenRouter rankings-daily + /models",
         },
     }
+
+
+def ledger(days=10, top=10):
+    """The per-model evidence behind the light, one entry per day, newest first.
+
+    This is FREE and was always available: rankings_daily() returns ~30 days x 51 rows
+    on every call and compute() keeps only the latest day's aggregate. The detail
+    panel's Ledger and Two-lenses views are a re-slice of data already pulled — no new
+    source, no extra spend.
+
+    Two top-N lists per day, and they are the point rather than a convenience: `by_rev`
+    is where the MONEY is, `by_tok` is where the VOLUME is, and the factor's whole
+    +/- glyph is whether those two agree. `overlap` counts the models on both lists —
+    a number that has been falling, which is the commoditization thesis in one figure."""
+    rows = rankings_daily()
+    prices = model_prices()
+    by_date = {}
+    for r in rows:
+        by_date.setdefault(r["date"], []).append(r)
+
+    out = []
+    for date in sorted(by_date, reverse=True)[:days]:
+        d = _day_stats(by_date[date], prices)
+        total_rev, total_tok = d["total_rev"], d["total_tok"]
+
+        def shape(ms):
+            return [{
+                "r": i + 1,
+                "slug": m["slug"],
+                "name": m["name"],
+                "rev": round(m["rev"]),
+                # share of the day's dollars / of the day's tokens, both in %, so the
+                # two lenses are read on the same scale.
+                "revs": round(m["rev"] / total_rev * 100, 1) if total_rev else 0.0,
+                "ts": round(m["tok"] / total_tok * 100, 2) if total_tok else 0.0,
+                "out": round(m["out"], 2),
+                "prem": m["prem"],
+            } for i, m in enumerate(ms)]
+
+        by_rev = shape(sorted(d["models"], key=lambda m: -m["rev"])[:top])
+        by_tok = shape(sorted(d["models"], key=lambda m: -m["tok"])[:top])
+        overlap = len({m["slug"] for m in by_rev} & {m["slug"] for m in by_tok})
+
+        out.append({
+            "date": date,
+            "share": d["share"],
+            "light": d["light"],
+            "floor": round(d["floor"], 3),
+            "line": round(d["premium_line"], 2),
+            "comm_tok": d["commodity_tok_share"],
+            "total_rev": round(total_rev),
+            "n_models": len(d["models"]),
+            "by_rev": by_rev,
+            "by_tok": by_tok,
+            "overlap": overlap,
+        })
+    return out
 
 
 if __name__ == "__main__":

@@ -134,6 +134,32 @@ def run_factor(spec, state):
 
     state["factors"][fid] = entry
     store.record_snapshot(fid, entry.get("value"), payload=reading)
+    _record_ledger_day(mod, fid, reading)
+
+
+def _record_ledger_day(mod, fid, reading):
+    """Capture the day's per-item ledger, for the factors that keep one.
+
+    Runs right after a successful compute() so the ledger is written at the same prices
+    the light was decided on — which is the entire point (see store.record_ledger).
+    Guarded three ways so it can never become a cost or a failure:
+      - a factor with no ledger() is skipped (15 of 16);
+      - a day already captured is skipped WITHOUT pulling, so a scheduler running
+        several times a day makes one round-trip, not several;
+      - any exception is swallowed with a log line. The ledger is evidence for the
+        panel; it must never be able to fail a factor whose reading already succeeded."""
+    fn = getattr(mod, "ledger", None)
+    if fn is None:
+        return
+    asof = reading.get("asof")
+    try:
+        if asof and store.has_ledger_day(fid, asof) == "recorded":
+            return
+        for day in fn(days=1):
+            store.record_ledger(fid, day["date"], day, basis="recorded")
+    except Exception as e:
+        print(f"[STOPLIGHT] {fid} ledger capture failed (reading kept): "
+              f"{type(e).__name__}: {e}")
 
 
 def _maybe_refresh_calendar(state):

@@ -23,6 +23,8 @@ Display flags are computed HERE, server-side, once — the frontend renderer
 import threading
 from datetime import datetime
 
+import importlib
+
 from flask import Blueprint, jsonify, request
 
 from . import charts, events, store
@@ -34,6 +36,13 @@ bp = Blueprint("stoplight", __name__)
 # Serialize an inline rate-chart build (cold cache) so two tab-opens don't both
 # hit FRED. The scheduler normally keeps the cache warm; this is the cold path.
 _charts_lock = threading.Lock()
+
+# One inline ledger rebuild at a time, and a one-entry day cache in front of it.
+# The pull is FREE (rankings-daily + /models, no inference), but it is still an
+# external round-trip and the answer only changes once a day — without this, every
+# panel open and every rail click would hit OpenRouter again.
+_ledger_lock = threading.Lock()
+_ledger_cache = {}          # (factor, days) -> (et_date, payload)
 
 # One billed-update run at a time (the "Update" button). The endpoint acquires this
 # non-blocking and the background thread releases it when done — a second click while
@@ -275,6 +284,102 @@ def snooze_billed_pull():
     print(f"[STOPLIGHT] billed row SNOOZED: {factor}/{body.get('event_id')}"
           f"@{fire_date} until {until}")
     return jsonify({"status": "snoozed", "until": until, "pending_billed": pending})
+
+
+# --- Per-factor history (the detail panel's day rail + sparkline) ---------------
+# Served on PANEL OPEN rather than folded into /get_stoplight: the board payload is
+# polled on a cadence by every open tab, and thirty days x 16 factors of full readings
+# would ride along on every one of those polls to be thrown away. One factor, on
+# demand, is the cheaper shape.
+# FREE — a pure read of the snapshot log the scheduler already writes. Nothing here
+# pulls a source or bills anything.
+@bp.route("/get_factor_history")
+def get_factor_history():
+    fid = (request.args.get("factor") or "").strip()
+    if fid not in BY_ID:
+        return jsonify({"error": "unknown factor", "factor": fid}), 404
+    try:
+        days = int(request.args.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+    days = max(1, min(days, 365))
+    spec = BY_ID[fid]
+    return jsonify({
+        "factor": fid,
+        "name": spec["name"],
+        "cadence": spec["cadence"],
+        # NEWEST-FIRST, matching store.history() — the rail reads down from today.
+        # A sparkline wants the other order and reverses it itself.
+        "days": store.history_payloads(fid, days),
+    })
+
+
+# --- Per-factor LEDGER (the evidence views: Ledger / Two lenses) ----------------
+# A factor "has a ledger" iff its builder module exports ledger(). Today only
+# premium_share does — the discovery is by capability, not by a list, so a factor that
+# grows one becomes clickable in the panel with no change here.
+# FREE: premium_share.ledger() re-slices the SAME rankings_daily() pull compute() makes
+# (~30 days x 51 rows arrive on every call and the light keeps only the latest day).
+# No new source, no inference, nothing billed.
+def _ledger_fn(fid):
+    spec = BY_ID.get(fid) or {}
+    name = spec.get("builder")
+    if not name:
+        return None
+    try:
+        mod = importlib.import_module(f".factors.{name}", __package__)
+    except ImportError:
+        return None
+    return getattr(mod, "ledger", None)
+
+
+@bp.route("/get_factor_ledger")
+def get_factor_ledger():
+    fid = (request.args.get("factor") or "").strip()
+    if fid not in BY_ID:
+        return jsonify({"error": "unknown factor", "factor": fid}), 404
+    fn = _ledger_fn(fid)
+    if fn is None:
+        # NOT an error — most factors have no per-item evidence to show. The frontend
+        # reads has_ledger and renders its generic view instead of a broken switcher.
+        return jsonify({"factor": fid, "has_ledger": False, "days": []})
+    try:
+        days = int(request.args.get("days", 10))
+    except (TypeError, ValueError):
+        days = 10
+    days = max(1, min(days, 30))
+
+    # STORED days first. Since 2026-08-21 the scheduler captures each day's ledger at
+    # the prices the light was decided on, so a stored day is the RECORD. Days from
+    # before that (or any the scheduler missed) are re-derived live and marked
+    # `reconstructed` — re-pricing old volumes with today's list can move whole models
+    # across the premium line, so the two are not interchangeable and the frontend is
+    # told which it is holding.
+    stored = {d["date"]: d for d in store.ledger_days(fid, days)}
+
+    key, today = (fid, days), store.today_et()
+    hit = _ledger_cache.get(key)
+    if hit is None or hit[0] != today:
+        with _ledger_lock:
+            hit = _ledger_cache.get(key)    # re-check inside the lock
+            if hit is None or hit[0] != today:
+                try:
+                    live = fn(days=days)
+                except Exception as exc:    # a dead source must not 500 the panel
+                    # Stored days still serve — a source outage costs the live tail,
+                    # not the history.
+                    out = sorted(stored.values(), key=lambda d: d["date"], reverse=True)
+                    return jsonify({"factor": fid, "has_ledger": True,
+                                    "days": out, "error": str(exc)}), 200
+                hit = (today, live)
+                _ledger_cache[key] = hit
+
+    merged = dict(stored)
+    for day in hit[1]:
+        if day["date"] not in merged:       # never shadow a recorded day
+            merged[day["date"]] = dict(day, basis="reconstructed")
+    out = sorted(merged.values(), key=lambda d: d["date"], reverse=True)[:days]
+    return jsonify({"factor": fid, "has_ledger": True, "days": out})
 
 
 @bp.route("/get_board_charts")

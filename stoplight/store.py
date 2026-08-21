@@ -75,6 +75,22 @@ def save_state(state):
 def _connect():
     con = sqlite3.connect(SNAPSHOT_DB)
     con.execute(
+        """CREATE TABLE IF NOT EXISTS ledgers (
+               factor_id  TEXT NOT NULL,
+               date       TEXT NOT NULL,   -- the DATA date (the reading's asof), not
+                                           -- the date the row was written: premium_share
+                                           -- publishes yesterday's day, so keying by
+                                           -- write-date would file every ledger under
+                                           -- the wrong day.
+               basis      TEXT NOT NULL,   -- 'recorded' (captured that day, at that
+                                           -- day's prices) | 'reconstructed' (re-derived
+                                           -- later, from a price list that has moved)
+               payload    TEXT NOT NULL,   -- the day's ledger JSON
+               created_at TEXT NOT NULL,
+               PRIMARY KEY (factor_id, date)
+           )"""
+    )
+    con.execute(
         """CREATE TABLE IF NOT EXISTS snapshots (
                factor_id  TEXT NOT NULL,
                date       TEXT NOT NULL,   -- ET observation date (YYYY-MM-DD)
@@ -154,6 +170,105 @@ def history(factor_id, limit=90):
     finally:
         con.close()
     return rows
+
+
+def record_ledger(factor_id, date, payload, basis="recorded"):
+    """Persist ONE day's per-item ledger. First recording wins.
+
+    This exists because a re-derived ledger is not the same thing as the one that was
+    live. premium_share prices models against a floor that deflates fast, so re-running
+    an old day with today's price list can move whole models across the premium line —
+    2026-08-13 recomputes at 45.9% against a recorded 27.1%, which is a different BAND,
+    not a rounding difference. Once a day is captured it must never be silently
+    replaced by a later reconstruction.
+
+    The upsert therefore has a direction: a `recorded` row may replace a
+    `reconstructed` one (an upgrade — the real thing arriving late), and nothing may
+    replace a `recorded` one. A second `recorded` write for the same day is a no-op, so
+    the scheduler running twice in a day cannot rewrite history with fresher prices."""
+    con = _connect()
+    try:
+        con.execute(
+            "INSERT INTO ledgers (factor_id, date, basis, payload, created_at) "
+            "VALUES (?,?,?,?,?) "
+            "ON CONFLICT(factor_id, date) DO UPDATE SET "
+            "  basis=excluded.basis, payload=excluded.payload, created_at=excluded.created_at "
+            "WHERE ledgers.basis='reconstructed' AND excluded.basis='recorded'",
+            (factor_id, date, basis, json.dumps(payload), now_iso()),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def ledger_days(factor_id, limit=30):
+    """Newest-first stored ledger days, each with the `basis` it was captured on."""
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT date, basis, payload FROM ledgers WHERE factor_id=? "
+            "ORDER BY date DESC LIMIT ?",
+            (factor_id, limit),
+        ).fetchall()
+    finally:
+        con.close()
+    out = []
+    for date, basis, payload in rows:
+        try:
+            day = json.loads(payload)
+        except (ValueError, TypeError):
+            continue
+        day["basis"] = basis
+        day["date"] = date          # the key is authoritative over the body
+        out.append(day)
+    return out
+
+
+def has_ledger_day(factor_id, date):
+    """Is this day already captured? Lets the scheduler skip a redundant pull."""
+    con = _connect()
+    try:
+        row = con.execute(
+            "SELECT basis FROM ledgers WHERE factor_id=? AND date=?", (factor_id, date)
+        ).fetchone()
+    finally:
+        con.close()
+    return row[0] if row else None
+
+
+def history_payloads(factor_id, limit=30):
+    """Newest-first [{date, value, ...reading}] — the FULL reading as captured that
+    day, not just its value. `history()` above returns (date, value) pairs because its
+    callers do arithmetic on them (the Silicon E 63-bar roll, the memory canary); this
+    one exists for DISPLAY, where the day's own light, metric, state and extras are the
+    whole point — the detail panel's day rail lets you click back to a past reading and
+    see what it said, which a bare value cannot reconstruct.
+    A row whose payload never got written (or no longer parses) still returns its date
+    and value rather than being dropped: a gap in the rail is information, a missing
+    day is a lie about the history's shape."""
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT date, value, payload FROM snapshots WHERE factor_id=? "
+            "ORDER BY date DESC LIMIT ?",
+            (factor_id, limit),
+        ).fetchall()
+    finally:
+        con.close()
+    out = []
+    for date, value, payload in rows:
+        day = {"date": date, "value": value}
+        if payload:
+            try:
+                rec = json.loads(payload)
+            except (ValueError, TypeError):
+                rec = None
+            if isinstance(rec, dict):
+                for k in ("light", "metric", "state", "asof", "extras"):
+                    if k in rec:
+                        day[k] = rec[k]
+        out.append(day)
+    return out
 
 
 def value_n_back(factor_id, n):

@@ -57,6 +57,36 @@
     .sl-o { background:#fb923c; } .sl-x { background:#475569; }
     .sl-rows { margin:8px auto 0; width:fit-content; display:flex; flex-direction:column; font-size:11px; line-height:1; }
     .sl-row { display:flex; align-items:center; padding:3px 4px; }
+    /* A BUILT row opens its own factor detail; an unbuilt one has nothing to show,
+       so only .sl-click gets the affordance (renderStoplightRows decides). */
+    .sl-click { cursor:pointer; border-radius:3px; }
+    .sl-click:hover { background:rgba(148,163,184,.10); }
+    .sl-click:focus-visible { outline:2px solid #818cf8; outline-offset:-2px; }
+    /* --- factor header in the shared deep-dive panel (ab-head) --------------
+       The compact header from the 2026-08-21 prototype: one identity line, then
+       one line of what-it-measures / why-it-matters. The board header (no factor
+       selected) keeps the original AI Bubble / Tracker treatment. */
+    .abh { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+    .abh-rank { font-family:ui-monospace,monospace; font-size:11px; color:#64748b; }
+    .abh-name { font-size:15px; font-weight:700; color:#f1f5f9; letter-spacing:-.01em; }
+    .abh-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+    .abh-val { font-family:ui-monospace,monospace; font-size:15px; font-weight:700;
+               font-variant-numeric:tabular-nums; }
+    .abh-st { font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.07em;
+              text-transform:uppercase; color:#64748b; }
+    .abh-gl { font-family:ui-monospace,monospace; font-size:14px; font-weight:700; }
+    .abh-back { margin-left:auto; font-family:ui-monospace,monospace; font-size:9.5px;
+                letter-spacing:.05em; text-transform:uppercase; color:#64748b;
+                background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.22);
+                border-radius:4px; padding:2px 7px; cursor:pointer; }
+    .abh-back:hover { color:#e2e8f0; background:rgba(148,163,184,.16); }
+    .abh-why { margin-top:5px; font-size:11.5px; color:#94a3b8; line-height:1.45; }
+    .abh-why b { color:#e2e8f0; font-weight:600; }
+    .abh-why .pro { color:#4ade80; font-weight:600; }
+    .abh-g { color:#4ade80; } .abh-r { color:#f87171; }
+    .abh-y { color:#fbbf24; } .abh-o { color:#fb923c; }
+    .abh-bg-g { background:#4ade80; } .abh-bg-r { background:#f87171; }
+    .abh-bg-y { background:#fbbf24; } .abh-bg-o { background:#fb923c; }
     .sl-rk { flex:0 0 15px; text-align:right; color:#64748b; font-size:10px; }
     .sl-gl { flex:0 0 12px; text-align:right; color:#cbd5e1; font-weight:700; font-size:11px; }
     .sl-row .sl-dot { margin-left:5px; }
@@ -681,8 +711,9 @@
                 <span class="sl-lbl">AI Bubble</span>
                 <span id="stoplight-hdr" class="flex items-center gap-2 flex-1 min-w-0"></span>
                 <!-- Detail-panel trigger. stop/prevent so the click opens the deep-dive
-                     panel instead of toggling the <details>. Future: factor rows will
-                     call openBubbleDetail(factorId) to deep-link into the same panel. -->
+                     panel instead of toggling the <details>. Calling it with NO argument
+                     is what keeps the board header — a built factor row passes its id
+                     (2026-08-21) and the panel header becomes that factor's. -->
                 <button class="sl-detail-btn" title="AI bubble thesis — full detail"
                         onclick="event.stopPropagation(); event.preventDefault(); openBubbleDetail();">detail</button>
             </summary>
@@ -1055,12 +1086,10 @@
             </div>
 
             <div id="ai-bubble-dive" class="hidden flex-1 flex-col overflow-hidden">
-                <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-3 shrink-0">
-                    <div class="flex items-baseline gap-3">
-                        <span class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2 py-0.5">AI Bubble</span>
-                        <h2 class="text-2xl font-bold text-white tracking-tight">Tracker</h2>
-                    </div>
-                </div>
+                <!-- Header is RENDERED (renderBubbleHead in stoplight.js), not static:
+                     it carries the board header when opened from the panel button and
+                     the FACTOR header when opened by clicking a factor row. -->
+                <div id="ab-head" class="border-b border-slate-700 pb-3 mb-3 shrink-0"></div>
                 <div class="view-tabs shrink-0 mb-3" id="ab-tabs">
                     <button class="view-tab active" data-view="overview" onclick="switchBubbleTab('overview')">Overview</button>
                     <button class="view-tab" data-view="tbd1" onclick="switchBubbleTab('tbd1')">TBD</button>
@@ -1084,18 +1113,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260818n"></script>
-<script src="static/js/watchlist.js?v=20260818n"></script>
-<script src="static/js/macro.js?v=20260818n"></script>
-<script src="static/js/stoplight.js?v=20260818n"></script>
-<script src="static/js/strategy.js?v=20260820c"></script>
-<script src="static/js/strategy-dive.js?v=20260818n"></script>
-<script src="static/js/actionable.js?v=20260818n"></script>
-<script src="static/js/newsletter-cards.js?v=20260818n"></script>
-<script src="static/js/charts.js?v=20260818n"></script>
-<script src="static/js/news-archive.js?v=20260818n"></script>
-<script src="static/js/newsletter-dive.js?v=20260818n"></script>
-<script src="static/js/newsletter-digest.js?v=20260818n"></script>
-<script src="static/js/main.js?v=20260818n"></script>
+<script src="static/js/core.js?v=20260821n"></script>
+<script src="static/js/watchlist.js?v=20260821n"></script>
+<script src="static/js/macro.js?v=20260821n"></script>
+<script src="static/js/stoplight.js?v=20260821n"></script>
+<script src="static/js/strategy.js?v=20260821c"></script>
+<script src="static/js/strategy-dive.js?v=20260821n"></script>
+<script src="static/js/actionable.js?v=20260821n"></script>
+<script src="static/js/newsletter-cards.js?v=20260821n"></script>
+<script src="static/js/charts.js?v=20260821n"></script>
+<script src="static/js/news-archive.js?v=20260821n"></script>
+<script src="static/js/newsletter-dive.js?v=20260821n"></script>
+<script src="static/js/newsletter-digest.js?v=20260821n"></script>
+<script src="static/js/main.js?v=20260821n"></script>
 </body>
 </html>

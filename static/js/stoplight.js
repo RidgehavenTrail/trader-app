@@ -58,7 +58,19 @@
             const cat = f.cat
                 ? `<span class="sl-cat" title="${catTip}">${esc(f.cat)}</span>` : '';
             const err = f.built && f.error ? ' title="' + esc(f.error) + '"' : '';
-            return `<div class="${cls.join(' ')}"${err}>` +
+            // CLICK OPENS THE FACTOR'S OWN DETAIL (2026-08-21). Only a BUILT factor
+            // is clickable: an unbuilt one has no light, no metric and no evidence,
+            // so an affordance there would promise a panel with nothing in it.
+            // openBubbleDetail already took a factorId — it was reserved for this.
+            let click = '', a11y = '';
+            if (f.built) {
+                cls.push('sl-click');
+                click = ` onclick="openBubbleDetail('${esc(f.id)}')"`;
+                a11y = ` role="button" tabindex="0" title="${esc(f.name)} — detail"` +
+                       ` onkeydown="if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;)` +
+                       `{event.preventDefault();openBubbleDetail(&quot;${esc(f.id)}&quot;)}"`;
+            }
+            return `<div class="${cls.join(' ')}"${err}${click}${a11y}>` +
                 `<span class="sl-rk">${f.rank}</span>` +
                 `<span class="sl-gl">${slGlyph(f)}</span>` +
                 slDotHTML(f) +
@@ -129,8 +141,57 @@
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
+        renderBubbleHead();
         switchBubbleTab('overview');
         renderBubbleOverview();
+    }
+
+    // WHAT A FACTOR MEASURES, AND WHY IT MATTERS — the one line under the header.
+    // Hand-written here for now, DELIBERATELY: the same text also lives in each
+    // factor's module docstring, and the right home is a structured `definition`
+    // block on the factor itself (with the light thresholds, which live only in
+    // docstring prose today). Until that exists this map is the honest shortcut —
+    // an id absent from it renders no why-line rather than a wrong one.
+    const AB_WHY = {
+        premium_share:
+            '<b>Measures</b> premium models’ revenue ÷ total revenue on OpenRouter. ' +
+            '<b>Why it matters</b> it is the commoditization kill-mechanism gauge — if quality ' +
+            'stops commanding a price premium, the capex case for frontier models goes with it. ' +
+            '<span class="pro">Green = pro-burst</span> on this board, not “all clear.”'
+    };
+    const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
+
+    // The panel header. No factor selected -> the board header, unchanged from what
+    // the panel has always shown. A factor selected -> its compact identity line.
+    function renderBubbleHead() {
+        const el = document.getElementById('ab-head');
+        if (!el) return;
+        const f = _abFactor && _slBoard
+            ? (_slBoard.factors || []).find(x => x.id === _abFactor) : null;
+        if (!f) {
+            el.innerHTML =
+                '<div class="flex items-baseline gap-3">' +
+                '<span class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest ' +
+                'bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2 py-0.5">AI Bubble</span>' +
+                '<h2 class="text-2xl font-bold text-white tracking-tight">Tracker</h2></div>';
+            return;
+        }
+        const c = AB_LC[f.light] || 'y';
+        // The glyph is the row's own — slGlyph already normalizes up/down/plus/minus,
+        // so the header cannot disagree with the sidebar about which way it points.
+        const gl = slGlyph(f);
+        const why = AB_WHY[f.id];
+        return void (el.innerHTML =
+            '<div class="abh">' +
+              `<span class="abh-rank">#${f.rank}</span>` +
+              `<span class="abh-name">${esc(f.name)}</span>` +
+              `<span class="abh-dot abh-bg-${c}"></span>` +
+              `<span class="abh-val abh-${c}">${esc(f.metric || '--')}</span>` +
+              `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
+              (gl ? `<span class="abh-gl">${gl}</span>` : '') +
+              '<button class="abh-back" onclick="openBubbleDetail(null)">← Tracker</button>' +
+            '</div>' +
+            (why ? `<div class="abh-why">${why}</div>` : ''));
     }
     function switchBubbleTab(tabName) {
         document.getElementById('ab-tabs').querySelectorAll('.view-tab')

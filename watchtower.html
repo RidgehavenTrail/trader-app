@@ -726,7 +726,14 @@
        factor's +/- glyph is precisely whether those two agree. A model on BOTH lists is
        tinted indigo and carries the link mark; the mark is rendered TRANSPARENT rather
        than omitted on the others so the name column starts at one x down the list. */
-    .ab-lenses { display:grid; grid-template-columns:1fr 1fr; flex:1; min-width:0; }
+    /* max-content, NOT 1fr 1fr, and packed to the start. Splitting the width gave each
+       lens half the panel however wide the window was, and since the figures are
+       anchored to the row's right edge, a wide window pushed them far from the names
+       they belong to and drove the two lenses apart (user, 2026-08-21). Sized to their
+       own content the pair stays tight and adjacent at any width, and the slack lands
+       to the RIGHT of both rather than inside each. */
+    .ab-lenses { display:grid; justify-content:start; flex:1; min-width:0;
+                 grid-template-columns:repeat(2, minmax(0, max-content)); }
     .ab-lens { min-width:0; display:flex; flex-direction:column; }
     .ab-lens + .ab-lens { border-left:1px solid #1e293b; }
     .ab-lens .lens-hd { padding:7px 12px 6px; border-bottom:1px solid #334155; }
@@ -741,7 +748,13 @@
     .ab-lrow .link.off { color:transparent; }
     /* Names carry the pane's brightest text, not the row's muted grey: in a list whose
        other content is numbers, the NAME is what you are scanning for. */
-    .ab-lrow .nm2 { flex:1; min-width:0; color:#e2e8f0; font-family:'Inter',system-ui,sans-serif;
+    /* Grows to fill its lens but never past 230px. The cap is what makes the
+       max-content column terminate — without it the widest slug would set the column
+       width and the whole point is lost. Because every row grows to the same capped
+       width, the figures still line up down the lens. 230 is also ~80px MORE than the
+       names had when the lenses split the width, so fewer of them truncate. */
+    .ab-lrow .nm2 { flex:1 1 auto; min-width:0; max-width:230px; color:#e2e8f0;
+        font-family:'Inter',system-ui,sans-serif;
         font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     /* flex:none — the figures keep their width and the NAME gives up space when a slug
        runs long, which is the trade the user chose. */
@@ -779,7 +792,7 @@
        the lenses always, which throws away the one thing view B is for. 1024 is where
        the window itself is genuinely cramped. */
     @media (max-width: 1024px) {
-      .ab-lenses { grid-template-columns:1fr; }
+      .ab-lenses { grid-template-columns:minmax(0,1fr); }
       .ab-lens + .ab-lens { border-left:0; border-top:1px solid #1e293b; }
     }
     /* FOOTNOTES — auto-fit columns, so one column (provenance alone) fills the width
@@ -1436,7 +1449,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821y"></script>
+<script src="static/js/stoplight.js?v=20260821z"></script>
 <script src="static/js/strategy.js?v=20260821n"></script>
 <script src="static/js/strategy-dive.js?v=20260821n"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

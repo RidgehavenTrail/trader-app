@@ -141,8 +141,7 @@
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
-        renderBubbleHead();
-        renderBubbleNote();                 // sub-header band, outside the scroll pane
+        renderBubbleHead();                 // identity + the factor's About box
         switchBubbleTab('overview');
         renderBubbleOverview();
     }
@@ -163,25 +162,20 @@
         }
     };
 
-    // The note box, painted into the SUB-HEADER band beside the tabs (#ab-about-slot)
-    // — not into the scrolling pane. Inside that pane it could never sit closer than
-    // 52px to the header rule (the tab strip's height), and lifting it past the edge
-    // got it CLIPPED by overflow-y:auto rather than moved. As chrome it also survives
-    // a tab switch, which is right: it describes the FACTOR, not the tab.
-    // Empties the slot when no factor is selected or none is written, so the band is
-    // just the tab strip and the board view is unchanged.
-    function renderBubbleNote() {
-        const el = document.getElementById('ab-about-slot');
-        if (!el) return;
-        const f = _abFactor && _slBoard
-            ? (_slBoard.factors || []).find(x => x.id === _abFactor) : null;
+    // The note box, rendered INSIDE THE TITLE HEADER beside the identity line — not
+    // in the tabs band (tried, and it is "a header" but not the one meant) and not in
+    // the scrolling pane (where it could never sit closer than the tab strip's height
+    // to the rule, and lifting it past the pane's edge CLIPPED it rather than moving
+    // it). Empty string when no factor is selected or none is written, so the header
+    // collapses back to the identity line and the board view is unchanged.
+    function abNoteHTML(f) {
         const w = f && AB_WHY[f.id];
-        el.innerHTML = !w ? '' :
-            '<div class="ab-box ab-about">' +
+        if (!w) return '';
+        return '<div class="abh-note"><div class="ab-box ab-about">' +
             `<div class="ab-ab-r"><span class="ab-ab-k">Measures</span>${esc(w.measures)}</div>` +
             `<div class="ab-ab-r"><span class="ab-ab-k">Why</span>${esc(w.why)}</div>` +
             '<div class="ab-ab-p">Green = pro-burst on this board, not “all clear.”</div>' +
-            '</div>';
+            '</div></div>';
     }
     const AB_LC = { green: 'g', yellow: 'y', orange: 'o', red: 'r' };
 
@@ -205,15 +199,21 @@
         // so the header cannot disagree with the sidebar about which way it points.
         const gl = slGlyph(f);
         // IDENTITY ONLY — what it measures and why now lives in the About box above
-        // the sub-header band (renderBubbleNote). One line, so the panel starts with data.
+        // the About box beside it (abNoteHTML), so the identity line stays one line.
+        // Three children only — identity line, note box, back button — so the row can
+        // align them to the TOP. Left flat, the box's height would drag the line and
+        // the button to its midpoint.
         return void (el.innerHTML =
             '<div class="abh">' +
-              `<span class="abh-rank">#${f.rank}</span>` +
-              `<span class="abh-name">${esc(f.name)}</span>` +
-              `<span class="abh-dot abh-bg-${c}"></span>` +
-              `<span class="abh-val abh-${c}">${esc(f.metric || '--')}</span>` +
-              `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
-              (gl ? `<span class="abh-gl">${gl}</span>` : '') +
+              '<div class="abh-id">' +
+                `<span class="abh-rank">#${f.rank}</span>` +
+                `<span class="abh-name">${esc(f.name)}</span>` +
+                `<span class="abh-dot abh-bg-${c}"></span>` +
+                `<span class="abh-val abh-${c}">${esc(f.metric || '--')}</span>` +
+                `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
+                (gl ? `<span class="abh-gl">${gl}</span>` : '') +
+              '</div>' +
+              abNoteHTML(f) +
               '<button class="abh-back" onclick="openBubbleDetail(null)">← Tracker</button>' +
             '</div>');
     }
@@ -369,8 +369,8 @@
                     `<div class="ab-sec"><h5>Earnings durability</h5><div class="ab-box">${dur}</div></div>` +
                 '</div>' +
                 '<div class="ab-col-cal">' +
-                    // The factor note is NOT here — it lives in the sub-header band
-                    // (renderBubbleNote), outside this scrolling pane.
+                    // The factor note is NOT here — it lives in the title header
+                    // (abNoteHTML), outside this scrolling pane.
                     `<div class="ab-sec"><h5>Calendar · 90d</h5><div class="ab-box"><div class="ab-cal">${cal}</div></div></div>` +
                 '</div>' +
             '</div>';

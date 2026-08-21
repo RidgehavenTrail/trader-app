@@ -464,7 +464,12 @@
        OUTSIDE the scrolling pane. align-items:flex-start so the tabs stay pinned to
        the top while the box sets the band's height. */
     .ab-subhead { display:flex; align-items:flex-start; gap:18px; }
-    #ab-about-slot { margin-left:auto; min-width:0; }
+    /* Inset from the right edge so the box clears the "← Tracker" button above it
+       (user, 2026-08-21). Flush right, the box's edge and the button's edge were the
+       same line 26px apart and the button read as the box's lid rather than as its
+       own control. 80px = the button's width plus a gap, so it keeps the panel's
+       top-right corner to itself. */
+    #ab-about-slot { margin-left:auto; margin-right:80px; min-width:0; }
     /* Wider than the 290px it used in the calendar column, because here the band has
        ~1000px of dead space to the right of the tabs and a WIDER box is a SHORTER
        one — every line it saves is vertical space taken from the pane below. */
@@ -1143,18 +1148,18 @@
      stoplight.js still had the old switchBubbleTab pane list). A version query
      makes it a DIFFERENT URL, which the cache cannot satisfy.
      BUMP THIS STAMP whenever you edit any file below. -->
-<script src="static/js/core.js?v=20260821h"></script>
-<script src="static/js/watchlist.js?v=20260821h"></script>
-<script src="static/js/macro.js?v=20260821h"></script>
-<script src="static/js/stoplight.js?v=20260821h"></script>
-<script src="static/js/strategy.js?v=20260821h"></script>
-<script src="static/js/strategy-dive.js?v=20260821h"></script>
-<script src="static/js/actionable.js?v=20260821h"></script>
-<script src="static/js/newsletter-cards.js?v=20260821h"></script>
-<script src="static/js/charts.js?v=20260821h"></script>
-<script src="static/js/news-archive.js?v=20260821h"></script>
-<script src="static/js/newsletter-dive.js?v=20260821h"></script>
-<script src="static/js/newsletter-digest.js?v=20260821h"></script>
-<script src="static/js/main.js?v=20260821h"></script>
+<script src="static/js/core.js?v=20260821i"></script>
+<script src="static/js/watchlist.js?v=20260821i"></script>
+<script src="static/js/macro.js?v=20260821i"></script>
+<script src="static/js/stoplight.js?v=20260821i"></script>
+<script src="static/js/strategy.js?v=20260821i"></script>
+<script src="static/js/strategy-dive.js?v=20260821i"></script>
+<script src="static/js/actionable.js?v=20260821i"></script>
+<script src="static/js/newsletter-cards.js?v=20260821i"></script>
+<script src="static/js/charts.js?v=20260821i"></script>
+<script src="static/js/news-archive.js?v=20260821i"></script>
+<script src="static/js/newsletter-dive.js?v=20260821i"></script>
+<script src="static/js/newsletter-digest.js?v=20260821i"></script>
+<script src="static/js/main.js?v=20260821i"></script>
 </body>
 </html>

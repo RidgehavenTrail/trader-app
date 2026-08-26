@@ -162,7 +162,7 @@ def _tier(state, spec):
     s = _sys(spec)
     if state == s["cash_state"]:
         return "flat"
-    if state == s["hunt_state"]:
+    if state == s["hunt_state"] or state == s.get("warn_state"):
         return "exiting"
     return "holding"
 
@@ -585,26 +585,72 @@ def _adapt_tobacco(spec, refresh=False):
     # walk -- which decides a phase by finding a breakout trade -- has nothing to find. The
     # phase here IS the regime, which the module already published.
     phase = "dark" if st["regime"] == "dark" else "golden"
+    # THE WHOLE RESTING LADDER, not just its first rung (user, 2026-08-26: show both, in
+    # case I want to choose). More than one bid genuinely rests at a time — `deep_bid` is
+    # published on EVERY flat bar, while `dark` and `dip` are mutually exclusive with each
+    # other but never with it — so publishing a single trigger hid a live order every day
+    # the regime bid was up. A held book has no bids and the list is simply empty.
+    # NEAREST FIRST: sorted by level descending, which is the order a decline would fill
+    # them. Each rung carries its own name from the display vocabulary, because the old
+    # constant "resting bid" read identically for every sleeve — the level moved but the
+    # label never said which order it belonged to. The names come from `kind_state`; none
+    # is written here, and neither is any depth that would say where a bid sits.
+    ladder = [(st["dark_bid"], "dark"), (st["dip_bid"], "dip"), (st["deep_bid"], "deep")]
+    triggers = sorted(
+        ({"level": lv, "kind": k, "label": s["kind_state"].get(k, k)}
+         for lv, k in ladder if lv is not None),
+        key=lambda t: -t["level"])
+    # `trigger` / `trigger_basis` keep their EXACT previous meaning — the module's own
+    # priority pick, not the ladder's first rung. They are the shared contract QQQ and XLE
+    # also fill, and a consumer reading only them must not silently change what it gets.
+    primary_kind = ("dark" if st["dark_bid"] is not None
+                    else "dip" if st["dip_bid"] is not None else "deep")
     cycle = {
         "phase": s.get("phase_state", {}).get(phase, phase),
         "phase_days": int(last_i - era_start + 1),
-        # The standing order a FLAT book has resting. Only one can be live at a time, in the
-        # module's own priority order; a held book has none, and says so with a null.
         "trigger": (st["deep_bid"] if st["deep_bid"] is not None and st["dark_bid"] is None
                     and st["dip_bid"] is None else
                     st["dark_bid"] if st["dark_bid"] is not None else st["dip_bid"]),
-        "trigger_basis": ("resting bid" if not st["in_position"] else None),
+        "trigger_basis": (s["kind_state"].get(primary_kind, "resting bid")
+                          if not st["in_position"] else None),
+        "triggers": triggers,
     }
 
+    # STATE NAMES THE SLEEVE THAT HOLDS THE BOOK. The config defines a display name for
+    # every sleeve the module can report, and this now uses all of them (user,
+    # 2026-08-26). It previously collapsed the bid sleeves into the hunt, so a filled
+    # Dark bid and a filled Deep bid both rendered "200MA hunt" and their own names were
+    # defined but never reachable — the state described where the position would LEAVE
+    # rather than what it was.
+    # Nothing is lost by naming the sleeve instead: the 200 those sleeves exit at is now
+    # published as its own `exit_level` row, so the exit is stated where it belongs.
+    # THE ONE GENUINE HUNT is a stopped dip — its target is gone and it is being held to
+    # the 200 retest rather than sold below the 200. That is not the dip sleeve any more,
+    # it is the hunt, and `exit_target is None` is the module's own way of saying so.
+    # A RETEST HOLD NAMES ITS REASON (user, 2026-08-26). Below the 200 a warning does not
+    # sell — never-sell-below turns the exit into a hold — and that is a different animal
+    # from hunting an ordinary stopped dip. The module publishes the reason as a TYPED
+    # field (`exit_why`); nothing here parses the note's sentence to find it.
+    # Other retest reasons (a target printed below the 200, a death cross) keep the hunt
+    # name: they are the same waiting, without the warning's meaning.
     if not st["in_position"]:
         state = s["cash_state"]
-    elif st["sleeve"] == "histate":
-        state = s.get("trend_state", "Trend")
-    elif st["sleeve"] == "dip" and st["exit_target"] is not None:
-        state = s["kind_state"].get("dip", "dip")
-    else:
-        # a bid sleeve, or a dip now holding for the 200 retest: both exit at the 200
+    elif st.get("exit_mode") == "retest":
+        state = (s.get("warn_state", s["hunt_state"]) if st.get("exit_why") == "warning"
+                 else s["hunt_state"])
+    elif st["sleeve"] == "dip" and st["exit_target"] is None:
         state = s["hunt_state"]
+    else:
+        state = s["kind_state"].get(st["sleeve"], s["hunt_state"])
+
+    # THE 200 IS THE TARGET DURING A RETEST HOLD, not a floor under a position that is
+    # going somewhere else (user). Everywhere else it is the floor and `target` is the
+    # dip's own objective, so the two levels stay distinct and neither row duplicates the
+    # other. target_mult is suppressed with it: the 200 is a level being waited for, not
+    # a fill struck at a multiple of the entry.
+    retest = st.get("exit_mode") == "retest"
+    target = st["exit_200"] if retest else st["exit_target"]
+    target_mult = None if retest else s["target_mult"]
 
     # ERA P&L -- the strategy's OWN equity across the era, straight off the series it
     # published. Nothing is re-walked and no trade is re-priced.
@@ -618,20 +664,37 @@ def _adapt_tobacco(spec, refresh=False):
         "entry_price": st["entry_price"],
         "entry_date": st["entry_date"],
         "days_held": st["days_held"],
-        "target": st["exit_target"],
-        "target_mult": s["target_mult"],
+        "target": target,
+        "target_mult": target_mult,
         "pnl_pct": st["pnl_pct"],
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
         "era_pnl_basis": ("since death cross" if era == "death" else "since golden cross"),
-        # The 200 is this ruleset's universal exit: the bid sleeves have no other, and a
-        # stopped dip is HELD to it rather than sold below it. Publishing it means the panel
-        # shows the level that actually governs the position.
-        "exit_level": st["exit_200"],
+        # THE POSITION'S EXIT — the 200, and ONLY ever the 200. The bid sleeves have no
+        # other, and a stopped dip is HELD to it rather than sold below it. Passed
+        # through exactly as the module publishes it, including the null it publishes
+        # while a trend position runs: there is no resting 200 order during histate, and
+        # inventing one here would be this repo deriving a rule.
+        # Suppressed during a retest hold — the 200 is the TARGET there and is already
+        # rendered as one. Publishing it twice would put the same price on two rows and
+        # two chart lines under two different names.
+        "exit_level": (None if retest else st["exit_200"]),
         "exit_level_label": s["hunt_state"],
         "exit_note": st["exit_note"],
         "ma200": st["ma200"],
+        # WHERE THE STATE ENDS — a different question from where the POSITION exits, and
+        # the distinction is the whole of histate (user, 2026-08-26). The trend holds
+        # while the most recent 252-bar extreme is a high, so it ENDS on a new 252-day
+        # low — but that low is invariably below the 200, and a position is never sold
+        # below the 200. So breaking this level ends the STATE and hands the book to a
+        # 200 retest; it does not fill anything. Two levels, two meanings, two rows.
+        # `low252` is the module's own published figure — read, not derived.
+        "state_end_level": (st["low252"] if st["sleeve"] == "histate" else None),
+        "state_end_label": (s.get("trend_state", "Trend") if st["sleeve"] == "histate"
+                            else None),
+        "state_end_note": ("state ends here — the position still holds for the 200"
+                           if st["sleeve"] == "histate" else None),
         "asof": st["asof"],
     }
 

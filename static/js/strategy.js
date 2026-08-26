@@ -251,7 +251,7 @@
         const eraDays = hasStrategy ? st.era_days : h.era_days;
         // golden renders in GOLD (user, 2026-08-10) — the same #d4af37 token the GC
         // pill uses. WARNING amber, death red.
-        // st.era_color first: a strategy may DECLARE its era's color (the Carry era
+        // st.era_color first: a strategy may DECLARE its era's color (MO's retired Carry
         // wears MO's own brown) -- the renderer still learns no vocabulary.
         const eraColor = (hasStrategy && st.era_color)
                        || { golden: '#d4af37', WARNING: '#fbbf24', death: '#f87171' }[era]
@@ -289,7 +289,20 @@
             // the only time it is the next thing to happen. Colored in the instrument's own
             // hue at 55% so it reads as belonging to this name but is visibly NOT the solid
             // tone a held position wears: a target, not a fill.
-            if (st.state_tier === 'flat'
+            // A strategy may rest MORE THAN ONE bid at once (the tobacco ruleset keeps a
+            // deep bid under its regime bid every day), so `triggers` is the ladder and
+            // gets a row each, nearest first. `trigger` stays the single-value contract
+            // QQQ and XLE fill; it is used only when no ladder is published, so neither
+            // strategy changed and neither renders a level twice.
+            if (st.state_tier === 'flat' && Array.isArray(st.triggers) && st.triggers.length) {
+                st.triggers.forEach((t, i) => {
+                    // The nearest rung wears the instrument's hue; the ones behind it fade,
+                    // so the ladder reads in the order it would fill rather than as several
+                    // equally-imminent orders.
+                    rows += strRow('entry @', t.level.toFixed(2), esc(t.label || 'resting bid'),
+                                   strHexToRgba(h.color, i === 0 ? 0.55 : 0.3));
+                });
+            } else if (st.state_tier === 'flat'
                 && st.trigger !== null && st.trigger !== undefined) {
                 rows += strRow('entry @', st.trigger.toFixed(2),
                                esc(st.trigger_basis || 'trigger'),
@@ -324,18 +337,28 @@
         // already knows, and the exiting State covers the case where it binds.
         rows += strRow('gap', strPctPlain(h.gap_pct), '50/200 MA');
         rows += strRow('depth', strPctPlain(h.depth_pct), 'vs 50 SMA');
-        // THE STANDING CARRY ORDER (user, 2026-08-20): between depth and Era P&L.
-        // Only one side can exist at a time -- re-entry while the claim is off, exit
-        // while it is on; the adapter labels which. The spread rides as the footnote
-        // so the level carries its own justification. Generic: renders only when a
-        // strategy emits it, no vocabulary learned here.
-        if (hasStrategy && st.carry_level !== null && st.carry_level !== undefined) {
-            const sprd = (st.spread_today !== null && st.spread_today !== undefined)
-                ? `sprd ${st.spread_today >= 0 ? '+' : '−'}${Math.abs(st.spread_today).toFixed(2)}`
-                : null;
-            rows += strRow(esc(st.carry_level_label || 'Carry'),
-                           st.carry_level.toFixed(2), sprd,
+        // THE EXIT THAT GOVERNS THE OPEN POSITION: between depth and Era P&L, the slot
+        // the standing carry order used to hold. Carry went out with MO's all-dip
+        // baseline on 2026-08-25 and no live strategy emits `carry_level` any more; the
+        // row it left is now the one that says where the position ends.
+        // Which level that is depends on the sleeve and the ADAPTER decides — a trend
+        // position runs to a new 252-day low, a bid sleeve to the 200. Nothing is
+        // learned here: the label and the note both arrive named.
+        // The note is the module's own sentence, so the level carries its own
+        // justification the way the carry spread used to.
+        if (hasStrategy && st.exit_level !== null && st.exit_level !== undefined) {
+            rows += strRow(esc(st.exit_level_label || 'exit'),
+                           st.exit_level.toFixed(2), esc(st.exit_note || ''),
                            strHexToRgba(h.color, 0.55));
+        }
+        // WHERE THE STATE ENDS — distinct from where the position exits, and during a
+        // trend run it is the only level of the two that exists. Breaking it ends the
+        // state and hands the book to a 200 retest; it is not a fill, which is why it
+        // renders muted rather than in the ticker's colour like a live order.
+        if (hasStrategy && st.state_end_level !== null && st.state_end_level !== undefined) {
+            rows += strRow(esc(st.state_end_label || 'state'),
+                           `<span class="str-st-off">${st.state_end_level.toFixed(2)}</span>`,
+                           esc(st.state_end_note || ''));
         }
         // Era P&L last, by request. DEFINITION (user, 2026-08-10): the COMPOUNDED
         // return of everything the strategy did inside the current era — halo, then
@@ -346,9 +369,10 @@
         // position's return when held and the ^IRX daily rate when flat — exactly
         // what qqq_full_system.py's series() already builds as `dly`.
         // The era runs from the golden cross to the death cross.
-        // A strategy may DECLARE what its era P&L is measured from — MO re-bases the
-        // clock to the carry exit, so the cross language would misdescribe it. The
-        // two cross labels stay as the fallback for strategies that say nothing.
+        // A strategy may DECLARE what its era P&L is measured from; the tobacco ruleset
+        // does, and MO's retired baseline did too (it re-based the clock to the carry
+        // exit). The two cross labels stay as the fallback for strategies that say
+        // nothing — QQQ and XLE still take that path.
         rows += strRow('Era P&L',
                        hasStrategy ? strPct(st.era_pnl_pct)
                                    : '<span class="str-st-off">—</span>',

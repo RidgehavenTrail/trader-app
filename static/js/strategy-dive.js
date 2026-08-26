@@ -41,9 +41,32 @@
             if (st.target !== null && st.target !== undefined) {
                 out.push({ price: st.target, color: '#4ade80', title: 'target' });
             }
+        } else if (Array.isArray(st.triggers) && st.triggers.length) {
+            // EVERY resting bid gets a line, nearest first and fading behind it — the
+            // tobacco ruleset keeps a deep bid under its regime bid every flat day, and
+            // one line for two live orders showed half the book.
+            st.triggers.forEach((t, i) => {
+                out.push({ price: t.level, color: strHexToRgba(color, i === 0 ? 0.55 : 0.3),
+                           title: t.label || 'resting bid' });
+            });
         } else if (st.trigger !== null && st.trigger !== undefined) {
             out.push({ price: st.trigger, color: strHexToRgba(color, 0.55),
                        title: st.trigger_basis || 'entry' });
+        }
+        // WHERE THE STATE ENDS, drawn whether the book is long or flat — unlike the pair
+        // above it is not an order and does not compete with them. During a trend run it
+        // is the ONLY line the chart would otherwise have besides the entry: the position
+        // has no target and no resting exit, so a chart without it shows a holding with
+        // nothing ahead of it (user, 2026-08-26: track where histate ends and annotate it
+        // on the chart).
+        // SLATE, and never the instrument's hue: breaking it ends the STATE and hands the
+        // book to a 200 retest — it fills nothing, so it must not read like the entry and
+        // target lines that do. Colour is the only lever available: drawStrategyLevels
+        // dashes EVERY line by construction, so a `dashed` flag here would be a
+        // distinction the renderer does not make.
+        if (st.state_end_level !== null && st.state_end_level !== undefined) {
+            out.push({ price: st.state_end_level, color: '#64748b',
+                       title: (st.state_end_label || 'state') + ' ends' });
         }
         return out;
     }
@@ -85,10 +108,22 @@
         if (st.target !== null && st.target !== undefined) {
             out += item('Target', st.target.toFixed(2), '#4ade80');
         }
-        if (st.state_tier === 'flat' && st.trigger !== null && st.trigger !== undefined) {
+        if (st.state_tier === 'flat' && Array.isArray(st.triggers) && st.triggers.length) {
+            st.triggers.forEach((t, i) => {
+                out += item('Entry @', t.level.toFixed(2) +
+                            ` <span class="sd-fact-sub">${esc(t.label || 'resting bid')}</span>`,
+                            strHexToRgba(color, i === 0 ? 0.55 : 0.3));
+            });
+        } else if (st.state_tier === 'flat' && st.trigger !== null && st.trigger !== undefined) {
             out += item('Entry @', st.trigger.toFixed(2) +
                         (st.trigger_basis ? ` <span class="sd-fact-sub">${esc(st.trigger_basis)}</span>` : ''),
                         strHexToRgba(color, 0.55));
+        }
+        // Paired with its dashed slate line on the chart, same slate here — the strip and
+        // the chart are read together and a level must be findable from one in the other.
+        if (st.state_end_level !== null && st.state_end_level !== undefined) {
+            out += item(`${st.state_end_label || 'State'} ends`,
+                        st.state_end_level.toFixed(2), '#64748b');
         }
         out += item('Era P&L', strPct(st.era_pnl_pct));
         return `<div class="sd-facts-row">${out}</div>`;

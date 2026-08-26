@@ -111,7 +111,8 @@ _cache = {}                       # strategy key -> {"payload", "at", "fail", "f
 # them -- and the next strategy imported in the same process inherited
 # SYS_PURE_DIP=1. QQQ rendered as a pure-dip strategy the same evening MO was
 # registered; the user caught it on the panel. The modules also read a DYNAMIC
-# family (SYS_PHASE_<phase>_<param>, mo_system.py's per-phase overrides) that no
+# family (SYS_PHASE_<phase>_<param>, the retired MO baseline's per-phase overrides --
+# see live/archive/) that no
 # static list can enumerate even in principle. So the working set is now "anything
 # starting with SYS_": save it all, clear it all, apply exactly what the strategy
 # declares, and on exit sweep the prefix again -- which also catches a module-level
@@ -549,218 +550,89 @@ def _adapt_xle_avoidlow(spec, refresh=False):
     }
 
 
-def _adapt_mo_alldip(spec, refresh=False):
-    """MO: the ALL-DIP + CARRY baseline (live/mo_system.py, blessed 40b96a6).
+def _adapt_tobacco(spec, refresh=False):
+    """THE TOBACCO COMMON RULESET -- one ruleset, one adapter, every name in the universe.
 
-    Third sibling. Structurally different from both others in three ways, each of
-    which shows up below rather than in the shared helpers:
+    Replaced MO's all-dip + carry baseline on 2026-08-25 at the user's instruction, and
+    brought PM onto the board as its first blessed strategy. The retired baseline is kept at
+    live/archive/mo_alldip_carry.py -- off the import path, so nothing here can reach it.
 
-    ONE MODULE, TWO OVERLAYS. There is no overlay sibling file — the dark 25%-dip
-    sleeve and the spread-carry switch live inside mo_system.py's own MO block, and
-    the module computes MO_STATE at import as the wiring contract. Everything here is
-    READ off what that script computed (T, _darks, _carry, _pos, _dkm, MO_STATE);
-    nothing is re-derived.
+    FOURTH ADAPTER, AND THE FIRST SERVING MORE THAN ONE INSTRUMENT. Every other adapter is
+    one strategy on one name; this one is one strategy on several, which is the entire claim
+    the ruleset makes -- nothing in it is fitted to an instrument. The per-name difference is
+    a window, and a window is configuration, so it lives in the strategy repo's env block and
+    the module name is the only thing that varies here.
 
-    PURE_DIP HAS NO B1, so the shared `_phase` walk — which decides post_b1 by
-    finding a breakout1 trade — would report MO as hunting a breakout forever. Under
-    SYS_PURE_DIP the dip regime opens when the 63-td zone expires, full stop, so the
-    phase is computed here: gate while the zone holds, the dip regime after, dark in
-    a death era. `phase_state` in MO_SYSTEM deliberately has no b1_hunt entry.
+    IT READS, IT DOES NOT DERIVE. The module computes its own state at import and publishes
+    it as STATE; everything below is looked up off that or off the shared helpers. No rule,
+    threshold, level or sleeve name is written in this file -- they would be strategy, and
+    this repository has a public remote. The display vocabulary comes from `_sys(spec)` and
+    the numbers come from STATE.
 
-    SPIN FRAME, RAW TODAY. MO's signal arrays are spin-adjusted (the 2007/2008
-    Kraft/PM spinoffs), so `_entry_trigger`'s "o/h/l/c are raw" note does not hold
-    for this module — but the spin factor only rescales prices BEFORE the last
-    break, so every spin value dated after 2008-03-28 equals raw. Today's levels
-    and SMAs are therefore directly quotable, and a future spinoff cannot silently
-    shift them: the module's own `expected 2 spin-offs` guard refuses to run
-    instead. `ratio` (= ac/c) converts fills back to raw exactly as it does for
-    QQQ/XLE.
-
-    The two overlays stack on a FLAT core in priority order — dark position first
-    (it is a filled trade with an entry), then carry (a switch, so like XLE's day
-    filter it gets no entry_price: the buy would have been the PRIOR close, and
-    publishing the run's first close would be off by one bar).
+    TWO TIERS, ONE SLOT. The trend tier and the bid tier share a single position: the book is
+    long if either says long, and a handover between them is NOT a transaction. That is why
+    the position fields come from the module's own view of the open run rather than from any
+    per-sleeve bookkeeping this adapter might try to reconstruct.
     """
-    (mo,) = _load(spec, refresh)
-    last_i = mo.n - 1
-    st = mo.MO_STATE
-    T = mo.T          # the module-level walk MO_STATE was built from — never re-run
+    (m,) = _load(spec, refresh)
+    last_i = m.n - 1
+    st = m.STATE
+    s = _sys(spec)
 
-    era, era_start = _era(mo)
+    era, era_start = _era(m)
 
-    # --- phase, PURE_DIP-aware (see docstring) ---------------------------------
-    zone = int(getattr(mo, "HALO_WAIT_CAP", 0) or 0)
-    since = int(last_i - era_start)
-    if era == "death":
-        phase, phase_days = "dark", int(last_i - era_start + 1)
-    elif zone and since < zone:
-        phase, phase_days = "gate", since + 1
-    else:
-        phase, phase_days = "post_b1", since - zone + 1
-
-    if phase == "dark":
-        # The dark sleeve is a real resting bid, unlike XLE's day-filter dark era:
-        # tomorrow's level is today's 200 discounted (s200[last] is tomorrow's
-        # prior-day value, the same one-bar-forward convention _entry_trigger uses).
-        depth = float(mo.DARK_DIP_DEPTH)
-        trigger = round(float(mo.s200[last_i]) * (1.0 - depth / 100.0), 2)
-        basis = f"200 SMA −{depth:g}%"
-    else:
-        trigger, basis = _entry_trigger(mo, phase)
-
+    # PHASE. This ruleset has no breakout hunt and no timed gate, so the shared `_phase`
+    # walk -- which decides a phase by finding a breakout trade -- has nothing to find. The
+    # phase here IS the regime, which the module already published.
+    phase = "dark" if st["regime"] == "dark" else "golden"
     cycle = {
-        "phase": _sys(spec).get("phase_state", {}).get(phase, phase),
-        "phase_days": phase_days,
-        "trigger": trigger,
-        "trigger_basis": basis,
+        "phase": s.get("phase_state", {}).get(phase, phase),
+        "phase_days": int(last_i - era_start + 1),
+        # The standing order a FLAT book has resting. Only one can be live at a time, in the
+        # module's own priority order; a held book has none, and says so with a null.
+        "trigger": (st["deep_bid"] if st["deep_bid"] is not None and st["dark_bid"] is None
+                    and st["dip_bid"] is None else
+                    st["dark_bid"] if st["dark_bid"] is not None else st["dip_bid"]),
+        "trigger_basis": ("resting bid" if not st["in_position"] else None),
     }
 
-    # --- core position (shared) -------------------------------------------------
-    pos = _core_position(mo, spec, T)
-    state = pos["state"]
-    entry_price, entry_date = pos["entry_price"], pos["entry_date"]
-    days_held, target, pnl_pct = pos["days_held"], pos["target"], pos["pnl_pct"]
+    if not st["in_position"]:
+        state = s["cash_state"]
+    elif st["sleeve"] == "histate":
+        state = s.get("trend_state", "Trend")
+    elif st["sleeve"] == "dip" and st["exit_target"] is not None:
+        state = s["kind_state"].get("dip", "dip")
+    else:
+        # a bid sleeve, or a dip now holding for the 200 retest: both exit at the 200
+        state = s["hunt_state"]
 
-    cash = _sys(spec)["cash_state"]
-    if state == cash and st["dark_position"]:
-        t = next((d for d in reversed(mo._darks)
-                  if d["e"] <= last_i <= d["x"]), None)
-        if t is not None:
-            e = t["e"]
-            state = _sys(spec)["dark_state"]
-            entry_price = round(float(t["fill"] / mo.ratio[e]), 2)
-            entry_date = mo.dates[e].date().isoformat()
-            days_held = int(last_i - e)
-            pnl_pct = round(float(mo.ac[last_i] / t["fill"] - 1) * 100, 2)
-            # walk-back-#5 exit: the 200 while it is falling, 200 x 1.10 while rising
-            target = round(float(mo.s200p[last_i])
-                           * (1.0 if mo._fall[last_i] else 1.10), 2)
-    carry_on = bool(state == cash and st["carry_long"])
-    if carry_on:
-        run_start = last_i
-        while run_start > 0 and bool(mo._carry[run_start - 1]):
-            run_start -= 1
-        # NOMENCLATURE (user, 2026-08-20): in a carry claim the ERA is "Carry" and
-        # the STATE is "B&H" -- the trend era only returns to the Era row once the
-        # carry exits. Labels + color come from MO_SYSTEM (the display contract).
-        state = _sys(spec)["carry_state"]
-        entry_date = mo.dates[run_start].date().isoformat()
-        days_held = int(last_i - run_start + 1)
-        base = float(mo.ac[run_start - 1] if run_start > 0 else mo.ac[run_start])
-        pnl_pct = round((float(mo.ac[last_i]) / base - 1) * 100, 2)
-
-    # --- era clock and era P&L: THE TIMING ENGINE'S TENURE, not the trend regime's
-    # (user, 2026-08-20: "the strategy is dip -- start the golden-era P&L clock with
-    # the end of the carry era"). Under the two-regime reduction, the stretch of this
-    # golden era spent inside a carry claim belongs to the carry's multi-year ledger,
-    # not to the dip engine's -- folding it in made era_pnl describe neither. The
-    # clock starts at the LATER of the trend flip and the carry switch's exit.
-    #
-    # LEDGER BOUNDARIES AT THE HANDOFF (user's correction of a wrong first draft):
-    # carry's last earned close is the SIGNAL day's (sw[t+1]=False -- the exit day
-    # earns nothing), the overnight gap to the next fill is CASH and nobody's loss,
-    # and the engine grades FROM ITS FILLS. So the era is compounded trade-by-trade
-    # ((exit or today) / fill, both adjusted) with T-bill days between -- NOT from
-    # close-to-close arets, which would charge the engine for a gap it dodged. When
-    # one open trade spans the whole engine era, era_pnl equals the trade's pnl_pct
-    # exactly, which is the consistency check.
-    #
-    # era/phase labels stay structural (golden drives the phase arithmetic and the
-    # trigger display); only the P&L window re-clocks, and era_days moves WITH it so
-    # numerator and denominator agree. phase_days staying larger than era_days is
-    # the honest rendering of a strategy whose regime boundary is not the trend
-    # boundary. If the switch is LONG today the engine has no tenure to grade and
-    # the clock falls back to the trend flip (the carry-display-priority question,
-    # noted in memory, owns that day).
-    # IN A CARRY CLAIM the era IS the claim: one B&H hold, so the era ledger is the
-    # position's own ledger and the timing-engine grading below never runs (its
-    # tenure is zero by definition -- the two-regime reduction).
-    if carry_on:
-        era = _sys(spec).get("carry_era", "Carry")
-        return {
-            **cycle,
-            "state": state,
-            "state_tier": _tier(state, spec),
-            "entry_price": entry_price,
-            "entry_date": entry_date,
-            "days_held": days_held,
-            "target": target,
-            "target_mult": _sys(spec)["target_mult"],
-            "pnl_pct": pnl_pct,
-            "era": era,
-            "era_color": _sys(spec).get("carry_era_color"),
-            "era_days": days_held,
-            "era_pnl_pct": pnl_pct,
-            "era_pnl_basis": "since carry entry",
-            "carry_level": st["carry_exit_px_raw"],
-            "carry_level_label": "Carry exit",
-            "spread_today": st["spread_today"],
-            "asof": mo.dates[last_i].date().isoformat(),
-        }
-
-    engine_start = era_start
-    if not bool(mo._sw[last_i]):
-        sw_exit = last_i
-        while sw_exit > 0 and not bool(mo._sw[sw_exit - 1]):
-            sw_exit -= 1
-        engine_start = max(era_start, sw_exit)
-
-    trades = [t for t in T] + [dict(d, kind="dark") for d in mo._darks]
-    era_pnl = 1.0
-    covered = [False] * (last_i - engine_start + 1)
-    for t in sorted(trades, key=lambda t: t["e"]):
-        e, x = t["e"], min(t["x"], last_i)
-        if x < engine_start:
-            continue
-        if e < engine_start:
-            # opened inside the carry claim, still on at the handoff: the engine
-            # takes the shares over at the handoff's prior close, not at a fill
-            # it never made.
-            base = float(mo.ac[engine_start - 1]) if engine_start > 0 else float(mo.ac[0])
-            e = engine_start
-        else:
-            base = float(t["fill"])
-        # A trade still HELD is marked to today's adjusted close; a finished one to
-        # its exit fill. Held = an OPEN system trade, a capped hunt that ran out of
-        # data (_core_position's rule), or an open dark trade (whose xf is already
-        # today's ac by the module's own construction — either branch is identical).
-        why = str(t.get("why", ""))
-        still_held = (why == "OPEN" or (why.endswith("->capped") and t["x"] >= last_i)
-                      or (t["kind"] == "dark" and t["x"] >= last_i))
-        end_val = float(mo.ac[last_i]) if still_held else float(t["xf"])
-        era_pnl *= end_val / base
-        for i in range(e, x + 1):
-            covered[i - engine_start] = True
-    for i in range(engine_start, last_i + 1):
-        if not covered[i - engine_start]:
-            era_pnl *= (1.0 + float(mo.cash_d[i]))
+    # ERA P&L -- the strategy's OWN equity across the era, straight off the series it
+    # published. Nothing is re-walked and no trade is re-priced.
+    ret, inv = m.series()
+    era_pnl = float((1.0 + ret[era_start:last_i + 1]).prod())
 
     return {
         **cycle,
         "state": state,
         "state_tier": _tier(state, spec),
-        "entry_price": entry_price,
-        "entry_date": entry_date,
-        "days_held": days_held,
-        "target": target,
-        "target_mult": _sys(spec)["target_mult"],
-        "pnl_pct": pnl_pct,
+        "entry_price": st["entry_price"],
+        "entry_date": st["entry_date"],
+        "days_held": st["days_held"],
+        "target": st["exit_target"],
+        "target_mult": s["target_mult"],
+        "pnl_pct": st["pnl_pct"],
         "era": era,
-        "era_days": int(last_i - engine_start + 1),
+        "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
-        # WHAT THE ERA P&L IS MEASURED FROM. The renderer's default says "since
-        # golden/death cross", which is wrong whenever the clock re-based to the
-        # carry exit -- the number then covers the timing engine's tenure, not the
-        # trend era's. Say so rather than letting the footnote misdescribe it.
-        "era_pnl_basis": ("since carry exit" if engine_start > era_start
-                          else ("since death cross" if era == "death"
-                                else "since golden cross")),
-        # the standing carry RE-ENTRY order (the only carry order that exists while
-        # the claim is off -- MO_STATE nulls the other side)
-        "carry_level": st["carry_enter_px_raw"],
-        "carry_level_label": "Carry entry",
-        "spread_today": st["spread_today"],
-        "asof": mo.dates[last_i].date().isoformat(),
+        "era_pnl_basis": ("since death cross" if era == "death" else "since golden cross"),
+        # The 200 is this ruleset's universal exit: the bid sleeves have no other, and a
+        # stopped dip is HELD to it rather than sold below it. Publishing it means the panel
+        # shows the level that actually governs the position.
+        "exit_level": st["exit_200"],
+        "exit_level_label": s["hunt_state"],
+        "exit_note": st["exit_note"],
+        "ma200": st["ma200"],
+        "asof": st["asof"],
     }
 
 
@@ -812,20 +684,31 @@ STRATEGIES = {
         "env":     {},
         "cfg_key": "XLE_SYSTEM",
     },
-    # MO ADDED 2026-08-20, same recipe as XLE: env empty here (public remote), the
-    # real declaration is strategy_config.MO_SYSTEM["env"]. ONE module, not two — the
-    # dark and carry overlays live inside mo_system.py itself (see the adapter).
-    # NOTE: registering serves /get_ticker_strategy/MO; PORTFOLIOS["hold"]'s MO
-    # holding keeps strategy None — whether the rotation sleeve RUNS this system is
-    # an allocation decision the user has not made (mo_system.py header).
-    "mo_system": {
-        "key":     "mo_system",
+    # MO's ALL-DIP + CARRY baseline was REPLACED here on 2026-08-25 (user's instruction).
+    # Its module is archived at live/archive/mo_alldip_carry.py and its display block is
+    # kept as strategy_config.MO_SYSTEM_RETIRED. Both names below run the SAME ruleset from
+    # the same engine module; only the window differs, and a window is configuration.
+    # env stays empty here -- the real declaration is strategy_config.TOBACCO_*["env"],
+    # because this repository has a public remote (see the note above).
+    "tobacco_mo": {
+        "key":     "tobacco_mo",
         "tag":     "MO",
-        "modules": ("mo_system",),
-        "adapter": _adapt_mo_alldip,
+        "modules": ("tobacco_mo",),
+        "adapter": _adapt_tobacco,
         "ticker":  "MO",
         "env":     {},
-        "cfg_key": "MO_SYSTEM",
+        "cfg_key": "TOBACCO_MO",
+    },
+    # PM ADDED 2026-08-25 -- its first blessed strategy. Registering serves
+    # /get_ticker_strategy/PM; whether an allocation sleeve RUNS it is a separate decision.
+    "tobacco_pm": {
+        "key":     "tobacco_pm",
+        "tag":     "PM",
+        "modules": ("tobacco_pm",),
+        "adapter": _adapt_tobacco,
+        "ticker":  "PM",
+        "env":     {},
+        "cfg_key": "TOBACCO_PM",
     },
 }
 

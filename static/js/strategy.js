@@ -281,10 +281,15 @@
             // the section look sloppy on the first attempt.
             // The two are mutually exclusive by construction: a flat system has no P&L, so
             // the footnote is free exactly when the phase needs it.
+            // The footnote carries BOTH now. A flat book publishes the accrual of its cash
+            // spell, so Cash reports what Cash has made exactly as a position reports its
+            // P&L (user, 2026-08-27) — but the phase was the flat book's only qualifier in
+            // this panel, and dropping it to make room would trade one fact for another.
+            const _pnl = (st.pnl_pct === null || st.pnl_pct === undefined)
+                ? null : strPct(st.pnl_pct);
+            const _ph = (st.state_tier === 'flat' && st.phase) ? esc(st.phase) : null;
             rows += strRow('State', esc(st.state),
-                           (st.pnl_pct === null || st.pnl_pct === undefined)
-                               ? (st.state_tier === 'flat' && st.phase ? esc(st.phase) : null)
-                               : strPct(st.pnl_pct),
+                           [_pnl, _ph].filter(Boolean).join(' · ') || null,
                            strStateColor(st.state_tier, h.color));
             // THE ENTRY GATE, directly under State (user, 2026-08-27) -- because it
             // QUALIFIES the state: "Cash" in a dark era says nothing about whether the

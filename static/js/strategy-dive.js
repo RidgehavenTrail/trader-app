@@ -107,7 +107,14 @@
             ? ` <span class="sd-fact-sub">${esc(st.phase)}</span>` : '';
         out += item('State', esc(st.state || '—') + phase, null);
 
-        if (st.pnl_pct !== null && st.pnl_pct !== undefined) out += item('P&L', strPct(st.pnl_pct));
+        // A flat book's P&L is its cash accrual, and a return with no duration beside it
+        // invites the wrong comparison — 0.93% reads very differently over 63 days than
+        // over 6. `days_held` carries the cash run when there is no position.
+        if (st.pnl_pct !== null && st.pnl_pct !== undefined) {
+            const dur = (st.state_tier === 'flat' && st.days_held)
+                ? ` <span class="sd-fact-sub">${st.days_held} td</span>` : '';
+            out += item('P&L', strPct(st.pnl_pct) + dur);
+        }
         if (st.entry_price !== null && st.entry_price !== undefined) {
             const held = (st.days_held === null || st.days_held === undefined)
                 ? '' : ` <span class="sd-fact-sub">${st.days_held} td</span>`;

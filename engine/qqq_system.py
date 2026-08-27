@@ -383,6 +383,33 @@ def _entry_trigger(fs, phase):
     return None, None   # dark era: the overlay is a day filter, not a price level
 
 
+def _cash_run(ret, inv, last_i):
+    """(days flat, accrued %) for the CURRENT cash spell — or (None, None) if not flat.
+
+    A flat book is not doing nothing; it is earning the bill. The State row shows a
+    position's P&L, so Cash should show what Cash has actually made (user, 2026-08-27).
+
+    MEASURED OVER THE CASH RUN, NOT THE ERA, and the difference is not academic. GLD is
+    flat since 2026-05-29 — a dip stopped out on a warning — while its era only began at
+    the 2026-06-30 death cross: 63 days versus 42, +0.93% versus +0.62%. The era number
+    would answer "what has this era paid", which `era_pnl_pct` already answers; this one
+    answers "what has this cash position made", which nothing did.
+
+    Compounds `ret`, not a separate rate series: while the book is flat those daily
+    returns ARE the idle-cash returns — the same identity that lets era P&L include
+    T-bills — so there is one source and no second thing to keep in step.
+    """
+    if inv is None or bool(inv[last_i]):
+        return None, None
+    i = last_i
+    while i > 0 and not bool(inv[i - 1]):
+        i -= 1
+    run = 1.0
+    for r in ret[i:last_i + 1]:
+        run *= (1.0 + float(r))
+    return int(last_i - i + 1), round((run - 1.0) * 100, 2)
+
+
 def _era_basis(era, inv, era_start, last_i):
     """The era-P&L footnote — and it names T-BILLS when that is the whole story.
 
@@ -626,16 +653,20 @@ def _adapt_gld(spec, refresh=False):
     for r in ret[era_start:last_i + 1]:
         era_pnl *= (1.0 + float(r))
 
+    # A flat book still earns; publish what THIS cash spell has made so the State row
+    # can say it, the same way it says a position's P&L.
+    cash_days, cash_pnl = _cash_run(ret, inv, last_i)
+
     return {
         **cycle,
         "state": pos["state"],
         "state_tier": _tier(pos["state"], spec),
         "entry_price": pos["entry_price"],
         "entry_date": pos["entry_date"],
-        "days_held": pos["days_held"],
+        "days_held": pos["days_held"] if pos["days_held"] is not None else cash_days,
         "target": pos["target"],
         "target_mult": _sys(spec)["target_mult"],
-        "pnl_pct": pos["pnl_pct"],
+        "pnl_pct": pos["pnl_pct"] if pos["pnl_pct"] is not None else cash_pnl,
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
@@ -765,10 +796,13 @@ def _adapt_tobacco(spec, refresh=False):
         "state_tier": _tier(state, spec),
         "entry_price": st["entry_price"],
         "entry_date": st["entry_date"],
-        "days_held": st["days_held"],
+        "days_held": (st["days_held"] if st["days_held"] is not None
+                      else _cash_run(ret, inv, last_i)[0]),
         "target": target,
         "target_mult": target_mult,
-        "pnl_pct": st["pnl_pct"],
+        # Cash earns too — same rule as GLD's, so a flat tobacco book reports its bill.
+        "pnl_pct": (st["pnl_pct"] if st["pnl_pct"] is not None
+                    else _cash_run(ret, inv, last_i)[1]),
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),

@@ -175,7 +175,12 @@ def _tech_one(d):
                    high (a new high CANCELS a live warning — that is the rule, so
                    "since the last new high" IS the live-warning test and needs no
                    state machine)
-           death   50 SMA <= 200 SMA
+           dark    50 SMA <= 200 SMA. The ERA is dark; the CROSS that starts it is a
+                   death cross (user, 2026-08-27). This path feeds holdings with NO
+                   registered strategy, and it must agree with qqq_system._era(): the
+                   sidebar picks `st.era` for a wired name and `h.era` for an unwired
+                   one, so two spellings here would colour MO and GLD differently for
+                   the same regime.
     depth: today's price against the 50 SMA — negative means below it.
     """
     c, h, l = d["Close"], d["High"], d["Low"]
@@ -191,7 +196,7 @@ def _tech_one(d):
     # stretch compares as not-golden and manufactures a crossover at bar 200.
     valid = s50.notna() & s200.notna()
     gold = (s50 > s200)[valid]
-    era = "golden" if bool(gold.iloc[-1]) else "death"
+    era = "golden" if bool(gold.iloc[-1]) else "dark"
 
     # Days in the era, in TRADING days, matching the dial's own unit.
     flips = gold.index[gold != gold.shift(1)][1:]

@@ -275,7 +275,14 @@ def _assert_canonical(fs, spec):
 
 
 def _era(fs):
-    """(era, era_start) — golden / WARNING / death, off the system's own arrays.
+    """(era, era_start) — golden / WARNING / dark, off the system's own arrays.
+
+    THE ERA IS "dark", THE CROSS IS "death" (user, 2026-08-27). They are different nouns
+    for different things: a death CROSS is the event that starts the era, the era itself is
+    dark. This returned "death" for the era while `phase_state` called the very same regime
+    "dark era", so a GLD panel rendered `era: death` beside `phase: dark era` — one regime
+    under two names, in adjacent fields. The cross keeps its name wherever it is the cross
+    that is meant (see `era_pnl_basis`, "since death cross").
 
     SHARED BY EVERY ADAPTER ON PURPOSE. XLE's core is a FORK of QQQ's and exposes the same
     `golden` / `brk` / `warn_day` arrays, so the era question has one answer for both.
@@ -286,7 +293,7 @@ def _era(fs):
     n = fs.n
     last_i = n - 1
     golden = fs.golden
-    era = "golden" if bool(golden[last_i]) else "death"
+    era = "golden" if bool(golden[last_i]) else "dark"
 
     # Era start = the most recent flip of the golden flag.
     era_start = 0
@@ -323,7 +330,7 @@ def _phase(fs, era, era_start, T):
     opened since the cross. `_era` already establishes the era and its start.
     """
     last_i = fs.n - 1
-    if era == "death":
+    if era == "dark":
         return "dark", int(last_i - era_start + 1)
 
     zone = int(getattr(fs, "HALO_WAIT_CAP", 0) or 0)
@@ -739,7 +746,8 @@ def _adapt_tobacco(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
-        "era_pnl_basis": ("since death cross" if era == "death" else "since golden cross"),
+        # The ERA is dark; the CROSS that started it is a death cross. Both names, correctly.
+        "era_pnl_basis": ("since death cross" if era == "dark" else "since golden cross"),
         # THE POSITION'S EXIT — the 200, and ONLY ever the 200. The bid sleeves have no
         # other, and a stopped dip is HELD to it rather than sold below it. Passed
         # through exactly as the module publishes it, including the null it publishes

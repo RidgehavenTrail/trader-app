@@ -250,11 +250,12 @@
         const era = (hasStrategy ? st.era : h.era) || '—';
         const eraDays = hasStrategy ? st.era_days : h.era_days;
         // golden renders in GOLD (user, 2026-08-10) — the same #d4af37 token the GC
-        // pill uses. WARNING amber, death red.
+        // pill uses. WARNING amber, dark red. (The ERA is dark; only the CROSS that
+        // starts it is a death cross — user, 2026-08-27.)
         // st.era_color first: a strategy may DECLARE its era's color (MO's retired Carry
         // wears MO's own brown) -- the renderer still learns no vocabulary.
         const eraColor = (hasStrategy && st.era_color)
-                       || { golden: '#d4af37', WARNING: '#fbbf24', death: '#f87171' }[era]
+                       || { golden: '#d4af37', WARNING: '#fbbf24', dark: '#f87171' }[era]
                        || '#64748b';
 
         // Era carries how long the name has been in it, in trading days — same unit
@@ -382,7 +383,7 @@
                        hasStrategy ? strPct(st.era_pnl_pct)
                                    : '<span class="str-st-off">—</span>',
                        hasStrategy ? esc(st.era_pnl_basis
-                                         || (era === 'death' ? 'since death cross'
+                                         || (era === 'dark' ? 'since death cross'
                                                              : 'since golden cross'))
                                    : null);
 

@@ -87,7 +87,8 @@
             `<span class="sd-fact"><span class="sd-fact-k">${esc(k)}</span>` +
             `<span class="sd-fact-v"${color ? ` style="color:${color}"` : ''}>${v}</span></span>`;
 
-        const eraColor = { golden: '#d4af37', WARNING: '#fbbf24', death: '#f87171' }[st.era]
+        // Keyed on 'dark': the era is dark, the cross that starts it is a death cross.
+        const eraColor = { golden: '#d4af37', WARNING: '#fbbf24', dark: '#f87171' }[st.era]
                        || '#64748b';
         let out = item('Era', esc(st.era || '—') +
                        (st.era_days ? ` <span class="sd-fact-sub">${st.era_days} td</span>` : ''),

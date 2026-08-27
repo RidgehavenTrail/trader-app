@@ -383,6 +383,23 @@ def _entry_trigger(fs, phase):
     return None, None   # dark era: the overlay is a day filter, not a price level
 
 
+def _era_basis(era, inv, era_start, last_i):
+    """The era-P&L footnote — and it names T-BILLS when that is the whole story.
+
+    "since the death cross" says WHEN the number is measured from without saying WHAT it
+    is. A strategy that never opened a position inside the era earned exactly the idle
+    cash rate, so the figure beside it is an interest accrual, not a trading result, and
+    reading it as strategy performance is the obvious mistake to make.
+    GLD sits in precisely that case today: 0 of 42 days in position since the 2026-06-30
+    death cross, and its +0.62% matches the module's own `cash_d` series to the basis
+    point (+0.6207% either way, ~3.78% annualised).
+    Read off the module's published `inv` mask — nothing is recomputed here.
+    """
+    if inv is not None and not any(bool(x) for x in inv[era_start:last_i + 1]):
+        return "T-bills only — flat all era"
+    return "since death cross" if era == "dark" else "since golden cross"
+
+
 def _cycle(fs, spec, era, era_start, T):
     """The phase fields, shared by every adapter. Display names come from the strategy's
     own config block, same as `kind_state` — naming the phases gives away as much as
@@ -604,7 +621,7 @@ def _adapt_gld(spec, refresh=False):
 
     # Era P&L off the module's OWN published series — the union curve with idle cash
     # earning the T-bill rate between trades, exactly as `series()` documents it.
-    ret, _inv = m.series()
+    ret, inv = m.series()
     era_pnl = 1.0
     for r in ret[era_start:last_i + 1]:
         era_pnl *= (1.0 + float(r))
@@ -622,6 +639,7 @@ def _adapt_gld(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        "era_pnl_basis": _era_basis(era, inv, era_start, last_i),
         "asof": fs.dates[last_i].date().isoformat(),
     }
 
@@ -746,8 +764,9 @@ def _adapt_tobacco(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
-        # The ERA is dark; the CROSS that started it is a death cross. Both names, correctly.
-        "era_pnl_basis": ("since death cross" if era == "dark" else "since golden cross"),
+        # The ERA is dark; the CROSS that started it is a death cross. Both names,
+        # correctly — and T-bills instead when the book never opened inside the era.
+        "era_pnl_basis": _era_basis(era, inv, era_start, last_i),
         # THE POSITION'S EXIT — the 200, and ONLY ever the 200. The bid sleeves have no
         # other, and a stopped dip is HELD to it rather than sold below it. Passed
         # through exactly as the module publishes it, including the null it publishes

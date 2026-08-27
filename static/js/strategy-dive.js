@@ -105,7 +105,10 @@
         // a flat system and adds nothing to an active one, which already names itself.
         const phase = (st.state_tier === 'flat' && st.phase)
             ? ` <span class="sd-fact-sub">${esc(st.phase)}</span>` : '';
-        out += item('State', esc(st.state || '—') + phase, null);
+        // Tinted like the sidebar's State row, through the SAME helper — the strip and
+        // the block state the same posture and must not disagree about its colour.
+        out += item('State', esc(st.state || '—') + phase,
+                    strStateColor(st.state_tier, color));
 
         // A flat book's P&L is its cash accrual, and a return with no duration beside it
         // invites the wrong comparison — 0.93% reads very differently over 63 days than

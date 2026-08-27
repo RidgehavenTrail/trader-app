@@ -209,15 +209,23 @@
     //   exiting -> orange: an exit is already triggered and is just waiting on its
     //              condition. Orange (#fb923c, the stoplight's .sl-o) NOT amber —
     //              amber already means WARNING on Era and pending on the dial latch.
-    //   flat    -> slate: visibly not a position.
+    //   flat    -> the TICKER's color too (user, 2026-08-27). It was slate, on the
+    //              reasoning that flat is "visibly not a position" — but the STATE NAME
+    //              already says Cash, so the color was spending the instrument's
+    //              identity to repeat a word that is right there. Now every state a
+    //              name can be in reads as that name, and posture is carried by the
+    //              word plus the rows around it (a flat book shows an entry gate and a
+    //              bid ladder; a held one shows an entry and an exit).
+    //   exiting -> stays orange, and is now the ONLY tier that departs from the
+    //              instrument. That is the point: something is already triggered and
+    //              waiting on its condition, which is the one posture worth a color of
+    //              its own.
     // Keyed off state_tier, never off a state NAME: the renderer must not learn any
-    // strategy-specific vocabulary (see engine/qqq_system.py's CONTRACT).
-    // Keyed on the CONTRACT's state_tier, never on state names — that is what lets a
-    // different strategy show its own vocabulary with no change to this file.
+    // strategy-specific vocabulary (see engine/qqq_system.py's CONTRACT). That is what
+    // lets a different strategy show its own words with no change to this file.
     function strStateColor(tier, tickerColor) {
-        if (tier === 'flat')    return '#64748b';
         if (tier === 'exiting') return '#fb923c';
-        return tickerColor;     // holding
+        return tickerColor;     // holding AND flat
     }
 
     // Uncolored percentage — gap and depth are descriptive, not outcomes, so they

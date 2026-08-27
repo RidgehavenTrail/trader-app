@@ -640,6 +640,14 @@ def _adapt_gld(spec, refresh=False):
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
         "era_pnl_basis": _era_basis(era, inv, era_start, last_i),
+        # THE ENTRY GATE — what the dark sleeve is waiting for, when it is waiting. A
+        # gate is a CONDITION, not a resting order: nothing fills at this price, it is
+        # the level that has to give way before an entry can even be considered. That is
+        # why it is published separately from `trigger` rather than joining the ladder,
+        # and why it carries a status word instead of a basis.
+        # `dark_gate` is the module's own terminal state; None while a position is open.
+        "gate_level": (m.dark_gate or {}).get("level"),
+        "gate_status": (m.dark_gate or {}).get("status"),
         "asof": fs.dates[last_i].date().isoformat(),
     }
 

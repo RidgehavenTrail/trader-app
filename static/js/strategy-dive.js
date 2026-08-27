@@ -68,6 +68,13 @@
             out.push({ price: st.state_end_level, color: '#64748b',
                        title: (st.state_end_label || 'state') + ' ends' });
         }
+        // The gate gets a line too — same slate as the state-end level, and for the same
+        // reason: neither is an order. A level that is never drawn is a level you have to
+        // hold in your head while looking at the chart it belongs to.
+        if (st.gate_level !== null && st.gate_level !== undefined) {
+            out.push({ price: st.gate_level, color: '#64748b',
+                       title: st.gate_status || 'gate' });
+        }
         return out;
     }
 
@@ -125,6 +132,11 @@
         if (st.state_end_level !== null && st.state_end_level !== undefined) {
             out += item(`${st.state_end_label || 'State'} ends`,
                         st.state_end_level.toFixed(2), '#64748b');
+        }
+        if (st.gate_status) {
+            out += item('Gate', (st.gate_level !== null && st.gate_level !== undefined
+                                 ? st.gate_level.toFixed(2) : '—') +
+                        ` <span class="sd-fact-sub">${esc(st.gate_status)}</span>`, '#64748b');
         }
         out += item('Era P&L', strPct(st.era_pnl_pct));
         return `<div class="sd-facts-row">${out}</div>`;

@@ -286,6 +286,19 @@
                                ? (st.state_tier === 'flat' && st.phase ? esc(st.phase) : null)
                                : strPct(st.pnl_pct),
                            strStateColor(st.state_tier, h.color));
+            // THE ENTRY GATE, directly under State (user, 2026-08-27) -- because it
+            // QUALIFIES the state: "Cash" in a dark era says nothing about whether the
+            // sleeve is idle or coiled, and this is the difference. A gate is a
+            // CONDITION, not a resting order -- nothing fills at this price -- so it is
+            // muted and sits apart from the "entry @" ladder below, which IS orders.
+            // A gate with no level still renders: clause 3's re-entry is a DAY test
+            // rather than a price, and the status alone is the information.
+            if (st.gate_status) {
+                rows += strRow('entry gate',
+                               st.gate_level !== null && st.gate_level !== undefined
+                                   ? st.gate_level.toFixed(2) : '—',
+                               esc(st.gate_status), '#94a3b8');
+            }
             // THE PRICE THAT WOULD OPEN A POSITION — shown only while FLAT, because that is
             // the only time it is the next thing to happen. Colored in the instrument's own
             // hue at 55% so it reads as belonging to this name but is visibly NOT the solid

@@ -356,9 +356,14 @@
         // state and hands the book to a 200 retest; it is not a fill, which is why it
         // renders muted rather than in the ticker's colour like a live order.
         if (hasStrategy && st.state_end_level !== null && st.state_end_level !== undefined) {
+            // Muted by COLOUR, not by size (user, 2026-08-26: too hard to read). It went
+            // in wearing .str-st-off, which is 9px italic — that class is for the words
+            // "no strategy", not for a price you are meant to read off the panel. Slate
+            // at the row's normal mono size keeps it visibly not-a-live-order while
+            // staying legible next to the levels above it.
             rows += strRow(esc(st.state_end_label || 'state'),
-                           `<span class="str-st-off">${st.state_end_level.toFixed(2)}</span>`,
-                           esc(st.state_end_note || ''));
+                           st.state_end_level.toFixed(2),
+                           esc(st.state_end_note || ''), '#94a3b8');
         }
         // Era P&L last, by request. DEFINITION (user, 2026-08-10): the COMPOUNDED
         // return of everything the strategy did inside the current era — halo, then

@@ -70,6 +70,18 @@
     // longer lookback (2y) so the 200-day SMA is fully seeded before the
     // visible window even starts — otherwise the SMA line would be missing
     // or wrong for its first ~200 days on screen.
+    // How many months each view SHOWS. The fetch is 2y regardless -- that is the seeding
+    // buffer, not the window -- and this is the part of it that reaches the screen.
+    // The strategy view runs a YEAR (user, 2026-08-26): its rules are annual, so at six
+    // months the 52-week extremes that decide a state were off the chart meant to
+    // explain them. Still seeded: 2y is ~504 bars, the SMA200 is valid from bar 200, and
+    // a 12-month window starts around bar 252, so the 200 line is complete across the
+    // whole visible range.
+    // dd and nd stay at 6 deliberately; nobody asked them to change and a longer window
+    // makes a newsletter trade's levels smaller on screen.
+    const CHART_MONTHS = { sd: 12 };
+    const CHART_MONTHS_DEFAULT = 6;
+
     function trimToMonths(points, months) {
         const cutoff = new Date();
         cutoff.setMonth(cutoff.getMonth() - months);
@@ -189,9 +201,10 @@
                 const sym = chartSymbol(entity.ticker, entity.asset_class);
                 const hist = await fetch(`${API_BASE}/get_price_history/${sym}?range=2y`).then(r => r.json());
                 const closesForSMA = hist.candles.map(c => ({ time: c.time, value: c.close }));
-                const sma50 = trimToMonths(calcSMA(closesForSMA, 50), 6);
-                const sma200 = trimToMonths(calcSMA(closesForSMA, 200), 6);
-                const candles = trimToMonths(hist.candles, 6);
+                const mo = CHART_MONTHS[view] || CHART_MONTHS_DEFAULT;
+                const sma50 = trimToMonths(calcSMA(closesForSMA, 50), mo);
+                const sma200 = trimToMonths(calcSMA(closesForSMA, 200), mo);
+                const candles = trimToMonths(hist.candles, mo);
                 renderCandlestickChart(view, container, candles, sma50, sma200);
             }
             state.loadedFor = entityKey;
@@ -211,9 +224,9 @@
         const series = inv ? base.map(p => ({ time: p.time, value: p.value ? 1 / p.value : 0 })) : base;
         const container = document.getElementById(view + '-chart-container');
         renderLineChart(view, container,
-            trimToMonths(series, 6), '#a78bfa',
-            trimToMonths(calcSMA(series, 50), 6),
-            trimToMonths(calcSMA(series, 200), 6));
+            trimToMonths(series, CHART_MONTHS[view] || CHART_MONTHS_DEFAULT), '#a78bfa',
+            trimToMonths(calcSMA(series, 50), CHART_MONTHS[view] || CHART_MONTHS_DEFAULT),
+            trimToMonths(calcSMA(series, 200), CHART_MONTHS[view] || CHART_MONTHS_DEFAULT));
         const ctrl = document.getElementById(view + '-chart-controls');
         const lbl = document.getElementById(view + '-invert-label');
         if (ctrl && lbl) {

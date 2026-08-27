@@ -550,6 +550,75 @@ def _adapt_xle_avoidlow(spec, refresh=False):
     }
 
 
+class _FrameView:
+    """Attribute view over a strategy that publishes its price frame as a DICT.
+
+    Every other strategy hands the helpers a MODULE and they read `fs.n`, `fs.ratio`,
+    `fs.ac`. gld_system exec's xle_system.py into a private namespace — not a copy and
+    not an import, so its logic stays byte-identical and cannot collide with a live XLE
+    panel — and exposes that namespace as `NS`, a dict. This adapts the one shape to the
+    other in a single place rather than teaching six shared helpers about two.
+    Because NS *is* the core's namespace, everything they reach for is there: the frame
+    arrays, `system2`, and the ENTRY_DEPTH / HALO_ZONE_DIP flags `_entry_trigger` reads.
+    """
+
+    def __init__(self, ns):
+        self.__dict__.update(ns)
+
+
+def _adapt_gld(spec, refresh=False):
+    """GLD: the blessed core ruleset PLUS the user's dark-era sleeve, sharing one book.
+
+    FIFTH ADAPTER. The novelty is not the ruleset — the core is the blessed XLE one, pointed
+    at GLD through its env — but that TWO SLEEVES ARBITRATE FOR ONE SLOT. gld_system runs
+    them first-come-first-served and iterates to a fixed point, asserting zero overlaps
+    before any number leaves it, so by the time this adapter sees `TRADES` the arbitration
+    is already settled and the list is a single book's history.
+    That is why there is no overlay branch here, unlike the XLE adapter: the dark sleeve
+    produces real TRADE RECORDS rather than a day-filter mask, so `_core_position` reads it
+    the same way it reads a dip, and the config already names it ("Dark-era dip").
+
+    WHAT THE NUMBERS ARE AND ARE NOT — the module's docstring says to repeat this wherever
+    they are quoted, so: the CORE clears both nulls on both axes and survives stripped
+    fills; the DARK sleeve does NOT clear its own null (p=0.159 / 0.215) and is there for
+    the regime and the stop, not for entry skill. Nothing in this file re-derives either.
+    """
+    (m,) = _load(spec, refresh)
+    fs = _FrameView(m.NS)
+    last_i = fs.n - 1
+
+    era, era_start = _era(fs)
+    # The UNION's trades, both sleeves, in one list — which is the whole point of the slot
+    # arbitration upstream. `_core_position` reads the last one, so the panel shows
+    # whichever sleeve actually holds the book.
+    T = list(m.TRADES)
+    cycle = _cycle(fs, spec, era, era_start, T)
+    pos = _core_position(fs, spec, T)
+
+    # Era P&L off the module's OWN published series — the union curve with idle cash
+    # earning the T-bill rate between trades, exactly as `series()` documents it.
+    ret, _inv = m.series()
+    era_pnl = 1.0
+    for r in ret[era_start:last_i + 1]:
+        era_pnl *= (1.0 + float(r))
+
+    return {
+        **cycle,
+        "state": pos["state"],
+        "state_tier": _tier(pos["state"], spec),
+        "entry_price": pos["entry_price"],
+        "entry_date": pos["entry_date"],
+        "days_held": pos["days_held"],
+        "target": pos["target"],
+        "target_mult": _sys(spec)["target_mult"],
+        "pnl_pct": pos["pnl_pct"],
+        "era": era,
+        "era_days": int(last_i - era_start + 1),
+        "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        "asof": fs.dates[last_i].date().isoformat(),
+    }
+
+
 def _adapt_tobacco(spec, refresh=False):
     """THE TOBACCO COMMON RULESET -- one ruleset, one adapter, every name in the universe.
 
@@ -764,6 +833,19 @@ STRATEGIES = {
     },
     # PM ADDED 2026-08-25 -- its first blessed strategy. Registering serves
     # /get_ticker_strategy/PM; whether an allocation sleeve RUNS it is a separate decision.
+    # GLD ADDED 2026-08-27. The gold sleeve the easing regime holds, and the first
+    # strategy on the board whose module arbitrates TWO sleeves into one slot.
+    # env stays empty here for the usual reason -- the real declaration is
+    # strategy_config.GLD_SYSTEM["env"], and this repository has a public remote.
+    "gld_system": {
+        "key":     "gld_system",
+        "tag":     "GLD",
+        "modules": ("gld_system",),
+        "adapter": _adapt_gld,
+        "ticker":  "GLD",
+        "env":     {},
+        "cfg_key": "GLD_SYSTEM",
+    },
     "tobacco_pm": {
         "key":     "tobacco_pm",
         "tag":     "PM",

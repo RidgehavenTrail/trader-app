@@ -85,7 +85,20 @@ def fetch_price_history(ticker_symbol, range_key):
         '1mo': '1mo', '3mo': '3mo', '6mo': '6mo', '1y': '1y', '2y': '2y', '5y': '5y',
     }
     period = period_map.get(range_key, '3mo')
-    hist = yf.Ticker(ticker_symbol).history(period=period)
+    # auto_adjust=False -- RAW OHLC, and it is load-bearing (2026-08-26).
+    #
+    # yfinance defaults this to True, so these candles were dividend/split ADJUSTED while
+    # every level drawn on top of them is a RAW price: strategy entries, targets, the bid
+    # ladder, the 200, the 252-day extremes, and the newsletter's own quoted levels. Two
+    # bases on one axis.
+    # It stayed invisible while the board held only low-yield names -- QQQ's drift is under
+    # a percent. MO surfaced it: on 2026-01-07 its 252-bar low printed 54.70 raw and 53.01
+    # adjusted, a 3.2% gap, so the histate line sat above the bars it was supposed to touch.
+    # The module was right; the chart was on the wrong basis.
+    # Raw is the correct side to converge on -- it is what the strategy computes, what the
+    # newsletter quotes, and what a broker screen shows. Adjusted prices are for measuring
+    # RETURNS, never for comparing a level to a bar.
+    hist = yf.Ticker(ticker_symbol).history(period=period, auto_adjust=False)
     if hist is None or hist.empty:
         return []
     candles = []
@@ -104,7 +117,11 @@ def fetch_price_history(ticker_symbol, range_key):
 def get_price_history(ticker):
     ticker_symbol = ticker.upper()
     range_key = request.args.get('range', '3mo')
-    cache_key = f"{ticker_symbol}:{range_key}"
+    # The BASIS is part of the key (2026-08-26). Entries written before the auto_adjust
+    # change hold adjusted candles, and serving those under the new meaning would put the
+    # old mismatch back for a full TTL. A new key cannot collide with them; the stale ones
+    # are never read again and age out on their own.
+    cache_key = f"{ticker_symbol}:{range_key}:raw"
     asset_class = get_asset_class(ticker_symbol)
 
     with price_history_lock:

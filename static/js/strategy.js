@@ -507,20 +507,38 @@
                 : '';
         }
 
-        // ASOF, on the face of the panel (user, 2026-08-27). It was in the payload all
-        // along and only ever reached the pill's TOOLTIP, which is why a dial holding a
-        // stale browser payload looked identical to a fresh one — 3.71/+0.12 sat on
-        // screen against a live 3.70/+0.100 with nothing to date either. A visible
-        // observation date makes that a glance instead of an investigation.
-        // SHORT FORM (M/D) because this line is 9px and already carries the latch date;
-        // the full date and the series name stay in the title.
+        // THE READING, on the always-visible surface (user, 2026-08-27: "my sidebar
+        // panel doesn't report this info"). The rate and the change over the lookback
+        // lived only in this pill's TOOLTIP and in the detail panel's Dial tab, so the
+        // sidebar named a regime without showing the number that decides it — and when
+        // the charts tab served a one-print-old 3.71 / +0.12 there was nothing on the
+        // panel to contradict it.
+        // TWO DECIMALS (user). `asof` sits with the numbers it dates rather than on the
+        // header line, which keeps that line to the latch date it always carried.
+        const _rate = document.getElementById('str-dial-rate');
+        if (_rate) {
+            const bits = [];
+            if (d.rate !== null && d.rate !== undefined) {
+                bits.push(`${esc(d.rate_label || 'rate')} ${d.rate.toFixed(2)}%`);
+            }
+            if (d.chg !== null && d.chg !== undefined) {
+                bits.push(`${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(2)}` +
+                          `<span class="u"> ${d.lookback_months || ''}mo</span>`);
+            }
+            if (d.asof) bits.push(`<span class="u">as of ${d.asof}</span>`);
+            _rate.innerHTML = bits.join(' · ');
+        }
+
+        // The header line keeps the latch date it always carried — `asof` moved down to
+        // sit beside the reading, so this no longer has two facts competing for a row.
         const _lat = document.getElementById('str-dial-latched');
-        const _asof = d.asof ? `as of ${(function (iso) {
-            const p = String(iso).split('-');
-            return p.length === 3 ? `${+p[1]}/${+p[2]}` : iso;
-        })(d.asof)}` : '';
         _lat.textContent = (d.stale ? 'stale · ' : '')
-            + [_asof, d.latched_on ? `latched ${d.latched_on}` : ''].filter(Boolean).join(' · ');
+            + (d.latched_on ? `latched ${d.latched_on}` : '');
+        _lat.title = [
+            d.asof ? `${d.rate_label || 'series'} last observation ${d.asof}`
+                     + ' - FRED publishes the prior session, so one day back is current' : '',
+            d.stale ? 'STALE - last good pull, FRED refresh failed' : ''
+        ].filter(Boolean).join(' · ');
         // The FRED series prints once a business day, so "as of" being yesterday is
         // normal and healthy — say so, rather than let a one-day lag read as a fault.
         // One line, ' - ' separated: a multi-line title is fine but the escapes are not

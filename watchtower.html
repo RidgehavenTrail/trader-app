@@ -162,7 +162,11 @@
     .str-blk-nm { font-size:10px; font-weight:700; color:#cbd5e1; letter-spacing:.08em;
                   text-transform:uppercase; }
     .str-state { font-family:ui-monospace,monospace; font-size:11px; font-weight:700; }
-    .str-when { font-size:9px; color:#64748b; margin-left:auto; white-space:nowrap; }
+    /* min-width/ellipsis: this line gained the observation date beside the latch date
+       (2026-08-27), so it can now outgrow a narrow sidebar. It shrinks rather than
+       pushing the state and day-count out of the header row. */
+    .str-when { font-size:9px; color:#64748b; margin-left:auto; white-space:nowrap;
+                min-width:0; overflow:hidden; text-overflow:ellipsis; }
     .str-row { display:flex; align-items:baseline; font-size:11px; line-height:1.6; }
     /* Row labels carry the AI Bubble section's weight (.sl-nm / .sl-lbl are #e2e8f0
        at 500) — at #64748b they read as disabled rather than as labels
@@ -1464,7 +1468,7 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/stoplight.js?v=20260821ai"></script>
-<script src="static/js/strategy.js?v=20260827d"></script>
+<script src="static/js/strategy.js?v=20260827e"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
 <script src="static/js/newsletter-cards.js?v=20260821v"></script>

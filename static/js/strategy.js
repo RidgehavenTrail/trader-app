@@ -475,8 +475,30 @@
                 : '';
         }
 
-        document.getElementById('str-dial-latched').textContent =
-            (d.stale ? 'stale · ' : '') + (d.latched_on ? `latched ${d.latched_on}` : '');
+        // ASOF, on the face of the panel (user, 2026-08-27). It was in the payload all
+        // along and only ever reached the pill's TOOLTIP, which is why a dial holding a
+        // stale browser payload looked identical to a fresh one — 3.71/+0.12 sat on
+        // screen against a live 3.70/+0.100 with nothing to date either. A visible
+        // observation date makes that a glance instead of an investigation.
+        // SHORT FORM (M/D) because this line is 9px and already carries the latch date;
+        // the full date and the series name stay in the title.
+        const _lat = document.getElementById('str-dial-latched');
+        const _asof = d.asof ? `as of ${(function (iso) {
+            const p = String(iso).split('-');
+            return p.length === 3 ? `${+p[1]}/${+p[2]}` : iso;
+        })(d.asof)}` : '';
+        _lat.textContent = (d.stale ? 'stale · ' : '')
+            + [_asof, d.latched_on ? `latched ${d.latched_on}` : ''].filter(Boolean).join(' · ');
+        // The FRED series prints once a business day, so "as of" being yesterday is
+        // normal and healthy — say so, rather than let a one-day lag read as a fault.
+        // One line, ' - ' separated: a multi-line title is fine but the escapes are not
+        // worth the fragility here, and the tooltip is three short facts.
+        _lat.title = [
+            d.asof ? `${d.rate_label || 'series'} last observation ${d.asof}`
+                     + ' - FRED publishes the prior session, so one day back is current' : '',
+            d.latched_on ? `${d.label} latched ${d.latched_on}` : '',
+            d.stale ? 'STALE - last good pull, FRED refresh failed' : ''
+        ].filter(Boolean).join(' · ');
 
         // Default selection: the holding that actually has a strategy, else the
         // largest weight. Re-validated every render so a regime flip (which swaps

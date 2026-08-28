@@ -20,10 +20,42 @@
     // makes the user's own choice stick.
     persistCollapse('strategy-section', 'strategySectionOpen');
 
-    // 60s — driven by the day-move percentages, not the dial. The dial itself moves
-    // once a business day and is cached 6h server-side; the quotes ride a separate
-    // 60s cache, so this poll is cheap and keeps the pills current intraday.
-    const STR_POLL_MS = 60000;
+    // POLL CADENCE (user, 2026-08-27: not every 60s).
+    //
+    // The 60s it replaced was never for the dial -- that moves once a business day and
+    // is cached SIX HOURS server-side, so 59 of every 60 seconds re-fetched a value
+    // that could not have changed. It was for the day-move percentages on the holding
+    // pills, whose quotes ride a separate 60s cache. Five minutes keeps those usefully
+    // live while cutting the request rate by 5x; a pill that is up to five minutes old
+    // is not a number anyone trades off, and the deep-dive fetches on open regardless.
+    //
+    // OFF-HOURS IT DOES NOT FETCH AT ALL. Prices do not move and the dial cannot
+    // change, so an overnight poll is pure waste -- it was pulling yfinance quotes all
+    // night. Same window-gated self-waking shape macro.js uses (scheduleMacroPoll):
+    // the dormant delay is a CLOCK RE-CHECK, not a request, so the panel wakes itself
+    // at the next open without an interval running through the night.
+    const STR_POLL_MS    = 300000;     // 5 min  — in-window
+    const STR_DORMANT_MS = 900000;     // 15 min — off-hours clock re-check ONLY, no fetch
+    // 08:00 to 16:30 ET, matching macro.js: early enough for the morning FRED print,
+    // with a grace tail past the close for the last prints to settle.
+    const STR_WIN_OPEN  = 8 * 60;
+    const STR_WIN_CLOSE = 16 * 60 + 30;
+
+    // `etNow()` is macro.js's — a pure ET clock parse, global, and macro.js loads
+    // BEFORE this file. Reused rather than re-implemented: two copies of a timezone
+    // parse is two things to drift. The WINDOW is ours; only the clock is borrowed.
+    function inStrategyWindow() {
+        if (typeof etNow !== 'function') return true;   // helper gone -> poll, never stall
+        const { dow, minutes } = etNow();
+        return dow >= 1 && dow <= 5 && minutes >= STR_WIN_OPEN && minutes < STR_WIN_CLOSE;
+    }
+
+    function scheduleStrategyPoll() {
+        setTimeout(() => {
+            if (inStrategyWindow()) fetchStrategyDial();
+            scheduleStrategyPoll();
+        }, inStrategyWindow() ? STR_POLL_MS : STR_DORMANT_MS);
+    }
 
     let strSel  = null;   // selected holding's ticker — drives the block below the dial
     let strLast = null;   // last payload, so a pill click re-renders without a fetch

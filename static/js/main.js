@@ -19,6 +19,8 @@
 
     // --- Rocket Strategy (Fed dial). Independent of the ticker sync above — it
     // reads FRED, not the watchlist, so it must not wait on syncTickersWithBackend.
-    // 15-min poll: the dial's series prints once a business day, server caches 6h. ---
+    // Window-gated + self-waking (see strategy.js): 5 min in-window, no fetch at all
+    // off-hours. The flat 60s interval it replaces was re-requesting a 6h-cached dial
+    // every minute, all night included. The load fetch still paints immediately. ---
     fetchStrategyDial();
-    setInterval(fetchStrategyDial, STR_POLL_MS);
+    scheduleStrategyPoll();

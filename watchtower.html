@@ -172,6 +172,12 @@
        collapse to zero width and vanish. It keeps nowrap and margin-left:auto, and the
        parent's flex-wrap gives it a full-width row of its own when it does not fit. */
     .str-when { font-size:9px; color:#64748b; margin-left:auto; white-space:nowrap; }
+    /* The dial's own reading, under its header. Monospace + tabular so the rate and
+       the change do not shift as digits change; the observation date rides here
+       rather than on the header line, beside the numbers it actually dates. */
+    .str-dial-rate { font-family:ui-monospace,monospace; font-size:10px; color:#cbd5e1;
+                     font-variant-numeric:tabular-nums; margin:-1px 0 5px; }
+    .str-dial-rate .u { color:#64748b; }
     .str-row { display:flex; align-items:baseline; font-size:11px; line-height:1.6; }
     /* Row labels carry the AI Bubble section's weight (.sl-nm / .sl-lbl are #e2e8f0
        at 500) — at #64748b they read as disabled rather than as labels
@@ -575,6 +581,11 @@
     /* Narrow panel (or a docked/half-width window): fall back to one column so the
        plots never squeeze below readable width. */
     @media (max-width: 820px) { .ab-rt-grid { grid-template-columns:1fr; } }
+    /* The chart's own observation date, between the title and the value. Muted and
+       small: it qualifies the number rather than competing with it, and it is only
+       interesting when it is older than you expect. */
+    .ab-rt-asof { font-family:ui-monospace,monospace; font-size:9px; color:#64748b;
+                  padding-left:8px; white-space:nowrap; }
     .ab-rt-foot { font-size:10px; color:#475569; margin-top:14px; }
     /* Prose ~half (left); calendar sizes to its OWN content and is pushed to the FAR
        RIGHT (margin-left:auto) as a side reference — the middle is free for future content. */
@@ -1019,6 +1030,13 @@
                     <span id="str-dial-days" class="str-sub"></span>
                     <span id="str-dial-latched" class="str-when"></span>
                 </div>
+
+                <!-- THE READING ITSELF (user, 2026-08-27). The rate and its change over
+                     the lookback only ever existed in the pill's TOOLTIP and in the
+                     detail panel's Dial tab — so the always-on-screen surface named a
+                     regime without ever showing the number that decides it, and a
+                     stale figure had nothing on the panel to contradict it. -->
+                <div id="str-dial-rate" class="str-dial-rate"></div>
 
                 <!-- Live portfolio left (colored ticker pills + weight + that
                      holding's own strategy state, all on one row) and the two
@@ -1472,8 +1490,8 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260821ai"></script>
-<script src="static/js/strategy.js?v=20260827g"></script>
+<script src="static/js/stoplight.js?v=20260827a"></script>
+<script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
 <script src="static/js/newsletter-cards.js?v=20260821v"></script>

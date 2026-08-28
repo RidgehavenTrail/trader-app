@@ -981,7 +981,19 @@
             sec.className = 'ab-rt';
             sec.innerHTML =
                 `<div class="ab-rt-hd"><span class="ab-rt-ttl">${esc(ch.title)}</span>` +
-                `<span class="ab-rt-val">${esc((ch.latest && ch.latest.label) || '')}</span></div>` +
+                // ASOF beside the value (user, 2026-08-27). Every builder already
+                // publishes the REAL print date — `_build_dial` even labels it "the real
+                // print date, not the month label" — and none of it reached the screen.
+                // That is how a header read 3.71% all day against a live 3.70%: the
+                // number was faithfully rendered, its date was not, and the two charts
+                // in the same row were a print apart with nothing to say so.
+                // A monthly series makes this worse, not better: its x-axis tick says
+                // 2026-08-01 whatever day the value is from.
+                // AFTER the value, not before it: `.ab-rt-val` already owns the
+                // margin-left:auto that pushes the right-hand group over, and a second
+                // auto margin would split the free space and strand the date mid-header.
+                `<span class="ab-rt-val">${esc((ch.latest && ch.latest.label) || '')}</span>` +
+                (ch.asof ? `<span class="ab-rt-asof">${esc(ch.asof)}</span>` : '') + '</div>' +
                 (ch.subtitle ? `<div class="ab-rt-sub">${esc(ch.subtitle)}</div>` : '');
             grid.appendChild(sec);
             if (ch.error) {                                // one bad series ≠ a broken tab

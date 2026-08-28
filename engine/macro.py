@@ -52,7 +52,19 @@ RELEASE_ANCHORS_ET = [(8, 35), (10, 5), (14, 5)]
 # of "fresh" — a restart must inherit a briefing on exactly the terms the loop
 # would have considered current.
 CHECK_SECONDS = 300      # poll cadence
+
 STALE_SECONDS = 3600     # a successful update stays fresh ~1 hour
+# BACKOFF AFTER A FAILED GENERATE (2026-08-27). Success paces at once an hour; failure
+# used to pace at once per POLL -- 12x the intended rate against a BILLED, quota-limited
+# endpoint, because a failure never advances `last_ok` so `due` simply stays true.
+# On 2026-08-27 that turned a ~6-call morning into 30 requests against a 20/day limit:
+# once the quota was gone every retry failed, and every failure bought another retry.
+# The loop was spending requests to recover from being out of requests.
+# Doubling from 5 minutes and capped at the hourly cadence the healthy path already
+# uses -- a persistent outage therefore costs the SAME as a healthy day, not 12x it,
+# and a one-off blip still retries within minutes.
+FAIL_BACKOFF_START_S = 300
+FAIL_BACKOFF_MAX_S = STALE_SECONDS
 
 # Read at import time, exactly as the engine did. The engine calls load_dotenv()
 # at the top of its module, long before it imports this blueprint, so the value
@@ -82,6 +94,34 @@ def _existing_briefing_ts():
         return ts if (time.time() - ts) < STALE_SECONDS else 0.0
     except Exception:
         return 0.0
+
+
+def _record_failure(reason):
+    """Persist WHY the briefing did not refresh, onto the existing file.
+
+    A dead or failing macro path does not look like a crash -- the panel just keeps
+    showing the last good briefing, which reads as "nothing new" and can sit for hours
+    (2026-08-27: frozen at 01:11 PM from ~14:11, discovered only because the user
+    noticed the timestamp). The stoplight factors have carried `error` and
+    `consecutive_failures` for exactly this reason; macro carried neither, so the only
+    record of a failure was a stdout line in a terminal that no longer existed.
+
+    Merges into the file rather than replacing it: the LAST GOOD briefing must survive,
+    because a stale-but-labelled briefing beats an empty panel. Never raises -- a
+    failure to record a failure must not take down the loop.
+    """
+    try:
+        data = {}
+        if os.path.exists(MACRO_FILE):
+            with open(MACRO_FILE) as f:
+                data = json.load(f) or {}
+        data['error'] = str(reason)[:300]
+        data['error_at'] = datetime.now(ET).strftime('%I:%M %p ET')
+        data['consecutive_failures'] = int(data.get('consecutive_failures') or 0) + 1
+        with open(MACRO_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"[MACRO] could not record failure: {type(e).__name__}: {e}")
 
 
 def _release_anchor_passed(last_ok, now=None):
@@ -167,6 +207,7 @@ def generate_macro_regime():
     """
     if not GEMINI_API_KEY:
         print("[MACRO] Gemini API key missing — skipping macro regime update.")
+        _record_failure("GEMINI_API_KEY missing")
         return
     try:
         tnx = yf.Ticker("^TNX")
@@ -294,7 +335,11 @@ RELEASED or NOT RELEASED, e.g. "Core PCE (8:30 ET): RELEASED +0.3% m/m vs
         result = response.json()
 
         if 'error' in result:
-            print(f"[MACRO] Gemini error: {result['error'].get('message', 'Unknown')}")
+            msg = result['error'].get('message', 'Unknown')
+            print(f"[MACRO] Gemini error: {msg}")
+            # The panel must be able to SAY this. Quota exhaustion is the failure that
+            # actually happens, and it looked identical to "no news" for three hours.
+            _record_failure(f"Gemini: {msg}")
             return
 
         if 'candidates' not in result or not result['candidates']:
@@ -327,6 +372,10 @@ RELEASED or NOT RELEASED, e.g. "Core PCE (8:30 ET): RELEASED +0.3% m/m vs
         macro_data['updated_at'] = datetime.now(ET).strftime('%I:%M %p ET')
 
         with open(MACRO_FILE, 'w') as f:
+            # A SUCCESSFUL write clears the failure record by construction: this
+            # replaces the file wholesale and macro_data carries no error keys, so
+            # `error` / `error_at` / `consecutive_failures` cannot outlive the outage
+            # they describe.
             json.dump(macro_data, f)
 
         print(f"[MACRO] Updated macro regime: {macro_data['headline'][:60]}...")
@@ -351,9 +400,18 @@ def macro_loop():
     # Inherit a still-fresh briefing rather than regenerating it. A restart only
     # costs a call when the file is genuinely stale, missing, or empty.
     last_ok = _existing_briefing_ts()
+    fail_wait = 0.0          # seconds to hold off after a failed generate
+    last_try = 0.0           # when the last generate was attempted
     if last_ok:
         age = int((time.time() - last_ok) / 60)
         print(f"[MACRO] existing briefing is {age}m old — skipping the startup pull.")
+    elif market_state() not in ('pre_market', 'open'):
+        # GATED LIKE THE LOOP (2026-08-27). The startup pull used to fire whatever the
+        # hour, so restarting the engine at 8pm bought a billed Gemini call for a
+        # briefing nobody would read until the morning -- and on a day of repeated
+        # restarts that is pure quota. The loop has always respected market hours; the
+        # startup path simply never did.
+        print("[MACRO] outside market hours — deferring the startup pull to the open.")
     else:
         try:
             last_ok = time.time() if generate_macro_regime() else 0.0
@@ -368,9 +426,19 @@ def macro_loop():
             # stops an 08:30 number sitting undescribed until the hourly tick
             # happens to come round.
             due = (time.time() - last_ok >= STALE_SECONDS) or _release_anchor_passed(last_ok)
-            if market_state() in ('pre_market', 'open') and due:
+            # A failed attempt HOLDS THE LINE. Without this the loop retried every poll
+            # for as long as the fault lasted, because a failure leaves `due` true.
+            held = (time.time() - last_try) < fail_wait
+            if market_state() in ('pre_market', 'open') and due and not held:
+                last_try = time.time()
                 if generate_macro_regime():
                     last_ok = time.time()
+                    fail_wait = 0.0
+                else:
+                    fail_wait = (min(fail_wait * 2, FAIL_BACKOFF_MAX_S) if fail_wait
+                                 else FAIL_BACKOFF_START_S)
+                    print(f"[MACRO] generate failed — next attempt in "
+                          f"{int(fail_wait / 60)}m.")
         except Exception as e:
             # Belt-and-braces: the loop must survive ANYTHING (mirrors stoplight's
             # scheduler_loop). generate_macro_regime() already swallows its own

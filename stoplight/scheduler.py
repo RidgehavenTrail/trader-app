@@ -23,7 +23,7 @@ import os
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from . import charts, events, store
 from .registry import FACTORS
@@ -71,6 +71,13 @@ CHECK_INTERVAL_S = {
 FAIL_RETRY_S = 15 * 60   # failed factor retries on this leash (FRED is intermittent)
 CALENDAR_REFRESH_S = 7 * 24 * 3600   # weekly event-calendar maintenance (free pulls)
 CHARTS_REFRESH_S = 24 * 3600          # daily rebuild for the Charts tab (FRED, free)
+# While a chart is BEHIND its source, re-check on this floor instead of waiting out the
+# daily timer (2026-08-27). A wall-clock daily rebuild cannot tell a complete build from
+# a partial one: the 08:31 pass caught T10Y3M's new print but not DTB3's, which lands
+# later in the morning, so the Fed dial served a one-print-old 3.71 / +0.12 for the rest
+# of the day while the yield curve beside it was current. FREE pulls, so the only cost
+# of re-checking is a request FRED is happy to serve.
+CHARTS_CATCHUP_S = 30 * 60
 TICK_S = 60
 
 
@@ -182,12 +189,55 @@ def _maybe_refresh_calendar(state):
     return True
 
 
+def _charts_behind():
+    """True when the cached Charts payload is older than what its sources could give.
+
+    Keyed off each chart's OWN `asof` — the real print date every builder already
+    publishes — against the latest weekday that could plausibly have printed. FRED is
+    T+1, so being one weekday back is CURRENT and must not trigger a re-check; two or
+    more is behind.
+
+    This is what the daily timer cannot see. Both charts rebuild in one pass, but their
+    series publish at different times of the morning, so a pass can be complete for one
+    and stale for another — and a timestamp on the PASS says nothing about either.
+    """
+    payload = charts.load_cached()
+    if not payload:
+        return True
+    # store.today_et() returns a STRING (it is used as a cache key elsewhere); the date
+    # arithmetic below needs a real date, so take it from now_et().
+    today = store.now_et().date()
+    # the most recent weekday strictly before today: FRED's newest possible observation
+    latest = today - timedelta(days=1)
+    while latest.weekday() >= 5:
+        latest -= timedelta(days=1)
+    for c in payload.get("charts") or []:
+        a = c.get("asof")
+        if not a:
+            continue
+        try:
+            if date.fromisoformat(a) < latest:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _maybe_refresh_charts(state):
-    """Daily, rebuild the Charts-tab cache from FRED. Keyed off a persisted
-    timestamp (same pattern as the calendar), so an engine that was dark for a day
-    rebuilds on the next boot instead of waiting for a wall-clock slot. FREE pulls
-    only — FRED, no key, no billed path. Returns True if state changed."""
-    if _age_seconds(state.get("charts_refreshed_at")) < CHARTS_REFRESH_S:
+    """Rebuild the Charts-tab cache from FRED. Daily by the clock, but ALSO whenever a
+    chart is behind its source — see `_charts_behind`. Keyed off a persisted timestamp
+    (same pattern as the calendar), so an engine that was dark for a day rebuilds on the
+    next boot instead of waiting for a wall-clock slot. FREE pulls only — FRED, no key,
+    no billed path. Returns True if state changed."""
+    age = _age_seconds(state.get("charts_refreshed_at"))
+    # The catch-up floor bounds the re-checking: a source that is genuinely late (or a
+    # holiday, where `latest` names a day that will never print) costs two pulls an hour,
+    # not one per scheduler tick.
+    if age >= CHARTS_REFRESH_S:
+        pass                                   # the ordinary daily rebuild
+    elif age >= CHARTS_CATCHUP_S and _charts_behind():
+        print("[STOPLIGHT] board charts are behind their source — re-checking.")
+    else:
         return False
     try:
         payload = charts.refresh()

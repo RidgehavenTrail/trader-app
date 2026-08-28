@@ -49,10 +49,12 @@ same-day.
 """
 import threading
 import time
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from flask import Blueprint, jsonify
 
+from engine.common import ET
 from engine.live_config import cfg
 
 bp = Blueprint('strategy', __name__)
@@ -97,7 +99,25 @@ REGIME_ORDER = ["easing", "hold", "tightening"]
 # prints once a business day; the day-moves are quotes that must not be six hours
 # stale. Merged at request time so one endpoint serves both without either dragging
 # the other's cadence.
-CACHE_TTL_SECONDS = 6 * 3600      # the dial's series prints once a business day
+# THE DIAL CACHE KEYS OFF THE OBSERVATION DATE, NOT A CLOCK (2026-08-27).
+#
+# It was a rolling 6h, on the reasoning that "the series prints once a business day".
+# True, but a rolling window is not aligned to the print: a cache built shortly before
+# FRED posts serves the PREVIOUS day's figure for six more hours, and the frontend poll
+# just re-reads the same cached answer. That is exactly what happened -- a panel showing
+# 3.71 / +0.12 against a live 3.70 / +0.100, with no way to tell from the screen.
+#
+# The series is T+1: DTB3 for date D publishes on D+1. So the question is not "how old
+# is this payload" but "has the latest observation that COULD exist arrived yet":
+#   caught up  -> asof is the most recent business day. Nothing newer can print today;
+#                 hold it until the ET date rolls (with a 24h ceiling as a backstop).
+#   behind     -> today's print has not landed, or a holiday moved it. Re-check, but
+#                 no more often than the floor, so waiting never becomes hammering.
+# A holiday leaves it "behind" all day and re-checking on the floor, which is bounded
+# and self-heals the moment a print appears -- deliberately preferred to a holiday
+# calendar this file would then have to maintain.
+DIAL_RECHECK_SECONDS = 900        # 15 min — floor while a print has not landed
+DIAL_MAX_AGE_SECONDS = 24 * 3600  # backstop, so nothing can live forever on any path
 QUOTE_TTL_SECONDS = 60            # intraday % change
 _cache_lock = threading.Lock()
 _cache = {"payload": None, "at": 0.0}
@@ -433,12 +453,43 @@ def _with_day_moves(payload):
                             for a in alts])
 
 
+def _prev_business_day(d):
+    """The latest weekday strictly before `d`. Weekends only — see the cache note on
+    why holidays are handled by re-checking rather than by a calendar."""
+    x = d - timedelta(days=1)
+    while x.weekday() >= 5:
+        x -= timedelta(days=1)
+    return x
+
+
+def _dial_caught_up(payload, today=None):
+    """Is this payload holding the newest observation that could exist?
+
+    True once `asof` reaches the most recent business day: the series is T+1, so on a
+    Thursday the newest possible observation is Wednesday's. Returns False on a missing
+    or unparseable `asof` — an unknown date must re-check, never pin the cache open.
+    """
+    asof = (payload or {}).get("asof")
+    if not asof:
+        return False
+    try:
+        seen = date.fromisoformat(str(asof)[:10])
+    except ValueError:
+        return False
+    return seen >= _prev_business_day(today or datetime.now(ET).date())
+
+
 def get_dial():
-    """TTL-cached dial. Follows the price_history cache rules: never cache a
-    failure, and if a fresh pull throws while a stale payload exists, serve the
+    """Observation-date-keyed dial cache. Follows the price_history cache rules: never
+    cache a failure, and if a fresh pull throws while a stale payload exists, serve the
     stale one flagged rather than blanking the panel."""
     with _cache_lock:
-        fresh = _cache["payload"] and (time.time() - _cache["at"] < CACHE_TTL_SECONDS)
+        age = time.time() - _cache["at"]
+        p = _cache["payload"]
+        # Caught up -> hold it; the answer cannot change until the date rolls. Behind ->
+        # hold only to the re-check floor, then pull again.
+        fresh = bool(p) and age < (DIAL_MAX_AGE_SECONDS if _dial_caught_up(p)
+                                   else DIAL_RECHECK_SECONDS)
         if fresh:
             return _with_day_moves(_cache["payload"])
         try:

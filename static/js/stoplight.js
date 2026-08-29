@@ -229,6 +229,72 @@
                     '“healthy.” And it is a <b>floor</b>: third-party consumption on Azure ' +
                     'OpenAI / Bedrock / Vertex is real demand this cannot see, so the error runs ' +
                     'toward less-green.'
+        },
+        memory_canary: {
+            // Glanceable, and kept that way (user, 2026-08-29): the About box has to say
+            // what the factor measures in a couple of seconds. WHICH estimates and why
+            // is real, but it is footnote detail — it lives under Horizon below.
+            measures: 'Of the last 5 forward-EPS revisions by SELL-SIDE ANALYSTS, pooled '
+                    + 'across Micron and SK Hynix, how many were DOWNWARD.',
+            // Says nothing about which way the estimates are currently going — that is
+            // what the rail, the sparkline and the pips are for, and a direction written
+            // into a definition is a direction that has stopped being measured.
+            // Two sentences, and deliberately: the About box answers WHY THIS FACTOR, and
+            // the basket rationale that used to close it (why these two names, why not HBM
+            // alone) moved down to the Method footnote — it is detail you read once, not
+            // header (user, 2026-08-29).
+            why: 'The memory-glut sub-mechanism, and the earliest place a build-out shows. '
+               + 'Memory is bought ahead of the racks it goes into and is the one AI input '
+               + 'with a public estimate stream, so it cracks in analyst revisions before it '
+               + 'cracks anywhere you can see.',
+            // Ordered by the METRIC, like the other two — which is what makes this
+            // factor's inversion visible rather than hidden: MORE downgrades is the
+            // pro-burst end, so red sits at the bottom of this scale.
+            bands: [
+                { light: 'red',    range: '0 – 1 down', mean: 'estimates holding' },
+                { light: 'yellow', range: '2 – 3 down', mean: 'cracking, partial' },
+                { light: 'green',  range: '4 – 5 down', mean: 'estimates cracking' }
+            ],
+            // Band EDGES, for the sparkline's dashed gridlines. The reading is an integer
+            // 0–5, so the lines fall between the integers a band separates.
+            edges: [1.5, 3.5],
+            // No glyph pair: nothing corroborates this factor the way premium_share's
+            // token share corroborates its money share, and a key here would promise a
+            // mark the board never draws.
+            // THREE TOPICS, not one column of prose: the note had grown to cover the
+            // basket, the horizon rule and the counting mechanics at once, and none of
+            // them was findable in it (user, 2026-08-29). `.ab-foot` is an auto-fit grid,
+            // so these flow into columns and wrap on their own.
+            method: [
+                { k: 'Basket', b:
+                    'Memory-market HEALTH, not HBM alone: DDR5 strength is itself '
+                  + 'AI-caused — diverted capacity starved commodity DRAM — so a crack '
+                  + 'that counts is <b>HBM and DDR5 rolling together</b>. Hence two names: '
+                  + '<b>Micron</b> for the commodity line, <b>SK Hynix</b> (56% of HBM) for '
+                  + 'the AI one.' },
+                { k: 'Horizon', b:
+                    'Two estimates per name, not four: the <b>next quarter</b> — the '
+                  + 'upcoming one reports within weeks and is largely priced — and the '
+                  + '<b>fiscal year that reports 6+ months out</b>. The test is the REPORT '
+                  + 'date, not the period end, because the report is where an estimate is '
+                  + 'tested: a period that closed yesterday but prints next month is still '
+                  + 'forward-looking. The two names run different fiscal calendars, so at '
+                  + 'one horizon this can select different LABELS for them — which is the '
+                  + 'point of selecting by date. Readings before <b>2026-08-29</b> summed '
+                  + 'all four periods: same bands, different denominator, and the substrip '
+                  + 'names which rule each day was counted under.' },
+                { k: 'Counting', b:
+                    'Counts come from yfinance <b>eps_revisions</b> — the direction of '
+                  + 'sell-side EPS ESTIMATE changes. Not rating actions, and not company '
+                  + 'guidance, which <i>triggers</i> revisions rather than being one. They '
+                  + 'arrive per forecast period, so one analyst revising a whole model '
+                  + 'counts twice — a “revision” here is an <b>analyst-period</b>, not an '
+                  + 'analyst. The feed publishes 7-day and 30-day <b>totals</b> rather than '
+                  + 'a dated list, so “the last 5” is <b>approximated</b> from the '
+                  + 'down-share of the narrower window that holds at least 5 revisions, '
+                  + '×5 and rounded. Pooling is by <b>count</b> and unweighted: a name '
+                  + 'that files more revisions carries more of the light.' }
+            ]
         }
     };
 
@@ -911,6 +977,147 @@
             '</div>';
     }
 
+    // FIVE PIPS — the reading drawn as the thing it literally says: how many of the last
+    // five revisions went DOWN. A count of five has no distribution worth a chart, so the
+    // honest picture is the count itself against its own denominator — filled pips are the
+    // downgrades, hollow ones the rest of the five. Tinted by the day's light through
+    // currentColor, the same way the sparkline is, so a rail click retints it along with
+    // everything else on the pane.
+    function abPipsSVG(down, of, lc) {
+        const W = 340, R = 18, GAP = 56, X0 = (W - GAP * (of - 1)) / 2;
+        let pips = '';
+        for (let i = 0; i < of; i++) {
+            pips += i < down
+                ? `<circle cx="${X0 + i * GAP}" cy="42" r="${R}" fill="currentColor"/>`
+                : `<circle cx="${X0 + i * GAP}" cy="42" r="${R - 1}" fill="none" ` +
+                  `stroke="#334155" stroke-width="2"/>`;
+        }
+        return `<svg class="abh-${lc}" viewBox="0 0 ${W} 104" role="img" ` +
+            `aria-label="${down} of the last ${of} pooled revisions were downward">` +
+            pips + `<text x="${W / 2}" y="90" class="ab-pie-c">${down} of the last ${of} ` +
+            `pooled revisions went down</text></svg>`;
+    }
+
+    // REVISIONS — the primary view: who filed the revisions this reading is made of.
+    // The basket is two names by definition, so this is not a top-N of a longer list; it
+    // is the COMPLETE evidence, which is what lets it carry the two columns a pooled
+    // figure hides. ALONE is what each name would read on its own, WEIGHT is how much of
+    // the pool it supplies, and together they answer whether the pooled light is actually
+    // pooled or one name's read wearing both names' label.
+    function abRevisionsHTML(day, oldest) {
+        const names = day.names || [];
+        if (!names.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
+        const c = AB_LC[day.light] || 'y';
+        const band = ((AB_WHY.memory_canary || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">reading</span>' +
+              `<span class="v abh-${c}">${day.downs}/5</span>` +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `${band.range ? `<span class="r">band ${esc(band.range)}</span>` : ''}` +
+            '</div>';
+        // The down SHARE is what the light is computed from, so it gets the bar; the raw
+        // pair beside it keeps the COUNT visible, because a share of three revisions and
+        // a share of twenty are not the same evidence.
+        const bar = pct => '<span class="bar"><i class="p" style="width:' +
+            Math.max(2, Math.min(100, Math.round(pct))) + '%"></i></span>';
+        const body = names.map(n => {
+            const nc = AB_LC[n.alone_light] || 'y';
+            return '<tr>' +
+              '<td class="l" colspan="2"><div class="mdl">' +
+                `<div class="nm2">${esc(n.name)}</div><div class="sl">${esc(n.role)}` +
+                // Per NAME, not only in the strip: the two fiscal calendars can put the
+                // same horizon under different labels, and when they do this row is the
+                // only place on the panel that shows it.
+                `${(n.periods || []).length ? ' · ' + esc(n.periods.join(' · ')) : ''}` +
+                '</div></div></td>' +
+              `<td>${n.up}</td><td>${n.down}</td>` +
+              '<td class="l"><div class="revcell">' +
+                `<span class="pct">${n.share.toFixed(1)}%</span>${bar(n.share)}` +
+                `<span class="amt">${n.down}/${n.total}</span></div></td>` +
+              `<td class="l"><span class="tier c">${Math.round(n.weight)}% of pool</span></td>` +
+              `<td class="abh-${nc}">${n.alone}/5</td>` +
+            '</tr>';
+        }).join('');
+        const sum = '<tr class="sum">' +
+            '<td class="l" colspan="2"><div class="mdl"><div class="nm2">Pooled</div>' +
+              '<div class="sl">both names, unweighted</div></div></td>' +
+            `<td>${day.pool_up}</td><td>${day.pool_down}</td>` +
+            '<td class="l"><div class="revcell">' +
+              `<span class="pct">${day.share.toFixed(1)}%</span>${bar(day.share)}` +
+              `<span class="amt">${day.pool_down}/${day.pool_total}</span></div></td>` +
+            `<td class="l"><span class="tier p">${esc(day.window)} window</span></td>` +
+            `<td class="abh-${c}">${day.downs}/5</td></tr>`;
+        // The sentence is the point, as it is on the other two factors: a number alone
+        // reads as a stat, and what this one says is whether the basket did its job on
+        // this day. Computed, never asserted — which name leads changes over the history
+        // (MU filed 106 of 114 revisions in July; SK Hynix files 20 of 23 now).
+        const lead = names.slice().sort((a, b) => b.weight - a.weight)[0];
+        const spread = names.length > 1 ? Math.abs(names[0].weight - names[1].weight) : 0;
+        const owns = lead && lead.weight >= 65
+            ? `<b>${esc(lead.name)}</b> files ${lead.total} of the ${day.pool_total} revisions ` +
+              `in this window, so the pooled reading is ${Math.round(lead.weight)}% its own.`
+            : `The two names are within ${Math.round(spread)} points of each other on count, ` +
+              'so the pool reads both.';
+        const then = oldest && oldest.date !== day.date
+            ? ` <span class="ago">was <b>${oldest.downs}/5</b> on ${esc(abMD(oldest.date))}</span>` : '';
+        return '<div class="ab-pies">' + hero + abPipsSVG(day.downs, 5, c) + '</div>' +
+            '<div class="ab-scroller"><table class="ab-ledger">' +
+            '<thead><tr><th class="l" colspan="2">Name</th><th>Up</th><th>Down</th>' +
+            '<th class="l">Down share</th><th class="l">Weight</th><th>Alone</th></tr></thead>' +
+            `<tbody>${body}${sum}</tbody></table></div>` +
+            `<div class="ab-overlapbar">${owns}${then}</div>`;
+    }
+
+    // BOTH WINDOWS — the same day read on each of the two windows the feed publishes.
+    // The rule takes the 7-day count whenever it holds five revisions and falls back to
+    // the 30-day one when it does not, so the reading can change band on WHICH WINDOW
+    // QUALIFIED rather than on anything an analyst did. Showing both is showing that.
+    // Gold marks the window the light was taken on and steel the counterfactual — the
+    // same job the pair does on premium_share's lenses: separating the numbers that are
+    // load-bearing from the ones quoted beside them.
+    function abWindowsHTML(day, oldest) {
+        const wins = day.windows || [];
+        if (!wins.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
+        const row = (k, fig, on) => `<div class="ab-lrow${on ? ' both' : ''}">` +
+            `<span class="nm2">${esc(k)}</span><span class="fig">${fig}</span></div>`;
+        const lens = w => {
+            const lc = AB_LC[w.light] || 'y';
+            const sub = w.used ? 'the reading is taken here'
+                : (w.thin ? 'thinner than 5 revisions' : 'not used');
+            return `<div class="ab-lens ${w.used ? 'money' : 'vol'}">` +
+              '<div class="lens-hd"><div class="t">' +
+                esc(w.label.charAt(0).toUpperCase() + w.label.slice(1)) + '</div>' +
+                `<div class="s">${w.total} revisions &middot; ${sub}</div></div>` +
+              row('Downward', `<b>${w.down}</b>`) +
+              row('Upward', `<b>${w.up}</b>`) +
+              row('Down share', `<b>${w.share.toFixed(1)}%</b>`) +
+              row('Rounds to', `<b class="abh-${lc}">${w.downs}/5</b> ` +
+                              `<span class="alt">${esc(w.light)}</span>`, w.used) +
+            '</div>';
+        };
+        const sel = wins.find(w => w.used) || wins[0];
+        const other = wins.find(w => w !== sel);
+        // The lens HEADING names the window the feed's own way ("last 7 days"); the
+        // sentence needs it as an adjective, and "the last 30 days window" does not read.
+        const shortL = w => (w.key === '7d' ? '7-day' : '30-day');
+        const why = sel.key === '7d' ? 'because it holds at least 5 revisions'
+                                     : 'because the 7-day window held fewer than 5';
+        const msg = !other
+            ? `Read on the ${shortL(sel)} window.`
+            : other.light === sel.light
+                ? `Both windows land on <b>${esc(sel.light)}</b>, so this reading does not ` +
+                  'depend on which one qualified.'
+                : `The rule takes the <b>${shortL(sel)}</b> window ${why}; the ` +
+                  `${shortL(other)} window would read <b>${other.downs}/5</b> — ` +
+                  `${esc(other.light)}.`;
+        const then = oldest && oldest.date !== day.date
+            ? ` <span class="ago">was <b>${oldest.downs}/5</b> on ${esc(abMD(oldest.date))}</span>` : '';
+        return '<div class="ab-lenses">' + wins.map(lens).join('') + '</div>' +
+            `<div class="ab-overlapbar">${msg}${then}</div>`;
+    }
+
     // THE EVIDENCE VOCABULARY — one entry per factor that keeps a ledger.
     //
     // The chrome above this line knows none of it: the rail, the substrip, the sparkline,
@@ -958,6 +1165,31 @@
                            ['nvda share', Math.round(d.accel_share * 100) + '%']],
             render:  (key, day, all) => key === 'sources'
                 ? abSourcesHTML(day) : abSidesHTML(day, all[all.length - 1])
+        },
+        memory_canary: {
+            // Revisions LEADS: what this factor answers is who is cutting, and the window
+            // it was read on is the check you run on that answer.
+            views:   [{ key: 'revisions', label: 'Revisions' },
+                      { key: 'windows',   label: 'Both windows' }],
+            value:   d => d.downs,
+            reading: d => d.downs + '/5 dn',
+            light:   d => d.light,
+            // Half a step. The reading is an INTEGER 0–5, so anything that would round
+            // differently is a whole band from being a rounding difference — but this
+            // ledger reads the day's own snapshot instead of re-deriving it, so the two
+            // cannot drift in the first place.
+            tol:     0.5,
+            count:   d => d.pool_total + ' revisions',
+            // ESTIMATES rides in the strip because it is the day's BASIS, not a detail:
+            // '+1q · +1y' and 'all four' are different denominators, and a rail day from
+            // before 2026-08-29 must not be read as if it were on today's rule.
+            figures: d => [['estimates', d.estimates || 'all four'],
+                           ['window', d.window],
+                           ['down', String(d.pool_down)],
+                           ['up', String(d.pool_up)]],
+            render:  (key, day, all) => key === 'windows'
+                ? abWindowsHTML(day, all[all.length - 1])
+                : abRevisionsHTML(day, all[all.length - 1])
         }
     };
 
@@ -1122,8 +1354,16 @@
         // then the footnote stands down: silicon payback's belongs beside the inputs it
         // describes, in Sources, rather than under the pies it does not. The chrome still
         // knows nothing factor-specific — it asks the vocabulary and does as it is told.
+        // `method` is EITHER one prose block or a LIST of {k, b} topics. The list exists
+        // because a factor's note can cover several distinct subjects, and one 200-word
+        // column is not readable at a glance (user, 2026-08-29). A factor that supplies a
+        // string still gets exactly what it got before: one column headed Method. The
+        // body is raw HTML in both shapes — it is a literal in this file, never anything
+        // a source produced — while the heading is escaped like any other label.
         const method = (w.method && !(v && v.method))
-            ? `<div class="ab-fc"><span class="k">Method</span><div class="b">${w.method}</div></div>`
+            ? (Array.isArray(w.method) ? w.method : [{ k: 'Method', b: w.method }])
+                .map(m => `<div class="ab-fc"><span class="k">${esc(m.k)}</span>` +
+                          `<div class="b">${m.b}</div></div>`).join('')
             : '';
         const foot = '<div class="ab-foot">' + method +
             `<div class="ab-fc"><span class="k">Provenance</span><div class="prov">${prov}</div></div>` +

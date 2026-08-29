@@ -140,7 +140,12 @@ def run_factor(spec, state):
         entry["new_at"] = prev.get("new_at")
 
     state["factors"][fid] = entry
-    store.record_snapshot(fid, entry.get("value"), payload=reading)
+    # An asof-keyed factor files its row under the day the DATA is for, and the FIRST
+    # capture of that day wins (registry.asof_keyed / store.record_snapshot). Every
+    # other factor keeps the write-date key and last-run-wins.
+    asof = reading.get("asof") if spec.get("asof_keyed") else None
+    store.record_snapshot(fid, entry.get("value"), payload=reading,
+                          day=asof, keep_first=bool(asof))
     _record_ledger_day(mod, fid, reading)
 
 

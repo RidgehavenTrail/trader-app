@@ -144,17 +144,37 @@ def record_llm_call(extractor, stage, model_requested, model_routed,
         con.close()
 
 
-def record_snapshot(factor_id, value, payload=None, day=None):
-    """Upsert today's observation row. Re-runs within the same ET day overwrite
-    (the log is one row per factor per day, holding the latest reading)."""
+def record_snapshot(factor_id, value, payload=None, day=None, keep_first=False):
+    """Upsert one observation row. Re-runs within the same ET day overwrite (the log
+    is one row per factor per day, holding the latest reading).
+
+    `keep_first` INVERTS that, for a factor keyed on its data date rather than the
+    write date (see scheduler.run_factor). Two runs that see the same data day are not
+    two observations of it: the first ran at the prices the day's light was decided on,
+    and every later one is RE-PRICING it. premium_share's premium line is a multiple of
+    a floor that deflates fast, so a re-price sweeps whole models across the line — the
+    2026-08-25 data day recorded 71.5% red at 23:01 and re-priced to 49.2% YELLOW the
+    next morning, which is a different band, not a rounding difference. Without this
+    the later run silently overwrites the record, exactly as it did there.
+
+    Same direction rule as record_ledger, for the same reason and on the same key: once
+    a data day is captured it is history, not a cell to refresh."""
     con = _connect()
     try:
         with con:
-            con.execute(
-                "INSERT OR REPLACE INTO snapshots VALUES (?,?,?,?,?)",
-                (factor_id, day or today_et(), value,
-                 json.dumps(payload) if payload is not None else None, now_iso()),
-            )
+            if keep_first:
+                con.execute(
+                    "INSERT INTO snapshots VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(factor_id, date) DO NOTHING",
+                    (factor_id, day or today_et(), value,
+                     json.dumps(payload) if payload is not None else None, now_iso()),
+                )
+            else:
+                con.execute(
+                    "INSERT OR REPLACE INTO snapshots VALUES (?,?,?,?,?)",
+                    (factor_id, day or today_et(), value,
+                     json.dumps(payload) if payload is not None else None, now_iso()),
+                )
     finally:
         con.close()
 

@@ -3047,20 +3047,41 @@ _atm_marks_dirty = False
 # SUPPRESSED (user, 2026-08-18) -- never a fall back to lastPrice, which read 15.60
 # against a 28.90 mid on GEV even with a live book.
 ATM_MARK_MAX_AGE_DAYS = 5
-# A one-sided book (bid 0) is priced at its ASK -- but an ask below this, with no bid,
-# is one tick of noise on an illiquid strike, not a price of protection. Suppress.
-ATM_MIN_ONE_SIDED_ASK = 0.10
+# How far ahead to seed the NEXT contract's mark, in calendar days. Matched to the
+# carry's own max age on purpose: a mark banked further out than that would expire
+# before the roll it was taken for, so looking further buys nothing.
+ATM_MARK_LOOKAHEAD_DAYS = ATM_MARK_MAX_AGE_DAYS
+# How many expirations past the DTE floor to try before giving up on a put chain. A
+# normal name is satisfied by the first; this only spends calls on a name whose near
+# expiries are call-only.
+MAX_EXPIRY_PROBES = 4
 
 
 def _load_atm_marks():
-    """Caller must hold atm_marks_lock."""
+    """Caller must hold atm_marks_lock.
+
+    Shape is {ticker: {expiration: mark}} -- a mark PER CONTRACT, not per ticker. One
+    mark per ticker could not hold today's contract AND the one that replaces it at the
+    roll at the same time, so the look-ahead had to overwrite the live mark with the
+    next one. A name that quotes every day never noticed; one that quotes
+    intermittently lost its carry the first time the roll landed on a quiet morning.
+    Legacy one-per-ticker files are converted on load."""
     global _atm_marks
     if _atm_marks is None:
         try:
             with open(ATM_MARKS_FILE, 'r') as f:
-                _atm_marks = json.load(f)
+                raw = json.load(f)
         except (FileNotFoundError, ValueError):
-            _atm_marks = {}
+            raw = {}
+        _atm_marks = {}
+        for ticker, entry in (raw or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            if "captured_at" in entry:          # legacy: the mark itself sat here
+                exp = entry.get("expiration")
+                _atm_marks[ticker] = {exp: entry} if exp else {}
+            else:
+                _atm_marks[ticker] = entry
     return _atm_marks
 
 
@@ -3079,7 +3100,8 @@ def record_atm_mark(ticker, strike, bid, ask, spot, expiration, iv):
         # ask on a one-sided one. `basis` says which, so a carried one-sided mark is
         # visible in the store rather than dressed as a midpoint.
         one_sided = not (bid > 0)
-        _load_atm_marks()[ticker] = {
+        marks = _load_atm_marks().setdefault(ticker, {})
+        marks[expiration] = {
             "strike": strike,
             "bid": bid,
             "ask": ask,
@@ -3090,6 +3112,12 @@ def record_atm_mark(ticker, strike, bid, ask, spot, expiration, iv):
             "iv": iv,
             "captured_at": datetime.now(ET).isoformat(),
         }
+        # Expired contracts are dead weight: get_atm_mark is only ever asked for one
+        # today's chain selected, which is always in the future. Without this the file
+        # grows a row per ticker per expiry forever.
+        _today = datetime.now(ET).date().isoformat()
+        for _exp in [e for e in marks if e and e < _today]:
+            del marks[_exp]
         _atm_marks_dirty = True
 
 
@@ -3105,17 +3133,16 @@ def flush_atm_marks():
 
 
 def get_atm_mark(ticker, expiration):
-    """The carried mark, or None when it cannot be trusted.
+    """The carried mark for THIS contract, or None when it cannot be trusted.
 
-    Rejected when it prices a DIFFERENT contract than today's chain selects. On a
-    roll morning the stored expiry no longer clears MIN_DTE_CALENDAR_DAYS, and a
-    shorter tenor carries a smaller premium -- which would quietly reintroduce the
-    understatement this whole block exists to remove."""
+    Marks are keyed by expiration, so asking for a contract we hold no mark for simply
+    misses rather than returning one that prices a different tenor -- a shorter tenor
+    carries a smaller premium, which would quietly reintroduce the understatement the
+    DTE floor exists to remove. That guard used to be an equality test against the one
+    stored mark; the key does it now."""
     with atm_marks_lock:
-        mark = dict(_load_atm_marks().get(ticker) or {})
-    if not mark or mark.get("expiration") != expiration:
-        return None
-    if not mark.get("mid"):
+        mark = dict((_load_atm_marks().get(ticker) or {}).get(expiration) or {})
+    if not mark or not mark.get("mid"):
         return None
     try:
         age = (datetime.now(ET) - datetime.fromisoformat(mark["captured_at"])).days
@@ -3123,6 +3150,102 @@ def get_atm_mark(ticker, expiration):
         return None
     return mark if age <= ATM_MARK_MAX_AGE_DAYS else None
 
+
+
+# A chain the source LISTS but serves no puts for. Kept because stdout is not a record
+# and the question this answers only becomes answerable with time: is the series young
+# and still filling in, or is the feed simply not serving that side? SFIX's 2026-10-16
+# showed 2 calls (OI 2 and 39) and zero puts on 2026-08-28 while all 13 other watchlist
+# names had a complete 10-16 chain -- evidence for a feed artifact, but only watching it
+# settles it, and the roll that makes it matter is 2026-09-11.
+CHAIN_GAPS_FILE = 'chain_gaps.json'
+chain_gaps_lock = threading.Lock()
+_chain_gaps = None
+_chain_gaps_dirty = False
+
+
+def _load_chain_gaps():
+    """Caller must hold chain_gaps_lock."""
+    global _chain_gaps
+    if _chain_gaps is None:
+        try:
+            with open(CHAIN_GAPS_FILE, 'r') as f:
+                _chain_gaps = json.load(f)
+        except (FileNotFoundError, ValueError):
+            _chain_gaps = {}
+    return _chain_gaps
+
+
+def note_put_gap(ticker, expiration, calls_seen):
+    """Record that this expiry was seen listed-but-put-less on this pass.
+
+    Announced once on first sight, then counted silently -- a line per pass would bury
+    the log without adding anything the count does not carry."""
+    global _chain_gaps_dirty
+    with chain_gaps_lock:
+        row = _load_chain_gaps().setdefault(ticker, {}).setdefault(expiration, {})
+        now = datetime.now(ET).isoformat()
+        if not row.get("first_seen_empty"):
+            row.update(first_seen_empty=now, times_seen_empty=0, resolved_at=None)
+            print(f"[OPTIONS] {ticker}: {expiration} is listed but serves no puts - "
+                  f"recording from {now[:10]}.")
+        row["last_seen_empty"] = now
+        row["times_seen_empty"] = row.get("times_seen_empty", 0) + 1
+        row["calls_seen"] = calls_seen
+        _chain_gaps_dirty = True
+
+
+def note_put_gap_cleared(ticker, expiration, puts_seen):
+    """The other half: a gap that FILLS IN is stamped rather than silently vanishing,
+    so "it resolved on the 3rd" stays as recoverable as "it never did"."""
+    global _chain_gaps_dirty
+    with chain_gaps_lock:
+        row = (_load_chain_gaps().get(ticker) or {}).get(expiration)
+        if not row or row.get("resolved_at"):
+            return
+        row["resolved_at"] = datetime.now(ET).isoformat()
+        row["puts_on_resolve"] = puts_seen
+        _chain_gaps_dirty = True
+        print(f"[OPTIONS] {ticker}: {expiration} now serves {puts_seen} puts - gap "
+              f"cleared after {row.get('times_seen_empty')} empty checks since "
+              f"{str(row.get('first_seen_empty'))[:10]}.")
+
+
+def flush_chain_gaps():
+    """One write per fetch_loop pass, like the ATM marks."""
+    global _chain_gaps_dirty
+    with chain_gaps_lock:
+        if not _chain_gaps_dirty:
+            return
+        with open(CHAIN_GAPS_FILE, 'w') as f:
+            json.dump(_chain_gaps, f, indent=2)
+        _chain_gaps_dirty = False
+
+
+def _first_put_chain(stock, candidates, current_price, ticker_symbol=""):
+    """The first expiration in `candidates` that actually carries an ATM put.
+
+    A LISTED expiry is not a markable one: SFIX's 2026-10-16 carries 2 calls and zero
+    puts, so the expiry it rolls to on 2026-09-11 has nothing to price. The live
+    selection and the roll-ahead seed both need this answer, and they must agree on it
+    -- seeding a contract the live path would never choose is worse than not seeding.
+    Returns (expiration, puts, calls, atm_put), or four Nones if none of the candidates
+    has one."""
+    for cand in candidates[:MAX_EXPIRY_PROBES]:
+        try:
+            chain = stock.option_chain(cand)
+        except Exception as e:
+            print(f"[OPTIONS] {ticker_symbol}: chain {cand} unavailable "
+                  f"({type(e).__name__}: {e}) - trying the next expiration.")
+            continue
+        if chain.puts.empty:
+            note_put_gap(ticker_symbol, cand, len(chain.calls))
+            continue
+        atm = chain.puts.iloc[(chain.puts['strike'] - current_price).abs().argsort()[:1]]
+        if not atm.empty:
+            note_put_gap_cleared(ticker_symbol, cand, len(chain.puts))
+            return cand, chain.puts, chain.calls, atm
+    return None, None, None, None
 
 
 def analyze_options_structure(ticker_symbol, current_price):
@@ -3160,13 +3283,16 @@ def analyze_options_structure(ticker_symbol, current_price):
             return None
 
         # 2. Nearest expiration that clears the DTE floor
-        nearest_exp = valid_exps[0]
-        opt_chain = stock.option_chain(nearest_exp)
-        puts, calls = opt_chain.puts, opt_chain.calls
-
-        # 3. Find the ATM Put and extract its premium price
-        atm_put = puts.iloc[(puts['strike'] - current_price).abs().argsort()[:1]]
-        if atm_put.empty: 
+        # The first expiration past the DTE floor that actually has a put chain --
+        # `valid_exps[0]` alone assumed every listed expiry carries puts, which is the
+        # same "forward to the next month" rule the floor already applies, just
+        # continued until it lands somewhere real. For every normal name the first
+        # candidate has puts and nothing changes.
+        nearest_exp, puts, calls, atm_put = _first_put_chain(
+            stock, valid_exps, current_price, ticker_symbol)
+        if atm_put is None:
+            print(f"[OPTIONS] {ticker_symbol}: no put chain on any of "
+                  f"{valid_exps[:MAX_EXPIRY_PROBES]} - 1-sigma suppressed this pass.")
             return None
 
         bid = float(atm_put['bid'].values[0]) if 'bid' in atm_put.columns else 0
@@ -3179,62 +3305,75 @@ def analyze_options_structure(ticker_symbol, current_price):
         # 0.00/0.15 -- an open book with no bidder, not a dead one. A midpoint of 0.075
         # is halfway between a price and nothing; it understates the only real quote by
         # half. The ask is the actual price of protection -- transactable, which 0.075
-        # is not -- and errs HIGH on the threshold, the safe direction. An ask under
-        # ATM_MIN_ONE_SIDED_ASK with no bid is uninformative and still gets no mark.
-        # `bid > 0 and ask > 0` used to be the whole test; it could not tell a one-sided
-        # book from the 0.00/0.00 that every contract shows pre-market.
-        if ask > 0 and (bid > 0 or ask >= ATM_MIN_ONE_SIDED_ASK):
+        # is not -- and errs HIGH on the threshold, the safe direction.
+        #
+        # ANY non-zero ask is that quote (user, 2026-08-28). A 0.10 minimum used to sit
+        # here on the theory that less was "one tick of noise on an illiquid strike";
+        # it cost SFIX its mark for seven straight days while the 2.5 put was asking
+        # 0.05 and buyable at 0.05 the whole time. There is no threshold below which a
+        # live offer stops being a price. What the floor was really guarding against --
+        # a small premium making a small bound that fires on noise -- is
+        # MIN_ABSOLUTE_TRIGGER_PCT's job and it already dominates: 0.05 on a $3.14
+        # stock is a 1.59% bound, under the 2% floor, so the effective trigger is 2%.
+        # `ask > 0` still rejects the 0.00/0.00 every contract shows pre-market, which
+        # is the one thing `bid > 0 and ask > 0` could never distinguish.
+        if ask > 0:
             atm_put_price = (bid + ask) / 2 if bid > 0 else ask
             em_source, em_asof = "live", None
             # Only a REGULAR-session book is worth carrying. A pre-market quote, on
             # the rare name that shows one, is thin enough to be worse than the mark
             # it would overwrite.
             if market_state() == "open":
-                # RECORD AGAINST THE CONTRACT TOMORROW WILL SELECT, not today's. The
-                # DTE floor walks forward one day every morning, so on a name with
-                # daily/MWF expirations the contract that clears 7 DTE today (TSLA: the
-                # 26th) is NOT the one that clears it tomorrow (the 28th). 2026-08-19
-                # 09:11: five carried marks -- TSLA, AMD, MU, INTC, GOOGL, the most
-                # liquid names on the board -- were rejected by the expiration guard
-                # for exactly this, every one a good mark taken at 15:59 against a
-                # contract tomorrow's floor no longer admits.
+                # RECORD TODAY'S CONTRACT, ALWAYS -- it is the one the live trigger
+                # just fired on. This used to be a choice rather than a given (`if
+                # tomorrow == today: record today ... elif tomorrow: record tomorrow`),
+                # so on a roll-eve pass today's mark was skipped in favour of the next
+                # one. Per-contract storage means both are held and neither loses.
+                record_atm_mark(ticker_symbol, atm_strike, bid, ask,
+                                current_price, nearest_exp, atm_iv)
+
+                # SEED THE CONTRACT THAT TAKES OVER AT THE ROLL. The DTE floor walks
+                # forward a day every morning, so today's chain eventually falls inside
+                # it -- and on that morning a mark against the old expiry is worthless
+                # (get_atm_mark is asked for the NEW contract and misses). If no mark
+                # for the replacement was banked first, the name goes dark until its
+                # book quotes again, which on a thin name can be days.
                 #
-                # The user's 7-DTE gate is a RULE, so the mark is taken against the
-                # contract that will satisfy it tomorrow rather than the guard being
-                # loosened to a tolerance (which would let a 6-DTE contract in by the
-                # back door). Projecting the cutoff ONE CALENDAR DAY forward picks the
-                # same contract the real next trading day will, weekends included --
-                # verified across 31 tickers x 30 days (930 pairs, 0 disagreements); no
-                # chain on the board expires Sat/Sun/Mon, so Fri+1 and Mon agree. No
-                # holiday calendar needed, and ATM_MARK_MAX_AGE_DAYS already covers the
-                # age side of a holiday gap.
+                # Looking ATM_MARK_LOOKAHEAD_DAYS ahead rather than one day is what
+                # makes that robust: ANY quote in the run-up to the roll seeds it, not
+                # only a quote on the single boundary morning. That is precisely what a
+                # name that quotes intermittently needs -- SFIX rolls 2026-09-18 ->
+                # 2026-10-16 on 2026-09-11 and does not quote every day.
                 #
-                # The LIVE trigger above still uses today's contract -- that is the
-                # right one to fire on today. Only the carried mark looks ahead. One
-                # extra option_chain() call per ticker per pass on the days the two
-                # differ (~0.2s); on the days they agree it is the same chain.
-                _tomorrow_cut = (datetime.today() + timedelta(days=MIN_DTE_CALENDAR_DAYS + 1)
-                                 ).strftime('%Y-%m-%d')
-                _tomorrow_exp = next((e for e in expirations if e > _tomorrow_cut), None)
-                if _tomorrow_exp == nearest_exp:
-                    record_atm_mark(ticker_symbol, atm_strike, bid, ask,
-                                    current_price, nearest_exp, atm_iv)
-                elif _tomorrow_exp:
+                # Pulled only when no usable mark for that contract is already held, so
+                # the cost is one extra option_chain() per ticker per contract (~0.2s),
+                # not one per pass.
+                _next_cut = (datetime.today() + timedelta(
+                    days=MIN_DTE_CALENDAR_DAYS + ATM_MARK_LOOKAHEAD_DAYS)
+                             ).strftime('%Y-%m-%d')
+                _next_cands = [e for e in expirations if e > _next_cut]
+                # Held already? Ask about every candidate, not just the first: on a
+                # thin name the first is sometimes the put-less one we step over, and
+                # checking only that would re-pull the chain on every single pass.
+                _seeded = any(get_atm_mark(ticker_symbol, e)
+                              for e in _next_cands[:MAX_EXPIRY_PROBES])
+                if _next_cands and _next_cands[0] != nearest_exp and not _seeded:
                     try:
-                        _tp = stock.option_chain(_tomorrow_exp).puts
-                        _tr = _tp.iloc[(_tp['strike'] - current_price).abs().argsort()[:1]]
-                        _tb = float(_tr['bid'].values[0]) if 'bid' in _tr.columns else 0
-                        _ta = float(_tr['ask'].values[0]) if 'ask' in _tr.columns else 0
-                        if _ta > 0 and (_tb > 0 or _ta >= ATM_MIN_ONE_SIDED_ASK):
-                            record_atm_mark(
-                                ticker_symbol, round(float(_tr['strike'].values[0]), 2),
-                                _tb, _ta, current_price, _tomorrow_exp,
-                                round(float(_tr['impliedVolatility'].values[0]) * 100, 2))
+                        _ne, _, _, _na = _first_put_chain(
+                            stock, _next_cands, current_price, ticker_symbol)
+                        if _na is not None:
+                            _tb = float(_na['bid'].values[0]) if 'bid' in _na.columns else 0
+                            _ta = float(_na['ask'].values[0]) if 'ask' in _na.columns else 0
+                            if _ta > 0:
+                                record_atm_mark(
+                                    ticker_symbol, round(float(_na['strike'].values[0]), 2),
+                                    _tb, _ta, current_price, _ne,
+                                    round(float(_na['impliedVolatility'].values[0]) * 100, 2))
                     except Exception as _e:
                         # The look-ahead is a bonus on today's pass; never let it cost
-                        # the live trigger. Today's mark simply is not refreshed.
-                        print(f"[OPTIONS] {ticker_symbol}: look-ahead mark for "
-                              f"{_tomorrow_exp} skipped ({type(_e).__name__}: {_e})")
+                        # the live trigger. The next contract is seeded on a later one.
+                        print(f"[OPTIONS] {ticker_symbol}: look-ahead mark "
+                              f"skipped ({type(_e).__name__}: {_e})")
         else:
             # No book. Carry the prior session's mark or suppress; lastPrice is not
             # a third option (see the ATM-mark block above).
@@ -3858,6 +3997,7 @@ def fetch_loop(test_mode=False):
         # file when the loop stops at 16:00 is the last live book of the day, which
         # is exactly what the next pre-market carries.
         flush_atm_marks()
+        flush_chain_gaps()
 
         # Mark this :15/:45 window done so the volume sweep fires once per window.
         if run_volume:

@@ -15,3 +15,7 @@ impulse_AMD_latest.html
 relief3d_AMD_latest.html
 debug_avex.py
 stoplight_snapshots.db.*
+
+# Source data for gen_us_map.py. Committed against the *.json rule above so the
+# map asset can be rebuilt from a clean checkout without a network call.
+!usa.topo.json

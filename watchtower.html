@@ -746,6 +746,15 @@
         max-width:240px; line-height:1.3; }
     .ab-ledger .sl { font-size:9px; color:#64748b; white-space:nowrap; overflow:hidden;
         text-overflow:ellipsis; max-width:240px; line-height:1.3; }
+    /* The exclusion REASON is prose, not a subtitle: it was borrowing `.sl` (9px,
+       #64748b, nowrap+ellipsis) and read as unreadable grey mush. Secondary ink at
+       reading size, wrapping, with room. It stays INK rather than taking a hue on
+       purpose -- red/yellow/green mean the light on this board and indigo/pink/cyan
+       now mean the instrument, so a coloured sentence here would claim to encode
+       something it does not. */
+    .ab-ledger .ab-why { display:block; font-family:'Inter',system-ui,sans-serif;
+        font-size:11.5px; line-height:1.5; color:#94a3b8; white-space:normal;
+        max-width:360px; }
     .tier { font-size:8.5px; letter-spacing:.08em; text-transform:uppercase;
         padding:1px 5px; border-radius:3px; white-space:nowrap; }
     .tier.p { color:#e0b155; background:rgba(224,177,85,.12); border:1px solid rgba(224,177,85,.32); }
@@ -840,6 +849,14 @@
     .ab-sources .rk { width:20px; }
     .ab-src-a { color:#818cf8; font-size:10px; text-decoration:none; border-bottom:1px solid rgba(129,140,248,.4); }
     .ab-src-a:hover { color:#a5b4fc; }
+    /* Map legend. Same shape as the chart legend already in this file (swatch + label)
+       so the panel keeps one legend language; it exists because identity may never be
+       colour alone, and it doubles as the per-branch count. */
+    .ab-maplegend { display:flex; flex-wrap:wrap; gap:6px 16px; padding:0 13px 10px;
+        font-size:10.5px; color:#94a3b8; }
+    .ab-maplegend span { display:inline-flex; align-items:center; gap:6px; }
+    .ab-maplegend i { width:9px; height:9px; border-radius:2px; flex:none; }
+    .ab-maplegend b { color:#e2e8f0; font-family:ui-monospace,monospace; font-weight:400; }
     .ab-srcfoot { padding:9px 12px 11px; font-size:10.5px; line-height:1.55; color:#64748b;
         border-top:1px solid #1e293b; }
     .ab-srcfoot b { color:#94a3b8; font-weight:600; }
@@ -1586,7 +1603,8 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260829f"></script>
+<script src="static/js/us-map.js?v=20260829a"></script>
+<script src="static/js/stoplight.js?v=20260829j"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

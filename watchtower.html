@@ -728,6 +728,17 @@
         font-variant-numeric:tabular-nums; text-align:right; color:#e2e8f0; }
     .ab-ledger tbody td.l { text-align:left; }
     .ab-ledger tbody tr:hover { background:rgba(148,163,184,.05); }
+    /* Group and total rows — silicon payback's ledger is two halves of one sum rather
+       than one ranked list, so it needs a band naming each half and a line closing it.
+       Styled off the thead so the three tiers read as header / group / row. */
+    .ab-ledger tbody tr.grp td { background:rgba(148,163,184,.05); color:#64748b;
+        font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.08em;
+        text-transform:uppercase; padding:5px 10px; }
+    .ab-ledger tbody tr.grp:hover td { background:rgba(148,163,184,.05); }
+    .ab-ledger tbody tr.sum td { color:#e2e8f0; border-bottom:1px solid #334155; }
+    /* The operator in a build step (x4, / 0.73) is what the row DID, so it leads the
+       label in the accent the link mark already uses for structure. */
+    .ab-ledger .op { color:#818cf8; font-family:ui-monospace,monospace; margin-right:7px; }
     .ab-ledger .rk { color:#64748b; font-size:11px; width:24px; }
     .ab-ledger .mdl { display:flex; flex-direction:column; min-width:0; }
     .ab-ledger .nm2 { font-family:'Inter',system-ui,sans-serif; font-size:12px; color:#e2e8f0;
@@ -761,6 +772,68 @@
        they belong to and drove the two lenses apart (user, 2026-08-21). Sized to their
        own content the pair stays tight and adjacent at any width, and the slack lands
        to the RIGHT of both rather than inside each. */
+    /* The fraction drawn to area. Capped and centred rather than stretched: the pies are
+       sized against EACH OTHER, so letting the svg grow with the pane would scale both
+       and buy nothing but a bigger picture of the same relationship. */
+    /* The fraction drawn to area, and the lead element of this factor's panel. Given the
+       pane's width rather than a fixed box, because the two circles are sized against
+       EACH OTHER: scaling the pair up keeps the relationship and simply makes it easier
+       to read. */
+    /* The reading top-LEFT, the pies to its right. align-items:flex-start is what puts
+       the hero at the TOP of the band rather than floating in its middle; it wraps above
+       the pies when the pane is too narrow to hold both, which keeps the reading first
+       either way. */
+    /* flex-START, not centre: centring the pair left a margin of slack to the hero's left
+       and pushed the reading into the middle of the pane. Anchored left it lines up with
+       the substrip and the lists below it, which is the column the eye is already on. */
+    .ab-pies { padding:14px 12px 4px; display:flex; align-items:flex-start;
+        justify-content:flex-start; gap:18px; flex-wrap:wrap; }
+    .ab-pies svg { flex:1 1 260px; min-width:0; max-width:430px; height:auto; }
+    .ab-hero { flex:0 0 auto; padding-top:8px; display:flex; flex-direction:column;
+        gap:3px; }
+    .ab-hero .k { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.14em;
+        text-transform:uppercase; color:#64748b; }
+    /* Inter, not the panel's mono, and NOT tabular-nums: at 50px, digits given the width
+       of a zero read loose. Proportional figures are the rule for a standalone value. */
+    .ab-hero .v { font-family:'Inter',system-ui,sans-serif; font-size:50px; font-weight:600;
+        line-height:1; letter-spacing:-.025em; font-variant-numeric:proportional-nums; }
+    .ab-hero .s { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.06em;
+        text-transform:uppercase; color:#94a3b8; margin-top:2px; }
+    .ab-hero .r { font-family:ui-monospace,monospace; font-size:9px; color:#64748b; }
+    .ab-pie-c { fill:#94a3b8; font-family:ui-monospace,monospace; font-size:8.5px;
+        letter-spacing:.06em; text-transform:uppercase; text-anchor:middle; }
+    .ab-pie-v { fill:#e2e8f0; font-family:ui-monospace,monospace; font-size:12px;
+        text-anchor:middle; }
+    .ab-pie-op { fill:#64748b; font-family:ui-monospace,monospace; font-size:22px;
+        text-anchor:middle; }
+    /* Slice labels sit ON the mark, so they take a light ink that holds over every hue in
+       the set rather than the hue's own colour. */
+    .ab-pie-in { fill:#f8fafc; font-family:ui-monospace,monospace; font-size:10.5px;
+        font-weight:600; text-anchor:middle; }
+    .ab-pie-out { fill:#94a3b8; font-family:ui-monospace,monospace; font-size:9.5px; }
+    .ab-pie-lead { stroke:#475569; stroke-width:1; }
+    /* The swatch is what keeps identity off colour ALONE: it ties a legend row to its
+       slice, so the row still reads if the hues do not separate for you. */
+    .ab-sw { width:8px; height:8px; border-radius:2px; flex:none; display:inline-block; }
+    .ab-sw-h { background:repeating-linear-gradient(45deg,#8b98a8 0 1.5px,transparent 1.5px 4px);
+        border:1px solid rgba(139,152,168,.5); }
+    .ab-sources .pulled { font-family:ui-monospace,monospace; font-size:10px; color:#94a3b8;
+        white-space:nowrap; }
+    .ab-sources .pulled .age { color:#64748b; }
+    .ab-sources .rk { width:20px; }
+    .ab-src-a { color:#818cf8; font-size:10px; text-decoration:none; border-bottom:1px solid rgba(129,140,248,.4); }
+    .ab-src-a:hover { color:#a5b4fc; }
+    .ab-srcfoot { padding:9px 12px 11px; font-size:10.5px; line-height:1.55; color:#64748b;
+        border-top:1px solid #1e293b; }
+    .ab-srcfoot b { color:#94a3b8; font-weight:600; }
+    /* Method, moved in from the footnotes. Styled as the footnote column it came from —
+       same eyebrow, same measure — so it reads as the deep-dive prose it has always been
+       rather than as a new kind of box. */
+    .ab-srcmethod { padding:2px 12px 14px; max-width:74ch; }
+    .ab-srcmethod .k { display:block; font-family:ui-monospace,monospace; font-size:9px;
+        letter-spacing:.12em; text-transform:uppercase; color:#64748b; margin-bottom:5px; }
+    .ab-srcmethod .b { font-size:11.5px; line-height:1.62; color:#94a3b8; }
+    .ab-srcmethod .b b { color:#e2e8f0; font-weight:600; }
     .ab-lenses { display:grid; justify-content:start; flex:1; min-width:0;
                  grid-template-columns:repeat(2, minmax(0, max-content)); }
     .ab-lens { min-width:0; display:flex; flex-direction:column; }
@@ -814,6 +887,12 @@
        (user, 2026-08-21). The deep steel stays on the fills. */
     .ab-lens.money .fig b { color:#e0b155; font-weight:600; }
     .ab-lens.vol .fig b { color:#93aecb; font-weight:600; }
+    /* ...but NOT where the list is legending a pie. premium_share's two lenses are the
+       money side and the volume side, and the gold/steel on their figures IS the
+       encoding. Silicon payback's lists legend four per-company hues instead, so a gold
+       figure beside a blue swatch would be a second colour language contradicting the
+       first: here the swatch carries identity and the number wears text ink. */
+    .ab-sides .ab-lens .fig b { color:#e2e8f0; }
     .ab-lrow .fig b { display:inline-block; min-width:53px; text-align:right; }
     .ab-overlapbar { padding:6px 13px; border-top:1px solid #1e293b; font-size:11.5px;
         color:#94a3b8; background:rgba(21,33,54,.7); }
@@ -1490,7 +1569,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260827a"></script>
+<script src="static/js/stoplight.js?v=20260828b"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

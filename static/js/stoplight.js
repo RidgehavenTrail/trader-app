@@ -140,14 +140,19 @@
     // stays until another entity is selected — no close button, matching dd/nd.
     function openBubbleDetail(factorId) {
         _abFactor = factorId || null;
-        _abHist = null; _abDay = 0;         // never show the PREVIOUS factor's rail
+        // Never show the PREVIOUS factor's rail — or its LEDGER. The ledger reset used
+        // to happen below, AFTER the immediate paint, which was invisible while
+        // premium_share was the only factor holding one: the stale value was always
+        // either null or its own. With a second ledger factor the first paint reads the
+        // outgoing factor's days through the incoming factor's vocabulary, and a
+        // silicon payback day has no `share` to quote. Cleared before anything renders.
+        _abHist = null; _abDay = 0; _abLedger = null; _abView = null;
         showOnlyPanel('ai-bubble-dive');    // shared list in core.js — see DETAIL_PANELS
         renderBubbleHead();                 // title header: identity line only
         renderBubbleSubhead();              // band below it: the factor's About box
         switchBubbleTab('overview');
         renderBubbleOverview();             // paints immediately off the board row...
         if (_abFactor) {                    // ...then again with the rail + the ledger
-            _abLedger = null; _abView = null;
             loadFactorHistory(_abFactor);
             loadFactorLedger(_abFactor);
         }
@@ -192,6 +197,38 @@
             method: 'Revenue = tokens × the <b>80/20</b> in/out blend of listed prices. ' +
                     'Premium = output ≥ <b>50×</b> the day’s commodity floor, re-read every ' +
                     'pull, so price deflation cannot sweep models across the line.'
+        },
+        silicon_payback: {
+            measures: 'AI services revenue / industry GPU spend — can the silicon pay for itself?',
+            // Deliberately says nothing about which way the ratio is currently moving.
+            // A direction written into a static definition goes stale the first print
+            // that contradicts it, and the sparkline and the Two-sides bar both compute
+            // the live one — so this says what to WATCH and lets them say what happened.
+            why: 'Tests whether the demand is real. If what the market pays for AI can cover ' +
+                 'the chips bought to serve it, the spending has something underneath it. Watch ' +
+                 'the direction more than the level — a build-out earns less than it costs at ' +
+                 'the start, so what matters is whether that gap is closing.',
+            bands: [
+                { light: 'green',  range: '< 0.20',      mean: 'spend unrecovered' },
+                { light: 'yellow', range: '0.20 – 0.50', mean: 'partial recovery' },
+                { light: 'red',    range: '> 0.50',      mean: 'chips self-funding' }
+            ],
+            edges: [0.2, 0.5],
+            // No glyph pair: this factor has no second series to agree or disagree with the
+            // way premium_share's token share does, and a glyph key here would promise a
+            // mark the board never draws.
+            method: 'Numerator = OpenAI + Anthropic + Copilot + Gemini — <b>services, not ' +
+                    'rails</b> (AMZN excluded; it sells rails). Denominator = NVDA data-centre ' +
+                    'revenue <b>×4</b> for a run rate, never TTM, <b>/ 0.73</b> for NVIDIA’s share ' +
+                    'of the market. Custom silicon (TPU, Trainium, MTIA) is never counted ' +
+                    'directly — nothing here measures it. It enters only through that ' +
+                    '<b>0.73</b>, which is NVIDIA’s share of a market defined to include it, so ' +
+                    'the rest of the market is <b>implied by grossing up, not added up</b>. ' +
+                    '<b>Silicon only</b> — power, shells and ' +
+                    'networking sit on top, so red means “chips pay for themselves,” not ' +
+                    '“healthy.” And it is a <b>floor</b>: third-party consumption on Azure ' +
+                    'OpenAI / Bedrock / Vertex is real demand this cannot see, so the error runs ' +
+                    'toward less-green.'
         }
     };
 
@@ -371,7 +408,9 @@
             const j = await r.json();
             if (_abFactor !== fid) return;          // a later click won the race
             _abLedger = (j && j.has_ledger) ? j : null;
-            if (_abLedger && !_abView) _abView = 'ledger';
+            // No default set here any more: 'ledger' is premium_share's first view, not
+            // every factor's, and abFeaturedHTML already falls back to whichever view
+            // the factor lists first.
         } catch (e) { console.error('factor ledger failed', e); _abLedger = null; }
         if (_abFactor === fid) renderBubbleOverview();
     }
@@ -494,6 +533,10 @@
         return '$' + Math.round(v);
     }
 
+    // Figures that ARRIVE in billions stay in billions: abUSD compacts raw dollars, and
+    // pushing $487.7B through it loses the tenth the denominator is quoted to.
+    function abB(v) { return v == null ? '—' : '$' + Number(v).toFixed(1) + 'B'; }
+
     // LEDGER — the full priced table for one day: who earned what, at what price, on
     // which side of the premium line. This is the view that shows the light being
     // computed rather than asserted.
@@ -570,6 +613,354 @@
             `${then}</div>`;
     }
 
+    // THE FRACTION, DRAWN. Two pies whose AREAS are the two sides, so the reading is the
+    // picture rather than a caption on it: radius scales as sqrt(value), which makes the
+    // small pie's area exactly the ratio of the big one's. At 0.25 that is a half-radius
+    // circle, and "a quarter of the spend is covered" is legible before a number is read.
+    //
+    // Area is a weak channel for judging exact magnitude, so every slice carries its own
+    // percentage and the summary lists below repeat the dollars. The pies carry the SHAPE
+    // of the answer; the digits carry its precision.
+    //
+    // COLOUR, AND WHY THE TWO SIDES ARE COLOURED DIFFERENTLY. Hue is doing a job on the
+    // left and no job at all on the right, so it is spent on the left only:
+    //   * the numerator is FOUR DIFFERENT COMPANIES -- identity, which is what
+    //     categorical colour is for. These four steps validate as a set against this
+    //     panel's own surface (#0f172a), all pairs, worst normal-vision dE 19.3 against a
+    //     floor of 15. The worst CVD pair (yellow/green, dE 6.9) sits in the band that is
+    //     legal ONLY with secondary encoding -- hence the per-slice labels, the 2px
+    //     surface gaps between slices, and the swatched legend below. Do not drop those.
+    //   * the denominator has NO identities to separate: it is one measured quantity and
+    //     one remainder the share implies. That is a difference of EPISTEMIC STATUS, and
+    //     texture encodes it honestly where a second hue would invent a second entity.
+    //     It stays in the board's silicon steel, one step brighter for contrast.
+    // A fifth saturated hue was tried and abandoned: no step in the palette clears the
+    // normal-vision floor against all four numerator hues (orange collides with yellow at
+    // 10.6, violet with blue at 9.8, aqua with green at 11.9). Faceting -- two separate
+    // circles, separately captioned -- is the sanctioned answer, and is what this is.
+    // The hues are the USER'S, chosen by brand association (2026-08-28): OpenAI slate,
+    // Anthropic burnt orange, Copilot pink, Gemini iceberg blue, NVIDIA its own green.
+    // Each was STEPPED -- not replaced -- until the set separated: the first cut of slate
+    // and iceberg blue were both blue-greys and failed at dE 5.7 normal-vision against a
+    // floor of 15, so the slate went deeper and the ice went paler until the pair sat
+    // apart on LIGHTNESS, the sturdiest channel there is. As shipped the set clears both
+    // separation gates on this panel's surface, all pairs: normal-vision worst 17.3, CVD
+    // worst 9.8. It sits outside the reference palette's lightness band and chroma floor,
+    // which is what asking for a slate and an ice-blue MEANS -- low chroma is the colour,
+    // not a defect -- and contrast against the surface passes on every one.
+    //
+    // (Briefly reverted to the board's own validated four on 2026-08-28 and put straight
+    // back: that revert was a misread of a request to recover an earlier VIEW, not a
+    // request to change colour. The set it fell back to, if ever wanted, was
+    // ['#3987e5', '#008300', '#c98500', '#d55181'] + steel '#7d94b0'.)
+    const AB_PIE_HUES = ['#6b7f94', '#c4623c', '#f28fb8', '#a8dced'];  // fixed per entity
+    const AB_PIE_NVDA = '#76b900';       // NVIDIA's own green
+    // The remainder is nobody's colour. It is the one thing on the panel that no source
+    // published, so it wears no company hue and no solid fill at all -- a neutral hatch,
+    // which is also the only textured mark on the board and therefore unmistakable.
+    const AB_PIE_GHOST = '#8b98a8';
+    const AB_PIE_SURFACE = '#0f172a';    // the 2px gap between slices IS the surface
+
+    // Label ink per slice, by measured contrast rather than a lightness guess: NVIDIA's
+    // green and the iceberg blue both take DARK text, the slate takes light, and picking
+    // one ink for all of them would lose a label on some slice whichever way it went.
+    function abInkOn(hex) {
+        const c = [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16) / 255)
+            .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+        const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+        return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#0b1220' : '#f8fafc';
+    }
+
+    // One pie, labelled. Slices start at twelve o'clock and run clockwise. A lone 100%
+    // slice is drawn as a CIRCLE: a 360 degree arc has identical start and end points and
+    // collapses to nothing, which is the classic way a pie renderer draws an empty pane.
+    function abPie(cx, cy, r, slices, total) {
+        if (!total) return '';
+        let a0 = -Math.PI / 2, arcs = '', labels = '';
+        const out = [];               // slices too thin to hold their own label
+        slices.forEach(function (s) {
+            const frac = s.value / total, a1 = a0 + frac * Math.PI * 2;
+            const P = a => (cx + r * Math.cos(a)).toFixed(2) + ',' + (cy + r * Math.sin(a)).toFixed(2);
+            arcs += slices.length === 1
+                ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.fill}"${s.extra || ''}>` +
+                  `<title>${esc(s.title)}</title></circle>`
+                : `<path d="M${cx},${cy} L${P(a0)} A${r},${r} 0 ${(a1 - a0) > Math.PI ? 1 : 0},1 ${P(a1)} Z" ` +
+                  `fill="${s.fill}" stroke="${AB_PIE_SURFACE}" stroke-width="2"${s.extra || ''}>` +
+                  `<title>${esc(s.title)}</title></path>`;
+            // A label goes INSIDE only while the slice can actually HOLD it. Measured,
+            // not guessed at a percentage threshold: the arc the label would sit on is
+            // frac x 2*pi*r*0.62, and a "10%" glyph run is about 18px wide. A fixed
+            // "inside above 10%" rule spills the label across its own slice edge on the
+            // smaller pie and holds it comfortably on the larger one -- the same
+            // percentage is a different amount of room in each circle.
+            const mid = (a0 + a1) / 2, pct = Math.round(frac * 100);
+            const txt = frac * 100 < 1 ? '<1%' : pct + '%';
+            if (frac * 2 * Math.PI * r * 0.62 >= txt.length * 6.2 + 6) {
+                labels += `<text x="${(cx + r * 0.62 * Math.cos(mid)).toFixed(1)}" ` +
+                          `y="${(cy + r * 0.62 * Math.sin(mid) + 3.5).toFixed(1)}" ` +
+                          `class="ab-pie-in" fill="${abInkOn(s.ink || s.fill)}">${txt}</text>`;
+            } else if (frac > 0) {
+                // Parked for a de-collision pass: two thin slices next to each other put
+                // their leaders within a few px of one another, and the labels that exist
+                // precisely to identify the smallest slices are the ones that would end
+                // up on top of each other.
+                out.push({ mid: mid, txt: txt, y: cy + (r + 13) * Math.sin(mid),
+                           right: Math.cos(mid) >= 0 });
+            }
+            a0 = a1;
+        });
+        // Push stacked outside labels apart along Y, in place, keeping their order. The
+        // leader still starts on the slice's own edge, so a nudged label stays visibly
+        // tied to the wedge it names.
+        ['left', 'right'].forEach(function (side) {
+            const col = out.filter(o => (side === 'right') === o.right).sort((a, b) => a.y - b.y);
+            for (let i = 1; i < col.length; i++) {
+                if (col[i].y - col[i - 1].y < 12) col[i].y = col[i - 1].y + 12;
+            }
+        });
+        out.forEach(function (o) {
+            const x1 = cx + (r + 3) * Math.cos(o.mid), y1 = cy + (r + 3) * Math.sin(o.mid);
+            const x2 = cx + (r + 13) * Math.cos(o.mid);
+            labels += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" ` +
+                      `y2="${o.y.toFixed(1)}" class="ab-pie-lead"/>` +
+                      `<text x="${(x2 + (o.right ? 3 : -3)).toFixed(1)}" y="${(o.y + 3).toFixed(1)}" ` +
+                      `class="ab-pie-out" text-anchor="${o.right ? 'start' : 'end'}">${o.txt}</text>`;
+        });
+        return arcs + labels;
+    }
+
+    function abFractionPieSVG(day) {
+        const parts = day.num_parts || [];
+        // The denominator is NOT a sum of measured parts -- it is NVIDIA's own run rate
+        // grossed up by its share, so the only honest two slices are the measured one and
+        // the remainder that grossing up IMPLIES. Derived here from fields every recorded
+        // row already carries, so it draws for periods captured before this view existed.
+        const nvda = (day.dc_qtr_b || 0) * 4;
+        const rest = Math.max(0, (day.den_b || 0) - nvda);
+        if (!parts.length || !day.den_b) return '';
+
+        const R = 62, r = R * Math.sqrt((day.num_b || 0) / day.den_b);
+        const W = 340, H = 196, cy = 84, cx1 = 86, cx2 = 254;
+        const numSlices = parts.map((m, i) => ({
+            value: m.value_b, fill: AB_PIE_HUES[i % AB_PIE_HUES.length],
+            title: `${m.name} - ${abB(m.value_b)} (${m.share.toFixed(1)}%)`
+        }));
+        const denSlices = [
+            { value: nvda, fill: AB_PIE_NVDA,
+              title: `NVIDIA - ${abB(nvda)} (${Math.round((day.accel_share || 0) * 100)}%), measured` },
+            // `ink` because the fill is a pattern, and a pattern reference cannot be
+            // measured for contrast -- the hatch's own colour is what the label sits over.
+            { value: rest, fill: 'url(#abHatch)', ink: AB_PIE_GHOST,
+              title: `Everyone else - ${abB(rest)}, implied by the share, not measured` }
+        ].filter(s => s.value > 0);
+
+        const cap = (x, t, v) =>
+            `<text x="${x}" y="${cy + R + 26}" class="ab-pie-c">${esc(t)}</text>` +
+            `<text x="${x}" y="${cy + R + 41}" class="ab-pie-v">${esc(v)}</text>`;
+
+        // THE READING, AT READING SIZE. The pies show the SHAPE of the answer and the
+        // lists show its parts, but the one number the panel exists to report was only
+        // ever available at 11px in the substrip. It sits top-right of the band, in the
+        // sans rather than the panel's mono: a hero figure takes proportional digits,
+        // because tabular ones give every digit the width of a zero and read loose at
+        // display size. One per view -- the substrip's copy is a stat-strip entry, not a
+        // second hero competing with this.
+        const band = ((AB_WHY.silicon_payback || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">reading</span>' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.ratio.toFixed(2)}</span>` +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `${band.range ? `<span class="r">band ${esc(band.range)}</span>` : ''}` +
+            '</div>';
+
+        // Hero FIRST in the flow, so it lands upper-LEFT of the band (user, 2026-08-28)
+        // and the eye takes the answer before the arithmetic that produced it.
+        return '<div class="ab-pies">' + hero +
+          `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Services revenue ` +
+          `${abB(day.num_b)} against industry GPU spend ${abB(day.den_b)}, drawn to area: ` +
+          `the smaller circle is ${Math.round((day.ratio || 0) * 100)} percent of the larger">` +
+            '<defs><pattern id="abHatch" width="5" height="5" patternUnits="userSpaceOnUse" ' +
+              'patternTransform="rotate(45)">' +
+              `<rect width="5" height="5" fill="rgba(139,152,168,.16)"/>` +
+              `<line x1="0" y1="0" x2="0" y2="5" stroke="${AB_PIE_GHOST}" stroke-width="1.5"/>` +
+            '</pattern></defs>' +
+            abPie(cx1, cy, r, numSlices, day.num_b) +
+            abPie(cx2, cy, R, denSlices, day.den_b) +
+            `<text x="${(cx1 + cx2) / 2}" y="${cy + 9}" class="ab-pie-op">/</text>` +
+            cap(cx1, 'services revenue', abB(day.num_b)) +
+            cap(cx2, 'industry GPU spend', abB(day.den_b)) +
+          '</svg></div>';
+    }
+
+    // TWO SIDES - the primary view. The pies lead and the lists legend them: every row
+    // carries the swatch of its own slice, so identity is never colour alone and the
+    // dollars sit in text ink rather than wearing the series hue.
+    function abSidesHTML(day, oldest) {
+        const parts = day.num_parts || [];
+        if (!parts.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this period</div>';
+        const row = (sw, name, fig, alt) =>
+            '<div class="ab-lrow">' +
+              (sw ? `<span class="ab-sw" style="background:${sw}"></span>`
+                  : '<span class="ab-sw ab-sw-h"></span>') +
+              `<span class="nm2">${esc(name)}</span>` +
+              `<span class="fig"><b>${fig}</b>` +
+              `${alt ? ` <span class="alt">${esc(alt)}</span>` : ''}</span></div>`;
+        const left = parts.map((m, i) =>
+            row(AB_PIE_HUES[i % AB_PIE_HUES.length], m.name, abB(m.value_b),
+                m.share.toFixed(1) + '%')).join('');
+        const nvda = (day.dc_qtr_b || 0) * 4;
+        const rest = Math.max(0, (day.den_b || 0) - nvda);
+        const pct = x => day.den_b ? (x / day.den_b * 100).toFixed(1) + '%' : '';
+        const right = row(AB_PIE_NVDA, 'NVIDIA', abB(nvda), pct(nvda)) +
+            (rest > 0 ? row(null, 'Everyone else - implied', abB(rest), pct(rest)) : '');
+        // Only against a period the ledger actually holds. On the first print there is
+        // nothing to compare to, and the sentence then says the reading alone rather than
+        // inventing a move.
+        const moved = oldest && oldest.date !== day.date;
+        const dir = !moved ? ''
+            : day.ratio > oldest.ratio ? ' - converging, which cuts against the thesis'
+            : day.ratio < oldest.ratio ? ' - widening, which supports it'
+            : ' - flat';
+        const then = moved
+            ? ` <span class="ago">was <b>${oldest.ratio.toFixed(2)}</b> on ${esc(abMD(oldest.date))}</span>` : '';
+        return abFractionPieSVG(day) +
+            '<div class="ab-lenses ab-sides">' +
+            '<div class="ab-lens money"><div class="lens-hd"><div class="t">What the services earn</div>' +
+              `<div class="s">${parts.length} lines &middot; ${abB(day.num_b)} run rate</div></div>` +
+              left + '</div>' +
+            '<div class="ab-lens vol"><div class="lens-hd"><div class="t">What the silicon cost</div>' +
+              `<div class="s">${esc(day.quarter || 'latest quarter')}</div></div>` + right + '</div>' +
+            '</div>' +
+            `<div class="ab-overlapbar"><b>${Math.round(day.ratio * 100)}&cent;</b> of every dollar of ` +
+            `industry GPU spend is matched by services revenue${dir}.${then}</div>`;
+    }
+
+    // SOURCES - where every input came from and when it was pulled, which is the only way
+    // to judge whether a reading is stale or thin. Six sourced inputs; the x4 and the
+    // division are DERIVATIONS, not sources, and are named at the foot rather than given
+    // rows that would imply somebody published them.
+    function abSourcesHTML(day, method) {
+        const parts = day.num_parts || [], build = day.den_build || [];
+        if (!parts.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this period</div>';
+        const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+        const dc = build[0] || {}, sh = build[build.length - 1] || {};
+        // Age against the DAY, not against today: a period recorded in July should not
+        // look staler every time the panel is opened.
+        const ageOf = d => {
+            if (!d || !day.date) return null;
+            const ms = Date.parse(day.date + 'T00:00:00Z') - Date.parse(d + 'T00:00:00Z');
+            return isNaN(ms) ? null : Math.round(ms / 86400000);
+        };
+        const rows = [].concat(
+            parts.map((m, i) => ({ sw: AB_PIE_HUES[i % AB_PIE_HUES.length], name: m.name,
+                                   val: abB(m.value_b), src: m, side: 'services' })),
+            [{ sw: AB_PIE_NVDA, name: 'NVDA data-centre revenue', val: abB(day.dc_qtr_b),
+               src: dc, side: 'silicon' },
+             { sw: AB_PIE_NVDA, name: 'NVDA share of the market',
+               val: (day.accel_share != null ? day.accel_share.toFixed(2) : '—'),
+               src: sh, side: 'silicon' }]);
+        const body = rows.map(r => {
+            const s = r.src || {};
+            // PUBLISHED is the staleness signal; PULLED only says when we last looked.
+            // Keeping both is the whole point: a pull dated today off a years-old
+            // market-sizing press release looks identical to one off this week's
+            // research if only the pull date is shown.
+            const pAge = ageOf(s.published_at);
+            const pub = s.published_at
+                ? `${esc(s.published_at)}<span class="age">${pAge === null ? '' :
+                    pAge <= 0 ? '' : ' &middot; ' + pAge + 'd old'}</span>`
+                // Muted, not red: the earnings-fed legs pin a named quarter instead and
+                // are not expected to carry one. Red is reserved for a MISSING PULL date,
+                // which is the figure nobody can age-check at all.
+                : '<span class="sl">not stated</span>';
+            const age = ageOf(s.refreshed_at);
+            const when = s.refreshed_at
+                ? `${esc(s.refreshed_at)}<span class="age">${age === null ? '' :
+                    age <= 0 ? ' same day' : ' &middot; ' + age + 'd before'}</span>`
+                : '<span class="ab-fc-err">not recorded</span>';
+            const who = s.source
+                ? esc(s.source)
+                : (s.url ? esc(host(s.url)) : '<span class="ab-fc-err">unattributed</span>');
+            return '<tr>' +
+              `<td class="rk"><span class="ab-sw" style="background:${r.sw}"></span></td>` +
+              `<td class="l"><div class="mdl"><div class="nm2">${esc(r.name)}` +
+                `${s.soft ? '<span class="tier c" style="margin-left:7px">estimated</span>' : ''}</div>` +
+                `<div class="sl">${who}</div></div></td>` +
+              `<td class="l"><div class="revcell"><span class="amt">${r.val}</span></div></td>` +
+              `<td class="l"><span class="pulled">${pub}</span></td>` +
+              `<td class="l"><span class="pulled">${when}</span></td>` +
+              `<td class="l">${s.url ? `<a class="ab-src-a" href="${esc(s.url)}" target="_blank" ` +
+                `rel="noopener noreferrer">open</a>` : '<span class="sl">&mdash;</span>'}</td>` +
+            '</tr>';
+        }).join('');
+        return '<div class="ab-scroller"><table class="ab-ledger ab-sources">' +
+            '<thead><tr><th class="l" colspan="2">Input</th><th class="l">Value</th>' +
+            '<th class="l">Published</th><th class="l">Pulled</th>' +
+            '<th class="l">Link</th></tr></thead>' +
+            `<tbody>${body}</tbody></table>` +
+            // The short note first, because it is about THIS TABLE — it says why two of
+            // the arithmetic's steps have no row. The full method follows it: same
+            // subject, one level out, and the natural place to keep reading.
+            '<div class="ab-srcfoot">The run rate and the gross-up are <b>derivations, not ' +
+            'sources</b>: the quarter above is multiplied by 4 and divided by the share, ' +
+            'so neither has a publisher or a date of its own.</div>' +
+            (method ? `<div class="ab-srcmethod"><span class="k">Method</span>` +
+                      `<div class="b">${method}</div></div>` : '') +
+            '</div>';
+    }
+
+    // THE EVIDENCE VOCABULARY — one entry per factor that keeps a ledger.
+    //
+    // The chrome above this line knows none of it: the rail, the substrip, the sparkline,
+    // the header and the footnotes already run for all 16 factors with no per-factor
+    // code. What a factor's EVIDENCE looks like is per-factor by nature (a premium ledger
+    // is a priced model table; a payback ledger is the arithmetic of a ratio; a
+    // regulatory one would be a case list) and no single renderer serves them — so this
+    // is where a factor's own words live, and adding the next one is filling an entry
+    // here rather than touching the panel.
+    //
+    // `tol` is the only entry that is not display: it is how far a re-derived reading may
+    // sit from the recorded one before the pane says so, and it has to be per-factor
+    // because the units are — 0.05 is a rounding difference on a percentage and most of
+    // a band on a ratio that lives between 0.2 and 0.5.
+    const AB_VIEWS = {
+        premium_share: {
+            views:   [{ key: 'ledger', label: 'Ledger' }, { key: 'lenses', label: 'Two lenses' }],
+            value:   d => d.share,
+            reading: d => d.share.toFixed(1) + '%',
+            light:   d => d.light,
+            tol:     0.05,
+            count:   d => d.n_models + ' models',
+            figures: d => [['comm tokens', d.comm_tok + '%'],
+                           ['prem line', '$' + d.line],
+                           ['est rev', abUSD(d.total_rev)]],
+            render:  (key, day, all) => key === 'lenses'
+                ? abLensesHTML(day, all[all.length - 1]) : abLedgerHTML(day)
+        },
+        silicon_payback: {
+            // Two sides LEADS (user, 2026-08-28): the pies are what this factor is for,
+            // and the first view in the list is the one the panel opens on.
+            views:   [{ key: 'sides', label: 'Two sides' }, { key: 'sources', label: 'Sources' }],
+            // Method rides in the shared FOOTNOTES, under whichever view is open --
+            // reverted 2026-08-28. Claiming it (`method: 'sources'`) moves it inside the
+            // Sources view instead; the mechanism is kept because it works, but the
+            // footnote is where this factor's prose belongs: it is read under the pies
+            // as often as under the table.
+            value:   d => d.ratio,
+            reading: d => d.ratio.toFixed(2),
+            light:   d => d.light,
+            tol:     0.005,
+            count:   d => ((d.num_parts || []).length + 2) + ' inputs',
+            figures: d => [['services', abB(d.num_b)],
+                           ['silicon', abB(d.den_b)],
+                           ['nvda share', Math.round(d.accel_share * 100) + '%']],
+            render:  (key, day, all) => key === 'sources'
+                ? abSourcesHTML(day) : abSidesHTML(day, all[all.length - 1])
+        }
+    };
+
     function abFeaturedHTML(f) {
         // The rail's rows ARE the history; the live board row is only the newest of
         // them. Reading the selected day out of the history (rather than special-casing
@@ -585,7 +976,11 @@
         // snapshot was taken — premium_share's 08-21 snapshot carries asof 08-20. Match
         // on asof so a rail click lands on the ledger row it is actually about.
         const led = (_abLedger && _abLedger.days) || [];
-        const ledDay = led.find(x => x.date === (d.asof || d.date)) || null;
+        // A ledger day is only usable with a vocabulary to read it by (AB_VIEWS). A
+        // factor whose builder grows a ledger() before its entry is written still gets
+        // the generic view rather than a pane of undefineds.
+        const v = AB_VIEWS[f.id] || null;
+        const ledDay = (v && led.find(x => x.date === (d.asof || d.date))) || null;
         // A PAST ledger day is a RECONSTRUCTION, not the record. ledger() re-prices old
         // token volumes with TODAY's price list, and this factor's premium line is a
         // multiple of a floor that deflates fast — so a floor move sweeps whole models
@@ -602,10 +997,10 @@
         // before the ledgers table existed, where the disagreement is all we have.
         const recon = ledDay && (ledDay.basis
             ? ledDay.basis === 'reconstructed'
-            : (d.value != null && Math.abs(ledDay.share - d.value) >= 0.05))
+            : (d.value != null && Math.abs(v.value(ledDay) - d.value) >= v.tol))
             ? d : null;
         const rd = ledDay
-            ? { metric: ledDay.share.toFixed(1) + '%', light: ledDay.light }
+            ? { metric: v.reading(ledDay), light: v.light(ledDay) }
             : d;
         const c = AB_LC[rd.light] || 'y';
         // The SPARK tints by the day's RECORDED light, not the ledger's re-priced one.
@@ -622,10 +1017,13 @@
         // an always-visible switcher over a single view is chrome that promises a
         // second one. `views` is a LIST for the same reason `bands` is: a factor that
         // grows a ledger gets the switcher with no change here.
-        const views = ledDay
-            ? [{ key: 'ledger', label: 'Ledger' }, { key: 'lenses', label: 'Two lenses' }]
-            : [];
-        const view = _abView || (views.length ? views[0].key : null);
+        const views = ledDay ? v.views : [];
+        // _abView is sticky across factors, and the keys are not shared vocabulary —
+        // premium_share has 'lenses', silicon_payback has 'sides'. Validate the sticky
+        // choice against THIS factor's views so switching factors lands on its first
+        // view rather than on a key it has never heard of.
+        const view = (views.some(x => x.key === _abView) ? _abView
+                      : (views[0] || {}).key) || null;
         const vsw = views.length > 1
             ? '<span class="ab-vsw">' + views.map(v =>
                 `<button class="ab-vbtn" aria-pressed="${v.key === view}" ` +
@@ -636,7 +1034,7 @@
             '<div class="ab-ev-hd"><span class="lbl">Evidence</span>' +
             `<span class="meta">${esc(d.date || '')}${today ? '' : ' · historical'}` +
             `${d.asof && d.asof !== d.date ? ' · as of ' + esc(d.asof) : ''}` +
-            `${ledDay ? ' · ' + ledDay.n_models + ' models' : ''}` +
+            `${ledDay ? ' · ' + esc(v.count(ledDay)) : ''}` +
             `${recon ? ' · <span class="ab-recon">re-priced today' +
                        (recon.metric ? ' · recorded ' + esc(recon.metric) : '') +
                        '</span>' : ''}</span>` + vsw + '</div>';
@@ -655,9 +1053,7 @@
         // the line the table's own tiers were cut on, which is the same rule the legend
         // follows: nothing on screen may disagree with the thing it explains.
         const fig = ledDay
-            ? [['comm tokens', ledDay.comm_tok + '%'],
-               ['prem line', '$' + ledDay.line],
-               ['est rev', abUSD(ledDay.total_rev)]]
+            ? v.figures(ledDay)
             : Object.keys(ex)
                 .filter(k => !skip[k] && ex[k] != null && typeof ex[k] !== 'object')
                 .slice(0, 4).map(k => [abHumanKey(k), String(ex[k])]);
@@ -666,7 +1062,7 @@
         // neither series actually shows.
         const ledPrev = ledDay ? led[led.indexOf(ledDay) + 1] : null;
         const prevTx = ledDay
-            ? (ledPrev ? ledPrev.share.toFixed(1) + '%' : '—')
+            ? (ledPrev ? v.reading(ledPrev) : '—')
             : (prior ? (prior.metric || '—') : '—');
         const spark = abSparkSVG(days, sel, sc, (AB_WHY[f.id] || {}).edges);
         const substrip =
@@ -692,9 +1088,7 @@
               '</div></div>'
             : '<div class="ab-ev"><div class="ab-tbd">every figure this reading carried is on ' +
               'the line above</div></div>';
-        const viewHTML = !ledDay ? generic
-            : view === 'lenses' ? abLensesHTML(ledDay, led[led.length - 1])
-            : abLedgerHTML(ledDay);
+        const viewHTML = !ledDay ? generic : v.render(view, ledDay, led);
 
         const body =
             '<div class="ab-evid">' +
@@ -723,7 +1117,12 @@
         const err = f.error
             ? `<div class="ab-fc"><span class="k">Error</span><div class="b ab-fc-err">⚠ ${esc(f.error)}</div></div>`
             : '';
-        const method = w.method
+        // Method normally rides in the footnotes, under whichever view is open. A factor
+        // may CLAIM it instead (`AB_VIEWS[...].method` naming one of its own views), and
+        // then the footnote stands down: silicon payback's belongs beside the inputs it
+        // describes, in Sources, rather than under the pies it does not. The chrome still
+        // knows nothing factor-specific — it asks the vocabulary and does as it is told.
+        const method = (w.method && !(v && v.method))
             ? `<div class="ab-fc"><span class="k">Method</span><div class="b">${w.method}</div></div>`
             : '';
         const foot = '<div class="ab-foot">' + method +

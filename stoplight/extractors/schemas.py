@@ -417,15 +417,32 @@ def validate_nvda_dc(d):
     return True, {"dc_qtr_b": dc, "quarter": q.strip(), "url": d.get("url")}
 
 
+def _pub_date(d):
+    """The source's OWN publication date, or None.
+
+    Kept separate from the pull date because they answer different questions and only
+    one of them was ever recorded: `refreshed_at` says when WE looked, which can read
+    fresh while pointing at a years-old market-sizing press release. Shape-checked
+    rather than trusted — a model asked for a date will happily return prose, or
+    today's date, and either would defeat the point of asking."""
+    v = (d.get("published_at") or "").strip() if isinstance(d.get("published_at"), str) else ""
+    return v[:10] if len(v) >= 10 and v[4] == "-" and v[7] == "-" and \
+        v[:4].isdigit() and v[5:7].isdigit() and v[8:10].isdigit() else None
+
+
 def validate_nvda_share(d):
     """NVIDIA accelerator-share source (SOFT, market research). MUST be the
-    all-accelerator share incl. custom silicon (~0.70-0.75), NOT merchant-GPU
-    (~0.90). Keeps the definition/source for audit."""
+    all-accelerator share incl. custom silicon, NOT merchant-GPU (~0.90) — those are
+    different questions about twenty points apart, which is why the DEFINITION is
+    pinned and the value is not. The band stays wide (0.30-1.00) on purpose: the
+    prompt no longer states an expected range, so the guard must not smuggle one back
+    in. Keeps definition/source/published_at for audit."""
     sh, err = _num(d, "accel_share", 0.3, 1.0)
     if err:
         return False, err
     return True, {"accel_share": sh, "definition": d.get("definition"),
-                  "source": d.get("source"), "url": d.get("url")}
+                  "source": d.get("source"), "url": d.get("url"),
+                  "published_at": _pub_date(d)}
 
 
 def validate_capex_guidance(d):

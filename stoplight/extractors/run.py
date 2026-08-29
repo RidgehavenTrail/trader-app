@@ -275,15 +275,19 @@ _SILICON_SOURCES = [
     {"id": "openai", "field": "value_b", "max_results": 5,
      "system": ("Today is {today}. Report OpenAI's most recent ANNUALIZED revenue "
                 "run-rate in $B (services). Use the web results (The Information, "
-                "Reuters, Bloomberg, Epoch AI). Respond ONLY with JSON: "
-                '{"value_b": float, "source": str, "url": str}.'),
+                "Reuters, Bloomberg, Epoch AI). State published_at — the source's OWN "
+                "publication date (YYYY-MM-DD), not today's; null if it carries none. "
+                "Respond ONLY with JSON: "
+                '{"value_b": float, "source": str, "url": str, "published_at": str}.'),
      "query": "OpenAI annualized revenue run rate latest 2026 The Information Reuters",
      "validate": schemas.make_value_validator(0, 500)},
     {"id": "anthropic", "field": "value_b", "max_results": 5,
      "system": ("Today is {today}. Report Anthropic's most recent ANNUALIZED revenue "
                 "run-rate in $B. Disputed, fast-moving (ranged $9B->$47B in 2026) — "
-                "use the most recent widely-reported figure in the results. Respond "
-                'ONLY with JSON: {"value_b": float, "source": str, "url": str}.'),
+                "use the most recent widely-reported figure in the results. State "
+                "published_at — the source's OWN publication date (YYYY-MM-DD), not "
+                "today's; null if it carries none. Respond ONLY with JSON: "
+                '{"value_b": float, "source": str, "url": str, "published_at": str}.'),
      "query": "Anthropic annualized revenue run rate latest 2026 reported",
      "validate": schemas.make_value_validator(0, 500)},
     {"id": "copilot", "field": None, "max_results": 5,
@@ -338,19 +342,32 @@ _SILICON_SOURCES = [
                "segment revenue billion"),
      "validate": schemas.validate_nvda_dc},
     {"id": "nvda_share", "field": None, "max_results": 6,
+     # NO EXPECTED RANGE AND NO DIRECTION IN THIS PROMPT (2026-08-28). It used to say
+     # the figure was "~70-75% and DRIFTING DOWN"; asked to confirm a stated range, the
+     # model returned 0.73 on EVERY pull across seven prints while only NVDA's revenue
+     # moved -- a pinned constant wearing the appearance of a refreshed input. The
+     # DEFINITION is the thing that must be pinned (all-accelerator vs merchant-GPU are
+     # different questions with ~20 points between them); the VALUE and its direction are
+     # what we are paying to measure. The trend is observable from the recorded ledger
+     # now, so it never needs asserting here again.
      "system": ("Today is {today}. Report NVIDIA's share of the TOTAL AI ACCELERATOR "
-                "market as a fraction (0-1). CRITICAL DEFINITION: this is NVIDIA's "
-                "share of ALL AI accelerator compute/spend INCLUDING custom silicon — "
-                "Google TPU, Amazon Trainium/Inferentia, AMD MI-series, etc. It is NOT "
-                "the merchant/discrete GPU market: that GPU-only figure (~90%) is WRONG "
-                "for this purpose because it excludes custom silicon. The correct "
-                "all-accelerator figure is ~70-75% and DRIFTING DOWN as custom silicon "
-                "grows ~3x faster than merchant GPU. Source from market-research firms "
-                "(Mercury Research, Jon Peddie Research, TrendForce, IDC, Gartner). "
-                "State the definition and source you used. Respond ONLY with JSON: "
-                '{"accel_share": float, "definition": str, "source": str, "url": str}.'),
+                "market as a fraction (0-1), as of the most recent measurement you can "
+                "find. CRITICAL DEFINITION: this is NVIDIA's share of ALL AI accelerator "
+                "compute/spend INCLUDING custom silicon — Google TPU, Amazon "
+                "Trainium/Inferentia, AMD MI-series, etc. It is NOT the "
+                "merchant/discrete GPU market: that GPU-only figure (~90%) is WRONG for "
+                "this purpose because it excludes custom silicon. Report what the "
+                "sources actually say, whether the share is rising or falling. Prefer a "
+                "PRIMARY market-research house (Mercury Research, Jon Peddie Research, "
+                "TrendForce, IDC, Gartner, Bloomberg Intelligence) over a site "
+                "republishing them, and prefer the most recently published measurement "
+                "over an older one. State the definition, the source, and "
+                "published_at — the source's OWN publication date (YYYY-MM-DD), not "
+                "today's date; null if the source carries none. Respond ONLY with JSON: "
+                '{"accel_share": float, "definition": str, "source": str, "url": str, '
+                '"published_at": str}.'),
      "query": ("NVIDIA share of total AI accelerator market including custom silicon "
-               "TPU Trainium 2026 Mercury Research JPR TrendForce IDC"),
+               "TPU Trainium latest quarter Mercury Research JPR TrendForce IDC"),
      "validate": schemas.validate_nvda_share},
 ]
 

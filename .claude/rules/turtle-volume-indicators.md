@@ -276,3 +276,24 @@ used by the snapshot.
   20-ATR / 4-unit / 0.5N step / 2N stop.
 - **No news synthesis on Turtle** (the metrics ARE the content); it fires quietly and lets a
   same-day 1-sigma/volume trigger handle any narrative.
+
+## 2026-08-27 (session 47) — a 2x miss that could NOT be diagnosed after the fact
+
+NVDA closed at **2.29x** (297,197,891 against a 50-day average of 129,666,886) and the sweep never
+fired. It was the ONLY watchlist name above 2.0x that day — next highest 1.29x — so nothing else could
+corroborate. Two candidates, and they could not be separated retroactively:
+
+1. it crossed after **15:45**, the last :15/:45 window before the close (the threshold was 259.3M against
+   a 297.2M close, so the last ~12.7% of the day's volume had to still be outstanding); or
+2. the daily frame was LAGGING at the check windows and `compute_volume_ratio` **failed closed**, which
+   is what it is designed to do when `daily.index[-1].date() != today`.
+
+**Deferred by the user: add logging only if it recurs.** The instrument would be one line per sweep —
+`(ticker, slot, ratio_or_None)` — which distinguishes "ratio was 1.7 at 15:45" from "no reading" and
+costs nothing.
+
+**AND THE SESSION-44 CORRUPTION IS LIVE, NOT HISTORICAL.** Reconstructing the intraday crossing from 5m
+bars gave a cumulative of **1,714,494,181** against the daily bar's 297,197,891 — a 5.8x inflation, 78
+bars, one session, correct bar count. Exactly the fault that moved this indicator onto the daily bar. It
+was nearly reported as "crossed at 10:20 ET" before being checked against the daily bar. **Any intraday
+Yahoo series needs the daily bar as a cross-check.**

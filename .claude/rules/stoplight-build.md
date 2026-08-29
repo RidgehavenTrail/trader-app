@@ -60,8 +60,142 @@ pane) holding an About box (measures / why) on the left and the LIGHT-SCALE LEGE
 band a segment, the current one lifted carrying the live metric, glyph pair beneath when the factor has
 one. The renderer is GENERIC: `bands` is a LIST, not a fixed trio (verified against heavy_haul's four,
 incl. orange), and a factor with no definition renders a zero-height band.
+**Session 47 (2026-08-21/27) — THE DETAIL PANEL IS BUILT OUT.** The Overview tab is now Euphemus'
+prototype: a day RAIL (30 days, muted beyond the ledger's reach), a SUBSTRIP with the day's reading and
+a band-edge sparkline, the evidence VIEW, and footnote columns. Two FREE endpoints feed it —
+`/get_factor_history` (the snapshot log already held 34 days per factor and nothing served them) and
+`/get_factor_ledger` (per-model evidence; `premium_share.ledger()` re-slices the SAME `rankings_daily()`
+pull `compute()` was discarding). Capability is discovered by whether a builder exports `ledger()`, so
+`has_ledger:false` is the normal answer for 15 of 16 and NOT an error.
+**THE `ledgers` TABLE IS THE LOAD-BEARING PART.** A re-derived ledger is not the one that was live: old
+volumes re-priced with today's list move models across a premium line that is a multiple of a fast-
+deflating floor — 2026-08-13 recomputes 45.9% against a recorded 27.1%, a different BAND. The scheduler
+captures each day at the prices its light was decided on, keyed on the DATA date (`asof`, not write-date),
+and the upsert has a DIRECTION: `recorded` may replace `reconstructed`, nothing may replace `recorded`.
+Days the ledger cannot reach are MUTED in the rail rather than silently clickable.
+
+**ARCHITECTURE, SETTLED BY THE USER (2026-08-27) — read this before "generalising" anything here.**
+The SHARED thing is the CHROME: header, About box, legend, rail, substrip, footnotes, all of which
+already run for 16 factors with no per-factor code. The EVIDENCE is per-factor BY NATURE — a copper
+ledger would be a price table and a regulatory one a case list, and nobody will write one renderer for
+both. Euphemus' prototype said the same: *only the evidence block changes shape per factor.* So the
+remaining work below is a VOCABULARY FILL, not a genericisation project, and per-factor content (the
+sparkline's band-edge gridlines, for instance) does not have to wait for it.
+
+**SESSION 48 (2026-08-28) — SILICON PAYBACK IS THE SECOND FACTOR WITH AN EVIDENCE VIEW, AND
+THE PATTERN FOR THE REST IS NOW SET.** Everything below is REUSABLE — it was decided while
+building factor #5 but almost none of it is about factor #5. Read this before building the
+third one. Live preview of the finished panel:
+**https://claude.ai/code/artifact/28241b78-440f-4b45-a302-11548df2adcc**
+
+**THE MECHANISM — `AB_VIEWS` in `static/js/stoplight.js`.** Adding a factor's evidence is
+now FILLING ONE ENTRY, not touching the panel. The chrome (rail, substrip, sparkline,
+header, footnotes) knows nothing factor-specific; it asks the vocabulary:
+
+| key | what it supplies |
+|---|---|
+| `views` | the switcher's list, IN ORDER — **the first is the default view** |
+| `value(day)` / `reading(day)` / `light(day)` | the day's number, its display string, its band |
+| `tol` | how far a re-derived reading may sit from the recorded one before the pane says so. **Per-factor because the UNITS are** — 0.05 is a rounding error on a percentage and most of a band on a 0.2-0.5 ratio |
+| `count(day)` | the "· 51 models" / "· 6 inputs" suffix in the evidence header |
+| `figures(day)` | the substrip pairs |
+| `render(key, day, all)` | the view itself |
+| `method` (optional) | names a view that renders the Method prose ITSELF; the shared footnote then stands down |
+
+Two latent bugs surfaced the moment a SECOND factor had a ledger, and both are fixed —
+do not reintroduce them: `_abLedger` was cleared AFTER the first paint on a factor switch
+(invisible while premium_share was alone, a crash the moment it wasn't), and `_abView` is
+sticky across factors whose view KEYS are not shared vocabulary (`lenses` vs `sources`), so
+the sticky choice is now validated against the incoming factor's own list.
+
+**CHART RULES THAT GENERALISE (they cost a session to get right; inherit them).**
+- **Validate a categorical palette against THIS panel's surface (`#0f172a`), all pairs,
+  before shipping it** — `scripts/validate_palette.js` in the `dataviz` skill. Numbers, not
+  taste: the shipped set clears normal-vision worst dE 17.3 against a floor of 15. A first
+  cut of the same NAMED colours failed at 5.7 and had to be stepped apart on LIGHTNESS.
+- **Past three or four hues nothing separates under all-pairs.** The answer is FACETING —
+  two separate charts, separately captioned — not a fifth hue. Verified: no step in the
+  palette clears the floor against four numerator hues (orange/yellow 10.6, violet/blue
+  9.8, aqua/green 11.9).
+- **Spend hue only where it does a JOB.** Identity (four different companies) earns
+  categorical colour. A measured-vs-implied distinction is EPISTEMIC STATUS and earns
+  TEXTURE — a hatch — because a second hue there invents a second entity.
+- **Label ink per mark by MEASURED contrast**, not one ink for the chart: a bright green and
+  a pale ice-blue both lose white text, a dark slate loses black. This survives a palette
+  change, which is why it outlived one.
+- **Label placement by measured arc, not a percentage threshold** — inside only when the arc
+  at the label radius is wider than the text, so the same 10% slice reads inside the large
+  pie and on a leader in the small one. Leaders that stack get pushed apart; assert **zero
+  label overlaps** in the rendered SVG.
+- **Give the panel a HERO FIGURE.** The one number a view exists to report goes at >=48px
+  in the SANS (never mono, never a display face) with PROPORTIONAL digits -- tabular ones
+  give every digit the width of a zero and read loose at display size. Exactly one per
+  view; a stat-strip copy at 11px is not a competing hero. silicon_payback puts it
+  top-LEFT of the pie band with its band label under it, so the answer is read before the
+  arithmetic that produced it.
+- **Draw a ratio to AREA when there is one.** Radius as sqrt(value) makes the small pie's
+  area exactly the reading (0.2479 measured off the SVG), so the number is the picture. Area
+  is a weak channel for magnitude, so keep the digits on screen beside it.
+
+**THE `asof_keyed` REGISTRY FLAG — THE ONE CHANGE THAT TOUCHED DATA ON DISK.** A factor's
+snapshot row is keyed on the ET WRITE date unless `asof_keyed=True`, and for anything whose
+data date lags its write date that is wrong in three ways at once: two ET days file under
+one data day, a third is ORPHANED (its ledger unreachable), and the rail's weekday label
+runs a day ahead of its own data — which matters, premium_share reads red on Saturdays as a
+calendar artifact. `store.record_snapshot(keep_first=)` also inverts for these factors:
+**the first capture of a data day wins**, because a later run at moved prices is re-pricing
+it, not observing it again (2026-08-25 recorded 71.5% RED and re-priced to 49.2% YELLOW the
+next morning — a different band). Live on `premium_share` and `silicon_payback` only.
+`silicon_payback` is QUARTERLY, and re-keying collapsed **38 near-identical rows to the 7
+prints it has actually made** — the trend its own spec says to track. Migration:
+`migrate_snapshots_to_asof.py <factor_id> [--apply]`, dry-run by default, refuses to
+overwrite an existing backup. **Do NOT flag `concentration` or `silicon_e`** — other code
+does arithmetic on their history.
+
+**NEVER PUT THE EXPECTED ANSWER IN AN EXTRACTOR PROMPT (2026-08-28).** silicon_payback's
+`nvda_share` prompt said the figure was *"~70-75% and DRIFTING DOWN as custom silicon grows
+~3x faster"*. Asked to confirm a stated range, the model returned **0.73 on every pull across
+all seven prints** while only NVDA's revenue moved — a pinned constant wearing the appearance
+of a refreshed input, and the cost of a billed pull each quarter for an answer decided in
+advance. Pin the DEFINITION (all-accelerator vs merchant-GPU are different questions ~20
+points apart); never pin the VALUE or its DIRECTION. Same principle as the newsletter spec's
+extract-vs-derive split, and the same one behind keeping a trend OUT of static display copy:
+a direction that is asserted cannot be observed. Check the other extractors for this — the
+guard bands must not smuggle the range back in either (`validate_nvda_share` stays 0.30-1.00
+deliberately). **Know the sign of the error on any ratio input**: here the denominator is
+`run_rate / share`, so holding the share too LOW overstates the denominator and reads the
+light GREENER than truth.
+
+**PROVEN, same day, for 2 cents.** With the anchor removed the very next pull returned
+**0.80, not 0.73** — denominator 487.7 -> 445.0, reading 0.25 -> 0.27, still yellow, no band
+change. Seven identical prints had not been a stable measurement; they were the model
+agreeing with the sentence that told it the answer. The remaining watch item is SOURCE
+QUALITY, not the anchor: the pull returned an aggregator (Celadon Research citing IDC's Q1
+2026 tracker) published 2026-05-15 — 105 days before the reading — where the prompt only
+PREFERS a primary house. If a future pull needs to be tighter, require the named primaries
+rather than preferring them. User accepted 0.80 (2026-08-28) as close to his own reading, on
+the basis that future pulls get scrutinised through the new Published column.
+
+**`published_at` — THE SOURCE'S DATE IS NOT THE PULL DATE (2026-08-28).** `refreshed_at` says
+when WE looked; it reads fresh while pointing at a years-old market-sizing press release. The
+three SOFT sources (`openai`, `anthropic`, `nvda_share`) now ask for the source's own
+publication date and the Sources view shows **Published** beside **Pulled**, ageing against the
+reading's date. Earnings-fed legs don't need it — `nvda_dc` pins a named quarter — so a blank
+there is muted, and red stays reserved for a missing PULL date. Shape-checked in
+`schemas._pub_date`: a model asked for a date will return prose or today's date, and either
+would defeat the point.
+
+**SOURCES IS A VIEW SHAPE WORTH COPYING.** Every input with its value, **the date it was
+pulled**, the publisher, and a link; ages measured against the READING's own date so an old
+period does not look staler each time it is opened; a missing pull date rendered in the
+error colour rather than left blank. It immediately earned itself — Gemini has no pull date
+recorded at all, and Copilot's is 28 days behind the reading. Derivations (a x4, a division)
+are NOT sources and get a footnote, never rows that imply a publisher.
+
 **THE ONE SHORTCUT, AND THE NEXT TASK:** the definitions are hand-written in `static/js/stoplight.js`'s
-`AB_WHY` with ONLY `premium_share` filled. Every factor's thresholds live as docstring prose plus loose
+`AB_WHY` with `premium_share` and `silicon_payback` filled — **2 of 16** (was 1; corrected
+2026-08-28 rather than left to outlive its own resolution, which is this repo's recurring
+documentation failure). Every factor's thresholds live as docstring prose plus loose
 constants (`GREEN_BELOW`, `RED_AT_OR_ABOVE`, `GREEN_BPS`...) and `stoplight_state.json` carries none at
 all. Promote a structured `definition` (measures / why / bands / glyph) into the 16 factor modules and
 the legend renders for all of them — the source changes, the render does not. Settle the glyph

@@ -987,11 +987,26 @@
     // The canary is the one drawn thing on this board and it is DELIBERATELY not data:
     // it wears its own hardcoded canary yellow whatever the light says, because a bird
     // that turned red on a red day would read as a sixth pip. It faces the reading with
-    // the lamp lit — the factor's name, and the job, in one mark (user, 2026-08-29). The
-    // beam is drawn FIRST so it glows behind the pips instead of washing over them,
-    // which would muddy a red band.
+    // the lamp lit — the factor's name, and the job, in one mark (user, 2026-08-29).
+    //
+    // THE BEAM REACHES THE FIFTH PIP AND IS GONE BY THE FOURTH (user, 2026-08-29). A
+    // lamp that lit the whole strip evenly was a background wash pretending to be light;
+    // one that falls off is a lamp. The gradient is in USER SPACE and keyed to the pip
+    // coordinates, so the falloff lands on the pips themselves rather than on a
+    // percentage of the canvas: full at the lamp, still lighting pip 5, zero before
+    // pip 4. Drawn FIRST, so it glows behind the pips instead of washing over them.
+    // Layered amber, not a pale wash — a low-opacity cream over a near-black panel
+    // composites to olive and reads as smoke.
     function abPipsSVG(down, of, lc) {
-        const W = 460, H = 140, R = 18, GAP = 52, X0 = 34, CY = 52;
+        // 556 wide rather than the pies' 340: this band is horizontal by nature, and at
+        // the shared 430px cap it stopped ~100px short of the table beneath it (measured
+        // on a 648px detail pane). The `ab-wide` class lifts the cap; widening the
+        // viewBox in the same proportion keeps every element at the size it already was
+        // and spends the extra room on SPREAD instead of scale.
+        const W = 556, H = 140, R = 18, GAP = 62, X0 = 34, CY = 52;
+        // Where the light dies: just past the FOURTH pip's outer edge, so the fifth is
+        // lit, the fourth catches the last of it, and the first three sit in the dark.
+        const LAMP_X = 428, FADE_X = 236;
         let pips = '';
         for (let i = 0; i < of; i++) {
             pips += i < down
@@ -999,18 +1014,26 @@
                 : `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R - 1}" fill="none" ` +
                   `stroke="#334155" stroke-width="2"/>`;
         }
+        // The stop that matters is the middle one: it sits exactly on the LAST pip, so
+        // the light is still on it and has run out before the one before it.
+        const lastPip = X0 + (of - 1) * GAP;
+        const atLast = ((LAMP_X - lastPip) / (LAMP_X - FADE_X)).toFixed(3);
         const beam =
-            '<polygon points="332,39 26,8 26,98" fill="#f0a020" opacity=".20"/>' +
-            '<polygon points="332,39 26,26 26,80" fill="#ffcf5c" opacity=".26"/>' +
-            '<polygon points="332,39 26,40 26,66" fill="#ffe9ab" opacity=".22"/>';
-        // Decorative, and marked so: the label above already states the reading, and a
-        // screen reader has no use for the bird.
+            '<defs><linearGradient id="abBeam" gradientUnits="userSpaceOnUse" ' +
+              `x1="${LAMP_X}" y1="0" x2="${FADE_X}" y2="0">` +
+              '<stop offset="0" stop-color="#ffe9ab" stop-opacity=".44"/>' +
+              `<stop offset="${atLast}" stop-color="#f0a020" stop-opacity=".21"/>` +
+              '<stop offset="1" stop-color="#f0a020" stop-opacity="0"/>' +
+            '</linearGradient></defs>' +
+            `<polygon points="${LAMP_X},39 ${FADE_X},20 ${FADE_X},84" fill="url(#abBeam)"/>` +
+            `<polygon points="${LAMP_X},39 ${FADE_X},32 ${FADE_X},72" fill="url(#abBeam)"/>`;
         // Decorative, and marked so: the label already states the reading, and a screen
         // reader has no use for the bird. Draw order is body -> face -> helmet, and the
         // helmet sits ABOVE the eye and beak rather than over them -- the first cut put
-        // the brim across both and the bird lost its face.
+        // the brim across both and the bird lost its face. The translate is what moves it
+        // out to the new right edge; the drawing keeps its own coordinates.
         const bird =
-            '<g aria-hidden="true">' +
+            '<g aria-hidden="true" transform="translate(94,0)">' +
               '<path d="M416 74 C 436 62 444 56 452 48 C 448 64 440 74 430 82 Z" fill="#d9a028"/>' +
               '<path d="M418 88 C 440 82 450 76 456 70 C 448 86 436 94 422 98 Z" fill="#e5ae2e"/>' +
               '<ellipse cx="386" cy="90" rx="40" ry="34" fill="#f0c23a"/>' +
@@ -1032,7 +1055,7 @@
               '<circle cx="334" cy="39" r="6" fill="#e8b64a"/>' +
               '<circle cx="334" cy="39" r="3.6" fill="#fff2c6"/>' +
             '</g>';
-        return `<svg class="abh-${lc}" viewBox="0 0 ${W} ${H}" role="img" ` +
+        return `<svg class="abh-${lc} ab-wide" viewBox="0 0 ${W} ${H}" role="img" ` +
             `aria-label="${down} of the last ${of} pooled revisions were downward">` +
             beam + pips + bird +
             `<text x="${X0 + (of - 1) * GAP / 2}" y="124" class="ab-pie-c">${down} of the ` +

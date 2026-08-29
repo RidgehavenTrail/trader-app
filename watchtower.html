@@ -789,6 +789,11 @@
     .ab-pies { padding:14px 12px 4px; display:flex; align-items:flex-start;
         justify-content:flex-start; gap:18px; flex-wrap:wrap; }
     .ab-pies svg { flex:1 1 260px; min-width:0; max-width:430px; height:auto; }
+    /* The pips band is horizontal by nature and the pies are square-ish, so they do
+       not want the same cap: at 430px the band stopped ~100px short of the table it
+       sits above on a 648px detail pane. It still shrinks with the pane (flex-basis
+       260px is unchanged) -- this only raises the ceiling. */
+    .ab-pies svg.ab-wide { max-width:520px; }
     .ab-hero { flex:0 0 auto; padding-top:8px; display:flex; flex-direction:column;
         gap:3px; }
     .ab-hero .k { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.14em;
@@ -1569,7 +1574,7 @@
 <script src="static/js/core.js?v=20260821n"></script>
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
-<script src="static/js/stoplight.js?v=20260829c"></script>
+<script src="static/js/stoplight.js?v=20260829d"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

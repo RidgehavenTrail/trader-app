@@ -998,15 +998,21 @@
     // Layered amber, not a pale wash — a low-opacity cream over a near-black panel
     // composites to olive and reads as smoke.
     function abPipsSVG(down, of, lc) {
-        // 556 wide rather than the pies' 340: this band is horizontal by nature, and at
-        // the shared 430px cap it stopped ~100px short of the table beneath it (measured
-        // on a 648px detail pane). The `ab-wide` class lifts the cap; widening the
-        // viewBox in the same proportion keeps every element at the size it already was
-        // and spends the extra room on SPREAD instead of scale.
-        const W = 556, H = 140, R = 18, GAP = 62, X0 = 34, CY = 52;
-        // Where the light dies: just past the FOURTH pip's outer edge, so the fifth is
-        // lit, the fourth catches the last of it, and the first three sit in the dark.
-        const LAMP_X = 428, FADE_X = 236;
+        // 640 wide rather than the pies' 340: this band is horizontal by nature. The
+        // rendered width is capped at 520 (`ab-wide`), so viewBox units are the budget
+        // and the only real choice is how to spend them -- SEPARATION between the pips
+        // and the bird, or SIZE. The bird is the mnemonic and keeps its size (scaled up
+        // to cancel the wider viewBox); the pips give up about a pixel of radius to buy
+        // the gap. Widening the canvas alone would just shrink everything uniformly.
+        const W = 640, H = 160, R = 20, GAP = 58, X0 = 30, CY = 52;
+        // The bird is drawn in its own coordinates and placed with one transform, so the
+        // paths never have to be re-numbered to move or resize it.
+        const BS = 1.15, BX = 106, BY = 3;
+        const LAMP_X = 490, LAMP_Y = 48;
+        // Where the light dies. It lands ON the last pip and stops there -- close enough
+        // to read as a lamp pointed at the reading, which is the whole job (user,
+        // 2026-08-29: the mnemonic matters, the optics do not).
+        const FADE_X = 250;
         let pips = '';
         for (let i = 0; i < of; i++) {
             pips += i < down
@@ -1014,26 +1020,29 @@
                 : `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R - 1}" fill="none" ` +
                   `stroke="#334155" stroke-width="2"/>`;
         }
-        // The stop that matters is the middle one: it sits exactly on the LAST pip, so
-        // the light is still on it and has run out before the one before it.
+        // The middle stop sits on the LAST pip's own x rather than at a percentage of the
+        // canvas, so the falloff stays put if the spacing changes. Clamped, because a pip
+        // outside the beam's span would otherwise put the stop outside the gradient.
         const lastPip = X0 + (of - 1) * GAP;
-        const atLast = ((LAMP_X - lastPip) / (LAMP_X - FADE_X)).toFixed(3);
+        const atLast = Math.max(0.05, Math.min(0.95,
+            (LAMP_X - lastPip) / (LAMP_X - FADE_X))).toFixed(3);
         const beam =
             '<defs><linearGradient id="abBeam" gradientUnits="userSpaceOnUse" ' +
               `x1="${LAMP_X}" y1="0" x2="${FADE_X}" y2="0">` +
               '<stop offset="0" stop-color="#ffe9ab" stop-opacity=".44"/>' +
-              `<stop offset="${atLast}" stop-color="#f0a020" stop-opacity=".21"/>` +
+              `<stop offset="${atLast}" stop-color="#f0a020" stop-opacity=".20"/>` +
               '<stop offset="1" stop-color="#f0a020" stop-opacity="0"/>' +
             '</linearGradient></defs>' +
-            `<polygon points="${LAMP_X},39 ${FADE_X},20 ${FADE_X},84" fill="url(#abBeam)"/>` +
-            `<polygon points="${LAMP_X},39 ${FADE_X},32 ${FADE_X},72" fill="url(#abBeam)"/>`;
+            `<polygon points="${LAMP_X},${LAMP_Y} ${FADE_X},18 ${FADE_X},86" ` +
+              'fill="url(#abBeam)"/>' +
+            `<polygon points="${LAMP_X},${LAMP_Y} ${FADE_X},33 ${FADE_X},71" ` +
+              'fill="url(#abBeam)"/>';
         // Decorative, and marked so: the label already states the reading, and a screen
         // reader has no use for the bird. Draw order is body -> face -> helmet, and the
         // helmet sits ABOVE the eye and beak rather than over them -- the first cut put
-        // the brim across both and the bird lost its face. The translate is what moves it
-        // out to the new right edge; the drawing keeps its own coordinates.
+        // the brim across both and the bird lost its face.
         const bird =
-            '<g aria-hidden="true" transform="translate(94,0)">' +
+            `<g aria-hidden="true" transform="translate(${BX},${BY}) scale(${BS})">` +
               '<path d="M416 74 C 436 62 444 56 452 48 C 448 64 440 74 430 82 Z" fill="#d9a028"/>' +
               '<path d="M418 88 C 440 82 450 76 456 70 C 448 86 436 94 422 98 Z" fill="#e5ae2e"/>' +
               '<ellipse cx="386" cy="90" rx="40" ry="34" fill="#f0c23a"/>' +
@@ -1058,7 +1067,7 @@
         return `<svg class="abh-${lc} ab-wide" viewBox="0 0 ${W} ${H}" role="img" ` +
             `aria-label="${down} of the last ${of} pooled revisions were downward">` +
             beam + pips + bird +
-            `<text x="${X0 + (of - 1) * GAP / 2}" y="124" class="ab-pie-c">${down} of the ` +
+            `<text x="${X0 + (of - 1) * GAP / 2}" y="120" class="ab-pie-c">${down} of the ` +
             `last ${of} pooled revisions went down</text></svg>`;
     }
 

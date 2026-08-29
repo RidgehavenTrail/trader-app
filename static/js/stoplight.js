@@ -977,72 +977,68 @@
             '</div>';
     }
 
-    // FIVE PIPS, AND THE BIRD THAT IS LOOKING AT THEM — the reading drawn as the thing
-    // it literally says: how many of the last five revisions went DOWN. A count of five
-    // has no distribution worth a chart, so the honest picture is the count itself
-    // against its own denominator — filled pips are the downgrades, hollow ones the rest
-    // of the five. The pips take the day's light through currentColor, the same way the
-    // sparkline does, so a rail click retints them with everything else on the pane.
+    // FIVE PIPS — the reading drawn as the thing it literally says: how many of the last
+    // five revisions went DOWN. A count of five has no distribution worth a chart, so the
+    // honest picture is the count itself against its own denominator — filled pips are the
+    // downgrades, hollow ones the rest of the five. They take the day's light through
+    // currentColor, the same way the sparkline does, so a rail click retints them.
     //
-    // The canary is the one drawn thing on this board and it is DELIBERATELY not data:
-    // it wears its own hardcoded canary yellow whatever the light says, because a bird
-    // that turned red on a red day would read as a sixth pip. It faces the reading with
-    // the lamp lit — the factor's name, and the job, in one mark (user, 2026-08-29).
-    //
-    // THE BEAM REACHES THE FIFTH PIP AND IS GONE BY THE FOURTH (user, 2026-08-29). A
-    // lamp that lit the whole strip evenly was a background wash pretending to be light;
-    // one that falls off is a lamp. The gradient is in USER SPACE and keyed to the pip
-    // coordinates, so the falloff lands on the pips themselves rather than on a
-    // percentage of the canvas: full at the lamp, still lighting pip 5, zero before
-    // pip 4. Drawn FIRST, so it glows behind the pips instead of washing over them.
-    // Layered amber, not a pale wash — a low-opacity cream over a near-black panel
-    // composites to olive and reads as smoke.
+    // TWO SVGs, NOT ONE (2026-08-29). This was a single drawing scaled as a unit, and a
+    // unit can only be pinned to one edge: capped at 520px it left the slack on the
+    // right of a wider pane, and uncapping it would have scaled the whole band up with
+    // the row (a 900px row is a 225px-tall picture). So the pips own the left, the bird
+    // owns the right, and the flex gap between them absorbs whatever the row has spare.
+    // Both are rendered at the same HEIGHT and let their widths follow, which is what
+    // keeps the two coordinate spaces on one scale — y=46 is the same pixel in each, so
+    // the lamp still lines up with the pips it is pointed at.
+    const AB_PIP_CY = 46;
     function abPipsSVG(down, of, lc) {
-        // 640 wide rather than the pies' 340: this band is horizontal by nature. The
-        // rendered width is capped at 520 (`ab-wide`), so viewBox units are the budget
-        // and the only real choice is how to spend them -- SEPARATION between the pips
-        // and the bird, or SIZE. The bird is the mnemonic and keeps its size (scaled up
-        // to cancel the wider viewBox); the pips give up about a pixel of radius to buy
-        // the gap. Widening the canvas alone would just shrink everything uniformly.
-        const W = 640, H = 160, R = 20, GAP = 58, X0 = 30, CY = 52;
-        // The bird is drawn in its own coordinates and placed with one transform, so the
-        // paths never have to be re-numbered to move or resize it.
-        const BS = 1.15, BX = 106, BY = 3;
-        const LAMP_X = 490, LAMP_Y = 48;
-        // Where the light dies. It lands ON the last pip and stops there -- close enough
-        // to read as a lamp pointed at the reading, which is the whole job (user,
-        // 2026-08-29: the mnemonic matters, the optics do not).
-        const FADE_X = 250;
+        const W = 300, H = 140, R = 20, GAP = 58, X0 = 28;
         let pips = '';
         for (let i = 0; i < of; i++) {
             pips += i < down
-                ? `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R}" fill="currentColor"/>`
-                : `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R - 1}" fill="none" ` +
+                ? `<circle cx="${X0 + i * GAP}" cy="${AB_PIP_CY}" r="${R}" fill="currentColor"/>`
+                : `<circle cx="${X0 + i * GAP}" cy="${AB_PIP_CY}" r="${R - 1}" fill="none" ` +
                   `stroke="#334155" stroke-width="2"/>`;
         }
-        // The middle stop sits on the LAST pip's own x rather than at a percentage of the
-        // canvas, so the falloff stays put if the spacing changes. Clamped, because a pip
-        // outside the beam's span would otherwise put the stop outside the gradient.
-        const lastPip = X0 + (of - 1) * GAP;
-        const atLast = Math.max(0.05, Math.min(0.95,
-            (LAMP_X - lastPip) / (LAMP_X - FADE_X))).toFixed(3);
+        return `<svg class="abh-${lc} ab-pips" viewBox="0 0 ${W} ${H}" role="img" ` +
+            `aria-label="${down} of the last ${of} pooled revisions were downward">` +
+            pips +
+            `<text x="${X0 + (of - 1) * GAP / 2}" y="104" class="ab-pie-c">${down} of the ` +
+            `last ${of} pooled revisions went down</text></svg>`;
+    }
+
+    // THE CANARY, AND ITS LAMP. Decorative and marked so: the pips carry the reading and
+    // its label, and a screen reader has no use for the bird.
+    //
+    // It is DELIBERATELY not data — hardcoded canary yellow whatever the light says,
+    // because a bird that turned red on a red day would read as a sixth pip. What it is
+    // for is the mnemonic: the factor's name and its job in one mark, above a table of
+    // revision counts (user, 2026-08-29 — "the optics are not the point").
+    //
+    // Draw order is body -> face -> helmet, and the helmet sits ABOVE the eye and beak
+    // rather than over them; the first cut put the brim across both and the bird lost its
+    // face. Size and position are the two constants at the top, so moving or resizing it
+    // never means re-numbering the paths. The beam dies inside this box rather than
+    // reaching the pips, since the gap between them is now elastic and nothing can be
+    // drawn across it.
+    function abCanarySVG() {
+        const W = 240, H = 140, BS = 1.05, BX = -242.8, BY = 5.05;
+        const LAMP_X = 108, FADE_X = 6;
         const beam =
             '<defs><linearGradient id="abBeam" gradientUnits="userSpaceOnUse" ' +
               `x1="${LAMP_X}" y1="0" x2="${FADE_X}" y2="0">` +
               '<stop offset="0" stop-color="#ffe9ab" stop-opacity=".44"/>' +
-              `<stop offset="${atLast}" stop-color="#f0a020" stop-opacity=".20"/>` +
+              '<stop offset=".55" stop-color="#f0a020" stop-opacity=".20"/>' +
               '<stop offset="1" stop-color="#f0a020" stop-opacity="0"/>' +
             '</linearGradient></defs>' +
-            `<polygon points="${LAMP_X},${LAMP_Y} ${FADE_X},18 ${FADE_X},86" ` +
+            `<polygon points="${LAMP_X},${AB_PIP_CY} ${FADE_X},14 ${FADE_X},82" ` +
               'fill="url(#abBeam)"/>' +
-            `<polygon points="${LAMP_X},${LAMP_Y} ${FADE_X},33 ${FADE_X},71" ` +
+            `<polygon points="${LAMP_X},${AB_PIP_CY} ${FADE_X},28 ${FADE_X},66" ` +
               'fill="url(#abBeam)"/>';
-        // Decorative, and marked so: the label already states the reading, and a screen
-        // reader has no use for the bird. Draw order is body -> face -> helmet, and the
-        // helmet sits ABOVE the eye and beak rather than over them -- the first cut put
-        // the brim across both and the bird lost its face.
-        const bird =
-            `<g aria-hidden="true" transform="translate(${BX},${BY}) scale(${BS})">` +
+        return `<svg class="ab-canary" viewBox="0 0 ${W} ${H}" aria-hidden="true" ` +
+            'focusable="false">' + beam +
+            `<g transform="translate(${BX},${BY}) scale(${BS})">` +
               '<path d="M416 74 C 436 62 444 56 452 48 C 448 64 440 74 430 82 Z" fill="#d9a028"/>' +
               '<path d="M418 88 C 440 82 450 76 456 70 C 448 86 436 94 422 98 Z" fill="#e5ae2e"/>' +
               '<ellipse cx="386" cy="90" rx="40" ry="34" fill="#f0c23a"/>' +
@@ -1063,12 +1059,7 @@
               '<circle cx="334" cy="39" r="9" fill="#8f3520"/>' +
               '<circle cx="334" cy="39" r="6" fill="#e8b64a"/>' +
               '<circle cx="334" cy="39" r="3.6" fill="#fff2c6"/>' +
-            '</g>';
-        return `<svg class="abh-${lc} ab-wide" viewBox="0 0 ${W} ${H}" role="img" ` +
-            `aria-label="${down} of the last ${of} pooled revisions were downward">` +
-            beam + pips + bird +
-            `<text x="${X0 + (of - 1) * GAP / 2}" y="120" class="ab-pie-c">${down} of the ` +
-            `last ${of} pooled revisions went down</text></svg>`;
+            '</g></svg>';
     }
 
     // REVISIONS — the primary view: who filed the revisions this reading is made of.
@@ -1135,7 +1126,9 @@
               'so the pool reads both.';
         const then = oldest && oldest.date !== day.date
             ? ` <span class="ago">was <b>${oldest.downs}/5</b> on ${esc(abMD(oldest.date))}</span>` : '';
-        return '<div class="ab-pies">' + hero + abPipsSVG(day.downs, 5, c) + '</div>' +
+        return '<div class="ab-pies">' + hero +
+            '<div class="ab-band">' + abPipsSVG(day.downs, 5, c) + abCanarySVG() + '</div>' +
+            '</div>' +
             '<div class="ab-scroller"><table class="ab-ledger">' +
             '<thead><tr><th class="l" colspan="2">Name</th><th>Up</th><th>Down</th>' +
             '<th class="l">Down share</th><th class="l">Weight</th><th>Alone</th></tr></thead>' +

@@ -977,25 +977,66 @@
             '</div>';
     }
 
-    // FIVE PIPS — the reading drawn as the thing it literally says: how many of the last
-    // five revisions went DOWN. A count of five has no distribution worth a chart, so the
-    // honest picture is the count itself against its own denominator — filled pips are the
-    // downgrades, hollow ones the rest of the five. Tinted by the day's light through
-    // currentColor, the same way the sparkline is, so a rail click retints it along with
-    // everything else on the pane.
+    // FIVE PIPS, AND THE BIRD THAT IS LOOKING AT THEM — the reading drawn as the thing
+    // it literally says: how many of the last five revisions went DOWN. A count of five
+    // has no distribution worth a chart, so the honest picture is the count itself
+    // against its own denominator — filled pips are the downgrades, hollow ones the rest
+    // of the five. The pips take the day's light through currentColor, the same way the
+    // sparkline does, so a rail click retints them with everything else on the pane.
+    //
+    // The canary is the one drawn thing on this board and it is DELIBERATELY not data:
+    // it wears its own hardcoded canary yellow whatever the light says, because a bird
+    // that turned red on a red day would read as a sixth pip. It faces the reading with
+    // the lamp lit — the factor's name, and the job, in one mark (user, 2026-08-29). The
+    // beam is drawn FIRST so it glows behind the pips instead of washing over them,
+    // which would muddy a red band.
     function abPipsSVG(down, of, lc) {
-        const W = 340, R = 18, GAP = 56, X0 = (W - GAP * (of - 1)) / 2;
+        const W = 460, H = 140, R = 18, GAP = 52, X0 = 34, CY = 52;
         let pips = '';
         for (let i = 0; i < of; i++) {
             pips += i < down
-                ? `<circle cx="${X0 + i * GAP}" cy="42" r="${R}" fill="currentColor"/>`
-                : `<circle cx="${X0 + i * GAP}" cy="42" r="${R - 1}" fill="none" ` +
+                ? `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R}" fill="currentColor"/>`
+                : `<circle cx="${X0 + i * GAP}" cy="${CY}" r="${R - 1}" fill="none" ` +
                   `stroke="#334155" stroke-width="2"/>`;
         }
-        return `<svg class="abh-${lc}" viewBox="0 0 ${W} 104" role="img" ` +
+        const beam =
+            '<polygon points="332,39 26,8 26,98" fill="#f0a020" opacity=".20"/>' +
+            '<polygon points="332,39 26,26 26,80" fill="#ffcf5c" opacity=".26"/>' +
+            '<polygon points="332,39 26,40 26,66" fill="#ffe9ab" opacity=".22"/>';
+        // Decorative, and marked so: the label above already states the reading, and a
+        // screen reader has no use for the bird.
+        // Decorative, and marked so: the label already states the reading, and a screen
+        // reader has no use for the bird. Draw order is body -> face -> helmet, and the
+        // helmet sits ABOVE the eye and beak rather than over them -- the first cut put
+        // the brim across both and the bird lost its face.
+        const bird =
+            '<g aria-hidden="true">' +
+              '<path d="M416 74 C 436 62 444 56 452 48 C 448 64 440 74 430 82 Z" fill="#d9a028"/>' +
+              '<path d="M418 88 C 440 82 450 76 456 70 C 448 86 436 94 422 98 Z" fill="#e5ae2e"/>' +
+              '<ellipse cx="386" cy="90" rx="40" ry="34" fill="#f0c23a"/>' +
+              '<ellipse cx="378" cy="98" rx="28" ry="25" fill="#f7d971"/>' +
+              '<path d="M400 76 C 380 86 374 108 384 122 C 400 128 416 118 422 102 ' +
+                'C 424 88 416 78 400 76 Z" fill="#dea62b"/>' +
+              '<circle cx="366" cy="56" r="27" fill="#f0c23a"/>' +
+              '<circle cx="376" cy="66" r="17" fill="#f7d971"/>' +
+              '<path d="M332 63 L 354 56 L 354 70 Z" fill="#e8863c"/>' +
+              '<path d="M332 63 L 354 63 L 354 70 Z" fill="#cf6f2c"/>' +
+              '<circle cx="356" cy="55" r="4.2" fill="#3f2d13"/>' +
+              '<circle cx="357.5" cy="53.5" r="1.5" fill="#ffffff"/>' +
+              '<path d="M338 42 A 28 28 0 0 1 394 42 Z" fill="#b8462a"/>' +
+              '<path d="M352 19 A 28 28 0 0 1 368 17 L 365 42 L 353 42 Z" ' +
+                'fill="#c9573a" opacity=".7"/>' +
+              '<ellipse cx="366" cy="43" rx="36" ry="6" fill="#a03c22"/>' +
+              '<ellipse cx="366" cy="41" rx="36" ry="5.5" fill="#c14e2e"/>' +
+              '<circle cx="334" cy="39" r="9" fill="#8f3520"/>' +
+              '<circle cx="334" cy="39" r="6" fill="#e8b64a"/>' +
+              '<circle cx="334" cy="39" r="3.6" fill="#fff2c6"/>' +
+            '</g>';
+        return `<svg class="abh-${lc}" viewBox="0 0 ${W} ${H}" role="img" ` +
             `aria-label="${down} of the last ${of} pooled revisions were downward">` +
-            pips + `<text x="${W / 2}" y="90" class="ab-pie-c">${down} of the last ${of} ` +
-            `pooled revisions went down</text></svg>`;
+            beam + pips + bird +
+            `<text x="${X0 + (of - 1) * GAP / 2}" y="124" class="ab-pie-c">${down} of the ` +
+            `last ${of} pooled revisions went down</text></svg>`;
     }
 
     // REVISIONS — the primary view: who filed the revisions this reading is made of.

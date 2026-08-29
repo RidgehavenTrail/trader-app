@@ -30,7 +30,12 @@ GROUND_TRUTH = {
     "infra_backlog":   ("vrt_book_to_bill", 2.9),
     "silicon_payback": ("services_rev_b",   86.5),
     "capex_spigot":    ("guidance_yoy_pct", 73),
-    "regulatory":      ("enacted_states",   3),
+    # RE-BASELINED 2026-08-29: the key changed (`actions`, a roster of proven state
+    # actions) and so did the value. The old ("enacted_states", 3) was ground truth
+    # for a rule that counted statutes only and for a seed that was right about one
+    # state of three — comparing models against it graded them on reproducing a
+    # known-wrong number. 7 states / 8 actions is the audited roster.
+    "regulatory":      ("actions",          8),
 }
 TOL = {"infra_backlog": 0.5, "silicon_payback": 20, "capex_spigot": 15, "regulatory": 1}
 

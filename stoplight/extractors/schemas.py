@@ -19,28 +19,6 @@ def _num(d, key, lo, hi):
     return v, None
 
 
-def validate_regulatory_sweep(d):
-    """Stage-1 detector: did anything new appear? Cheap yes/no + candidates."""
-    if not isinstance(d.get("new_candidates"), bool):
-        return False, "new_candidates not bool"
-    cands = d.get("candidates", [])
-    if not isinstance(cands, list):
-        return False, "candidates not a list"
-    return True, {"new_candidates": d["new_candidates"], "candidates": cands}
-
-
-def validate_regulatory_classify(d):
-    """Stage-2: the 3-test-classified state-wide cost-shift count + DCW blocks."""
-    states, err = _num(d, "enacted_states", 0, 50)
-    if err:
-        return False, err
-    blocked, err = _num(d, "dcw_blocked_projects", 0, 100000)
-    if err:
-        return False, err
-    return True, {"enacted_states": int(states), "dcw_blocked_projects": int(blocked),
-                  "states": d.get("states", [])}
-
-
 def validate_infra_backlog(d):
     btb, err = _num(d, "vrt_book_to_bill", 0, 20)
     if err:
@@ -246,15 +224,25 @@ def gev_total_available_gw(stock):
 
 
 def validate_reg_sweep_multi(d):
-    """Multi-path sweep: TWO delta lists — states that NEWLY ENACTED a cost-shift law
-    (beyond the tracked roster) and states that REPEALED one. Either non-empty escalates
-    to the billed classify. Code maintains the running roster across runs, so the sweep
-    only has to surface what CHANGED, not recreate the whole national list."""
-    adds = d.get("new_candidates", [])
-    reps = d.get("repealed_candidates", [])
-    if not isinstance(adds, list) or not isinstance(reps, list):
-        return False, "new_candidates / repealed_candidates must be lists"
-    return True, {"new_candidates": adds, "repealed_candidates": reps}
+    """Sweep: the FULL current list of qualifying state actions, plus any the model
+    believes have ended.
+
+    REBUILT 2026-08-29 — it used to ask for states "beyond those already tracked",
+    which is a delta detector, and a delta detector pointed at the future can never
+    repair a starting roster that was already wrong. It was: nine billed sweeps all
+    answered "nothing new", and every one may have been a CORRECT answer to the
+    question asked, while Texas SB 6 (Jun 2025), Minnesota HF 16 (Jun 2025) and
+    Oregon's POWER Act (Aug 2025) sat outside the roster because they predated the
+    baseline the sweep was told to look beyond. Asking for the whole list each time is
+    the same single search and lets the roster converge on the truth from a bad seed.
+
+    Absence from a sweep is NOT evidence of repeal — see run_regulatory_multi. This
+    validator only shape-checks; proof is the classify stage's job."""
+    found = d.get("current_actions", d.get("new_candidates", []))
+    ended = d.get("ended_candidates", d.get("repealed_candidates", []))
+    if not isinstance(found, list) or not isinstance(ended, list):
+        return False, "current_actions / ended_candidates must be lists"
+    return True, {"current_actions": found, "ended_candidates": ended}
 
 
 def _clean_proven(lst, required):
@@ -274,47 +262,165 @@ def _clean_proven(lst, required):
     return out
 
 
-def validate_reg_statute(d):
-    """Statute leg of the per-source regulatory extractor (HARDENED 2026-07-19, repeal
-    path added). The model returns PROVEN DELTAS to a Python-maintained roster — NOT a
-    count and NOT the whole list:
-      - enacted_states_list:  additions, each proven with statute citation + enacted_date
-      - repealed_states_list: removals, each proven with repeal citation + repeal_date
-    Python applies the deltas (union in additions, drop repeals) to its persisted roster
-    and derives the count = len(roster), so the light can move UP or DOWN and never
-    drifts from the evidence, and no single search has to recreate the list. Proof is
-    mandatory (the gate-on-statute discipline; a proposed/pending bill has no enacted
-    date and is dropped) — the regulatory analog of VRT's method literal. Per-entry
-    filter: unproven entries are dropped, not fatal. Both lists may be empty."""
-    if not isinstance(d.get("enacted_states_list"), list):
-        return False, "enacted_states_list must be a list"
-    if not isinstance(d.get("repealed_states_list", []), list):
-        return False, "repealed_states_list must be a list"
+# The instruments a state can act through. A CLOSED enum, because the whole point of
+# the 2026-08-29 rebuild is that the old rule could only see one of them: it read
+# "Only ENACTED statutes count, not proposed bills", which is two rules welded
+# together — a correct one (in force, not proposed) and a wrong one (statutes only).
+# Hochul's EO 62 and Pennsylvania's PUC framework are state-wide and binding and were
+# invisible to it.
+INSTRUMENT_TYPES = ("statute", "executive_order", "commission_rule")
+
+# Who the instrument BINDS. Only the first qualifies. The other two are the shapes that
+# read as state action in a headline and bind nobody state-wide: an instrument aimed at
+# one named utility, and a model or framework utilities may adopt if they choose. Both
+# were found in the roster on 2026-08-29, both sourced from coverage that generalised.
+BINDS = ("all_utilities", "named_utility", "voluntary")
+BINDS_QUALIFYING = ("all_utilities",)
+
+# A scope quote has to be ABOUT the entities the instrument binds, not merely present.
+# The first live run returned an entry whose quote read "Large-load data center
+# customers must commit to taking at least 85 percent of their requested service for a
+# minimum of ten years" -- a true sentence, a requirement on CUSTOMERS, and no evidence
+# at all of who the instrument binds. It passed a presence check because a presence
+# check is all there was.
+#
+# Matched on the ENTITY CLASS rather than on phrasing: statutes say this a dozen ways
+# ("each electric distribution company", "all electric suppliers ... including
+# cooperatives", "every load-serving entity") and a quantifier list would reject two of
+# those three. Deliberately generous, because the cost of a false negative here is
+# DIRECTIONAL: dropping a real state lowers the count, and on this factor a lower count
+# reads redder, which is the bubble-supportive direction. Better to admit a weak quote
+# and have a human see it than to shrink the roster silently.
+_SCOPE_TERMS = (
+    r"utilit(?:y|ies)", r"electric suppliers?", r"distribution compan(?:y|ies)",
+    r"cooperatives?", r"load[- ]serving", r"public service", r"investor[- ]owned",
+    r"municipal", r"\bEDCs?\b", r"service territor(?:y|ies)", r"jurisdiction",
+)
+
+
+def _addresses_scope(quote):
+    """Does this quote say anything about the entities bound? Substring match on the
+    entity class, case-insensitive."""
+    import re
+    return any(re.search(p, quote, re.I) for p in _SCOPE_TERMS)
+
+
+def validate_reg_actions(d):
+    """Classify leg: PROVEN state-level actions, and proven endings.
+
+    A state action counts when ALL of these hold:
+      (1) IN FORCE  — signed / issued / adopted, with an effective date. A bill that
+          passed but is unsigned does NOT count (New York's Responsible Data Center
+          Development Act, passed 2026-06-04, unsigned); nor does a draft rule or an
+          open docket (New York's PSC Energize NY proceeding).
+      (2) ANY BRANCH — statute, executive order, or a commission rule of general
+          application. This is the axis the old validator could not express.
+      (3) STATE-WIDE — binds every utility / all large loads in the state. A
+          single-utility tariff is out however consequential: AEP Ohio (PUCO, Jul 2025)
+          and Dominion's GS-5 class (VA SCC, Nov 2025) both fail here, and Dominion is
+          most of Virginia. That is a real cost of the test, not an argument against it.
+      (4) ABOUT LARGE-LOAD POWER — cost allocation, rate class, interconnection, or
+          siting/permitting. A tax measure is out (Indiana HB 1210). A study mandate is
+          out because nothing is required of anyone (California SB 57 orders a CPUC
+          report due 2027 and shifts no costs).
+
+    Proof is mandatory per entry: citation + effective_date + an instrument type from
+    the enum. Unproven entries are DROPPED, not fatal — the roster accumulates across
+    runs, so one sloppy entry must not discard a good one.
+
+    `expires` is optional and carried through: a temporary action counts while it is in
+    force (user, 2026-08-29), and the FACTOR — not this validator and not the model —
+    applies the clock, so an expiry can retire an entry without a billed run."""
+    if not isinstance(d.get("actions"), list):
+        return False, "actions must be a list"
+    if not isinstance(d.get("ended", []), list):
+        return False, "ended must be a list"
+
+    actions, rejected = [], []
+
+    def drop(entry, why):
+        # NEVER SILENTLY. A dropped entry is a state missing from the count, and this
+        # factor's count reads redder when it is low -- so every rejection is returned
+        # for the caller to log. A false negative that nobody can see is worse than a
+        # weak entry somebody can check.
+        rejected.append({"state": entry.get("state"), "citation": entry.get("citation"),
+                         "why": why})
+
+    # `scope_quote` is REQUIRED proof, not decoration: an entry that cannot quote the
+    # instrument on who it binds is an entry sourced from a description of it.
+    for e in _clean_proven(d.get("actions"), ("state", "instrument_type", "citation",
+                                              "effective_date", "binds", "scope_quote")):
+        if e["instrument_type"] not in INSTRUMENT_TYPES:
+            drop(e, f"instrument_type {e['instrument_type']!r} off enum")
+            continue
+        if e["binds"] not in BINDS_QUALIFYING:
+            drop(e, f"binds {e['binds']!r} does not qualify")
+            continue
+        if not _addresses_scope(e["scope_quote"]):
+            drop(e, "scope_quote says nothing about who the instrument binds")
+            continue
+        src = next((x for x in d["actions"]
+                    if isinstance(x, dict) and x.get("citation") == e["citation"]), {})
+        if src.get("statewide") is False:
+            drop(e, "statewide reported false")
+            continue
+        mw = src.get("threshold_mw")
+        actions.append({**e,
+                        "statewide": True,
+                        "threshold_mw": mw if isinstance(mw, (int, float)) else None,
+                        # None = in force until something says otherwise. A date here
+                        # lets the factor retire it on its own.
+                        "expires": src.get("expires") or None,
+                        "note": src.get("note") or None})
     return True, {
-        "enacted_states_list": _clean_proven(
-            d.get("enacted_states_list"), ("name", "statute", "enacted_date")),
-        "repealed_states_list": _clean_proven(
-            d.get("repealed_states_list", []), ("name", "repeal_citation", "repeal_date")),
+        "actions": actions,
+        "rejected": rejected,
+        "ended": _clean_proven(d.get("ended", []),
+                               ("state", "citation", "ended_date")),
     }
 
 
+# What the reported figure actually counts. Recorded, not assumed: the source publishes
+# both, and the combined figure is a perfectly good measure of local opposition -- it
+# just is not the same measure, and comparing one to the other is what produced this
+# factor's only arrow to date.
+DCW_BASES = ("blocked_only", "blocked_or_delayed")
+
+
 def validate_dcw_blocked(d):
-    """DCW leg of the per-source regulatory extractor (HARDENED 2026-07-19). The Data
-    Center Watch definitively-BLOCKED project COUNT (a directional-arrow input, not the
-    light). null is a VALID answer — blocked-alone not separable from the combined
-    'blocked OR delayed' figure means don't guess. A real count MUST carry a verbatim
-    source_quote containing the number, so the $ figure ('$64B') or the combined
-    blocked-and-delayed count can't slip in as the project count."""
+    """The Data Center Watch opposition count (a directional-arrow input, never the
+    light). REBUILT 2026-08-29.
+
+    null remains a valid answer -- a source that states no clean count should not be
+    guessed at. What changed is that a NON-null answer must now say what it is:
+      * `metric_basis` from DCW_BASES. The old prompt demanded blocked-ONLY and the
+        source mostly publishes the combined figure, so the honest answer was null on
+        8 of 9 billed calls. Accepting both and labelling which is the fix.
+      * `period_label`, verbatim from the source. Without it, a quarterly figure and a
+        cumulative one look identical in the store, which is exactly how "Q1 2026
+        outright cancellations: at least 20" came to be compared against a seeded
+        "blocked per quarter: 75".
+      * `source_quote`, verbatim and containing the number, so a $ figure or a
+        differently-scoped count cannot slip in as the project count.
+    All three are REQUIRED when a number is given; a number without them is not an
+    observation, it is a digit."""
     v = d.get("dcw_blocked_projects")
     if v is None:
         return True, {"dcw_blocked_projects": None}
     blocked, err = _num(d, "dcw_blocked_projects", 0, 100000)
     if err:
         return False, err
+    basis = d.get("metric_basis")
+    if basis not in DCW_BASES:
+        return False, f"metric_basis must be one of {DCW_BASES}"
+    period = d.get("period_label")
+    if not isinstance(period, str) or not period.strip():
+        return False, "missing period_label (a count of an unstated period is not comparable)"
     q = d.get("source_quote")
     if not isinstance(q, str) or not q.strip():
-        return False, "missing verbatim source_quote (the blocked COUNT must be quoted)"
-    return True, {"dcw_blocked_projects": int(blocked), "source_quote": q.strip(),
+        return False, "missing verbatim source_quote (the count must be quoted)"
+    return True, {"dcw_blocked_projects": int(blocked), "metric_basis": basis,
+                  "period_label": period.strip(), "source_quote": q.strip(),
                   "url": d.get("url")}
 
 

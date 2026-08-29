@@ -47,50 +47,13 @@ def quarter_end_before(d):
             return qe
     return date(d.year - 1, 12, 31)
 
-# --- Regulatory: two-stage (cheap detector -> escalate) --------------------
-
-_REG_SWEEP_SYS = (
-    "You are a regulatory-sweep detector. Using web search, determine whether any "
-    "NEW US STATE-WIDE cost-shift law for large electrical loads (data centers "
-    "required to fund their own power infrastructure or pay a dedicated large-load "
-    "rate class) has been ENACTED beyond the states already known: {known}. "
-    "Only ENACTED statutes count, not proposed bills. Respond ONLY with JSON: "
-    '{"new_candidates": bool, "candidates": [{"state": str, "description": str, "url": str}]}.'
-)
-_REG_CLASSIFY_SYS = (
-    "Apply THREE tests to each candidate; count only those passing ALL three: "
-    "(1) STATE-WIDE (binds all utilities in the state, not one territory); "
-    "(2) GENERAL + THRESHOLD-DEFINED (a rule for a class, e.g. loads >=25MW); "
-    "(3) NOT a single-utility tariff or one project's terms. Also report the "
-    "current Data Center Watch definitively-blocked project count. Respond ONLY "
-    'with JSON: {"enacted_states": int, "states": [{"name": str, "statute": str}], '
-    '"dcw_blocked_projects": int}.'
-)
-
-
-def run_regulatory():
-    prev = read_input("regulatory")
-    known = ", ".join(s.get("name", "") for s in prev.get("states", [])) or "CA, OH, UT"
-    sweep, m1 = llm.extract_json(
-        "regulatory", "sweep",
-        [{"role": "system", "content": _REG_SWEEP_SYS.replace("{known}", known)},
-         {"role": "user", "content": "Sweep now. Enacted state-wide cost-shift laws only."}],
-        model=llm.STAGE1_MODEL, validate=schemas.validate_regulatory_sweep, web_search=True)
-    if not sweep["new_candidates"]:
-        return {"factor": "regulatory", "changed": False, "reason": "no new candidates",
-                "stage1_cost": m1["cost_usd"], "stage1_route": m1["model_routed"]}
-    classified, m2 = llm.extract_json(
-        "regulatory", "classify",
-        [{"role": "system", "content": _REG_CLASSIFY_SYS},
-         {"role": "user", "content": json.dumps(sweep["candidates"])}],
-        model=llm.STAGE2_MODEL, validate=schemas.validate_regulatory_classify, web_search=True)
-    rec = {**classified, "asof": _today(),
-           "dcw_prev_blocked": prev.get("dcw_blocked_projects"),
-           "provenance": f"extractor:regulatory_sweep {_today()}"}
-    write_input("regulatory", rec)
-    return {"factor": "regulatory", "changed": True, "enacted_states": rec["enacted_states"],
-            "cost": (m1["cost_usd"] or 0) + (m2["cost_usd"] or 0)}
-
+# --- Regulatory ------------------------------------------------------------
+# The legacy single-stage run_regulatory() lived here and was DELETED 2026-08-29. It
+# encoded the criteria this factor was rebuilt to remove ("Only ENACTED statutes count"
+# — which silently excluded executive orders and commission rules), and it was still
+# reachable from the CLI and the compare harness. A superseded rule left executable is
+# a rule that will be executed; this repo has written that lesson down more than once.
+# The live path is run_regulatory_multi(), below.
 
 # --- Earnings extractors (single-call, STAGE2) -----------------------------
 
@@ -759,41 +722,79 @@ def run_capex_spigot_multi(only=None):
 # classify PROVES each delta (citation + date), and PYTHON maintains a PERSISTED
 # ROSTER — applying add/remove deltas and deriving count = len(roster). No search has
 # to recreate the whole list, and the count can move up OR down. DCW (updates more
-# often) gets its own focused STAGE2 search. (Legacy _REG_SWEEP_SYS / _REG_CLASSIFY_SYS
-# above still power the untouched run_regulatory() compare-path.)
+# often) gets its own focused STAGE2 search.
 _REG_SWEEP_MULTI_SYS = (
-    "You are a regulatory-sweep detector for US STATE-WIDE data-center COST-SHIFT "
-    "laws (a data center required to fund its own power infrastructure or pay a "
-    "dedicated large-load rate class). Using web search, return TWO delta lists — "
-    "code maintains the running roster, so surface only what CHANGED:\n"
-    "(A) new_candidates: states that have NEWLY ENACTED such a law, BEYOND those "
-    "already tracked ({known}).\n"
-    "(B) repealed_candidates: states in the tracked list ({known}) that have REPEALED "
-    "or rescinded their law.\n"
-    "Only ENACTED / REPEALED statutes — not proposed or pending bills. Either list may "
-    "be empty. Respond ONLY with JSON: {\"new_candidates\": [{\"state\": str, "
-    "\"description\": str, \"url\": str}], \"repealed_candidates\": [{\"state\": str, "
+    "You are a regulatory sweep for US STATE-LEVEL government action on large "
+    "electrical loads / data centers. Using web search, return the CURRENT FULL LIST "
+    "of states that have such an action IN FORCE today, plus any previously-tracked "
+    "action that has ENDED.\n"
+    "COUNT an action when ALL FOUR hold:\n"
+    "(1) IN FORCE — signed, issued or adopted, with an effective date. A bill that "
+    "PASSED but is not signed does NOT count. A draft rule or an open docket does NOT "
+    "count.\n"
+    "(2) ANY BRANCH — a statute, a governor's executive order, or a utility-commission "
+    "rule or order of general application all count equally.\n"
+    "(3) STATE-WIDE — it binds every utility / all large loads in the state. A single "
+    "utility's tariff does NOT count, however large that utility is.\n"
+    "(4) ABOUT LARGE-LOAD POWER — cost allocation, a large-load rate class, "
+    "interconnection standards, or siting/permitting. A tax measure does NOT count. A "
+    "study or report mandate does NOT count, because nothing is required of anyone.\n"
+    "A TEMPORARY action (a moratorium or pause) DOES count while it is in force.\n"
+    "Currently tracked, for your reference only — verify rather than assume, and "
+    "include them in the list if they still qualify: {known}\n"
+    "Respond ONLY with JSON: {\"current_actions\": [{\"state\": str, "
+    "\"description\": str, \"url\": str}], \"ended_candidates\": [{\"state\": str, "
     "\"description\": str, \"url\": str}]}."
 )
+# The sweep's SEARCH QUERY. It had none: its user message was "Sweep now: every state
+# action in force today", and that message is what gets searched. Survivable while the
+# job was a yes/no delta check -- "nothing new" is a cheap answer to reach with poor
+# results -- and not survivable once the job became enumerating a national picture. The
+# first run under the new prompt returned an EMPTY full list, asserting there are no
+# state actions in force anywhere, with six of them quoted in its own prompt.
+# Multi-angle on purpose: a roundup phrasing to catch the trackers that maintain these
+# lists, then one clause per BRANCH, since the whole point of the rebuild is that the
+# instrument can be a statute, an order or a rule.
+_REG_QUERY = ("which US states have enacted data center large load energy laws 2025 "
+              "2026 list by state; state large-load rate class cost allocation statute "
+              "data centers; governor executive order data center moratorium pause "
+              "permitting statewide; public utility commission large load tariff rule "
+              "order applies to all utilities")
+
 _REG_STATUTE_CLASSIFY_SYS = (
-    "You classify candidate US state cost-shift laws and return PROVEN DELTAS — "
-    "additions (newly enacted) and repeals (rescinded). Code maintains the running "
-    "roster and derives the count; you only prove what CHANGED.\n"
-    "AN ADDITION counts ONLY if it passes ALL THREE tests AND is enacted:\n"
-    "(1) STATE-WIDE — binds all utilities in the state (a statute or a PUC-wide "
-    "order), not one utility's service territory.\n"
-    "(2) GENERAL + THRESHOLD-DEFINED — a rule for a CLASS of large loads (e.g. loads "
-    ">= 25 MW, a large-load rate class), not a one-off.\n"
-    "(3) NOT a single-utility tariff or one project's interconnection terms.\n"
-    "ENACTED = signed into law or an adopted FINAL order with an effective/enacted "
-    "date; a PROPOSED or pending bill does NOT count, however many states are "
-    "'considering' one. Prove each addition: statute/order citation + enacted date.\n"
-    "A REPEAL counts only if the law was actually rescinded or struck down. Prove each "
-    "repeal: repeal citation + repeal date.\n"
-    "OMIT anything you cannot prove — do NOT pad with pipeline/considering states. "
-    "Respond ONLY with JSON: {\"enacted_states_list\": [{\"name\": str, \"statute\": "
-    "str, \"enacted_date\": str, \"url\": str}], \"repealed_states_list\": [{\"name\": "
-    "str, \"repeal_citation\": str, \"repeal_date\": str, \"url\": str}]}."
+    "You prove US state-level actions on large electrical loads / data centers. "
+    "Return only what you can CITE.\n"
+    "An action qualifies when ALL FOUR hold:\n"
+    "(1) IN FORCE — signed / issued / adopted, with an effective date. Passed-but-"
+    "unsigned, draft, and pending do NOT qualify.\n"
+    "(2) ANY BRANCH — statute, executive order, or commission rule of general "
+    "application.\n"
+    "(3) STATE-WIDE — binds all utilities / all large loads in the state. Prove it "
+    "from the INSTRUMENT'S OWN TEXT, not from an article about it: give a verbatim "
+    "`scope_quote` from the statute, order or rule showing who it binds, and set "
+    "`binds` to one of \"all_utilities\", \"named_utility\", \"voluntary\". ONLY "
+    "\"all_utilities\" qualifies. Three ways an instrument fails this even though "
+    "coverage of it will say the state acted:\n"
+    "  - it NAMES a particular utility or covers one service territory. It does not "
+    "qualify however large that utility is.\n"
+    "  - it is a MODEL, framework, guidance or recommendation utilities may adopt. "
+    "Adopted is not binding; voluntary does not qualify.\n"
+    "  - it DIRECTS someone to propose, study, consider or report rather than imposing "
+    "the requirement itself. A duty to propose is not the rule.\n"
+    "(4) ABOUT LARGE-LOAD POWER — cost allocation, rate class, interconnection, or "
+    "siting/permitting. Tax-only and study-only measures do NOT qualify.\n"
+    "For each: instrument_type is exactly one of \"statute\", \"executive_order\", "
+    "\"commission_rule\". citation is the bill number, executive order number, or "
+    "docket/order number. effective_date is ISO. threshold_mw is the megawatt "
+    "threshold if the action defines one, else null. expires is an ISO date ONLY if "
+    "the action has a stated end date, else null. statewide must be true.\n"
+    "OMIT anything you cannot prove — do NOT pad with pending bills or with states "
+    "that are merely 'considering' one.\n"
+    "Respond ONLY with JSON: {\"actions\": [{\"state\": str, \"instrument_type\": "
+    "str, \"citation\": str, \"effective_date\": str, \"binds\": str, \"scope_quote\": str, "
+    "\"threshold_mw\": number|null, \"expires\": str|null, \"url\": str, "
+    "\"note\": str}], \"ended\": [{\"state\": str, \"citation\": str, "
+    "\"ended_date\": str, \"url\": str}]}."
 )
 # FUTURE WORK — option C, decided 2026-07-20 (DOCUMENTED, not built): broaden the
 # blocked-projects signal BEYOND a single Data Center Watch source. Today this leg is
@@ -808,18 +809,23 @@ _REG_STATUTE_CLASSIFY_SYS = (
 # accumulation, not any one source's headline number. Until then this stays
 # single-sourced to DCW (a quarantined footnote arrow; the light dominates).
 _DCW_SYS = (
-    "Today is {today}. Report ONE number from the Data Center Watch tracker: the "
-    "COUNT of US data-center projects DEFINITIVELY BLOCKED — formally rejected, "
-    "denied, cancelled, or withdrawn due to local opposition. Hard rules:\n"
-    "- It is a COUNT OF PROJECTS (integer), NOT a dollar figure. Do NOT report the $ "
-    "value of blocked/delayed investment (e.g. '$64 billion') — that is not a count.\n"
-    "- BLOCKED ONLY. Data Center Watch often reports a COMBINED 'blocked OR delayed' "
-    "figure — do NOT use the combined number. If blocked-alone is not separable from "
-    "the combined blocked-and-delayed figure, return null.\n"
-    "- Provide a verbatim source_quote containing the number. No verbatim quote => "
-    "return null.\n"
-    "Respond ONLY with JSON: {\"dcw_blocked_projects\": int, \"source_quote\": str, "
-    "\"url\": str} — or {\"dcw_blocked_projects\": null} if not cleanly stated."
+    "Today is {today}. Report the Data Center Watch tracker's COUNT of US data-center "
+    "projects stopped by local opposition, and say exactly WHICH count you are "
+    "giving.\n"
+    "- It is a COUNT OF PROJECTS (integer), never a dollar figure: '$64 billion' is "
+    "not a count.\n"
+    "- metric_basis is \"blocked_only\" when the figure counts projects definitively "
+    "blocked (rejected, denied, cancelled or withdrawn) and NOTHING else, or "
+    "\"blocked_or_delayed\" when it is the combined blocked-and-delayed figure. BOTH "
+    "are acceptable answers. Reporting the wrong LABEL for the figure is not.\n"
+    "- period_label is the period the figure covers, verbatim as the source states it "
+    "(for example \"Q1 2026\", or \"cumulative since 2023\"). If the source does not "
+    "say what period its number covers, return null rather than guessing.\n"
+    "- source_quote is a verbatim quote containing the number. No quote, return "
+    "null.\n"
+    "Respond ONLY with JSON: {\"dcw_blocked_projects\": int, \"metric_basis\": str, "
+    "\"period_label\": str, \"source_quote\": str, \"url\": str} - or "
+    "{\"dcw_blocked_projects\": null} if no count is cleanly stated."
 )
 _DCW_QUERY = ("Data Center Watch number of data center projects blocked rejected "
               "cancelled by local opposition count 2026")
@@ -834,46 +840,90 @@ def run_regulatory_multi():
     blocked-project count as its OWN focused search (verbatim-quoted, null-safe). Each
     leg is resilient: a sweep/classify or DCW failure carries the prior value forward."""
     prev = read_input("regulatory")
-    prev_states = prev.get("states") or []
+    prev_actions = prev.get("actions") or []
     total_cost = 0.0
-    statute_changed = False
+    roster_changed = False
 
-    # Source 1 — enacted state-wide cost-shift statute ROSTER (sweep -> classify) ---
-    # Python maintains a PERSISTED roster; each run applies PROVEN deltas (add on
-    # enactment, remove on repeal) — no search has to recreate the whole list, and the
-    # count = len(roster) can move up OR down. The cheap sweep only surfaces changes.
-    known = ", ".join(s.get("name", "") for s in prev_states) or "California, Ohio, Utah"
-    states = prev_states
+    # Source 1 — the ROSTER of state-level actions in force (sweep -> classify) -----
+    # Python owns the roster; the model only proposes and proves. What changed on
+    # 2026-08-29 is the QUESTION: the sweep used to ask for states "beyond those
+    # already tracked", so it could only ever append to a seed nobody had audited, and
+    # the seed was wrong 2 of 3 (Ohio was a single-utility tariff, California a study
+    # mandate). It now asks for the FULL current list, and Python reconciles:
+    #   * ADD any proven action not already in the roster;
+    #   * never REMOVE on absence — a sweep that misses a state is not evidence the
+    #     state repealed anything, and one thin search must not empty the roster;
+    #   * REMOVE only on a proven ending (citation + date).
+    # So the roster converges upward on proof and only ever shrinks on evidence.
+    known = ", ".join(f"{a.get('state')} ({a.get('citation')})" for a in prev_actions) \
+        or "none tracked"
+    actions = list(prev_actions)
+    rejected = []
     try:
         sweep, m1 = llm.extract_json(
             "regulatory", "sweep",
             [{"role": "system", "content": _REG_SWEEP_MULTI_SYS.replace("{known}", known)},
-             {"role": "user", "content": "Sweep now: new enactments beyond known + repeals of known."}],
+             {"role": "user", "content": _REG_QUERY}],
             model=llm.STAGE1_MODEL, validate=schemas.validate_reg_sweep_multi, web_search=True)
         total_cost += m1["cost_usd"] or 0
-        adds, repeals = sweep["new_candidates"], sweep["repealed_candidates"]
-        if adds or repeals:
+        found, ended = sweep["current_actions"], sweep["ended_candidates"]
+        if found or ended:
             classified, m2 = llm.extract_json(
                 "regulatory", "classify",
                 [{"role": "system", "content": _REG_STATUTE_CLASSIFY_SYS},
-                 {"role": "user", "content": json.dumps({"additions": adds, "repeals": repeals})}],
-                model=llm.STAGE2_MODEL, validate=schemas.validate_reg_statute, web_search=True)
+                 {"role": "user", "content": json.dumps({"candidates": found,
+                                                         "ended": ended})}],
+                model=llm.STAGE2_MODEL, validate=schemas.validate_reg_actions, web_search=True)
             total_cost += m2["cost_usd"] or 0
-            # Apply proven deltas to the persisted roster (Python arbitrates, deduped).
-            by_name = {s["name"].lower(): s for s in prev_states}
-            for s in classified["enacted_states_list"]:
-                by_name[s["name"].lower()] = s            # add / upgrade to a proven record
-            for r in classified["repealed_states_list"]:
-                by_name.pop(r["name"].lower(), None)      # remove a proven-repealed state
-            states = list(by_name.values())
-            statute_changed = states != prev_states
+            # Keyed on (state, citation): one state can hold several actions at once —
+            # Texas has SB 6 and the governor's audit order, and they are different
+            # instruments with different lifetimes.
+            by_key = {(a["state"].lower(), a["citation"].lower()): a for a in actions}
+            for a in classified["actions"]:
+                by_key[(a["state"].lower(), a["citation"].lower())] = a
+            for e in classified["ended"]:
+                by_key.pop((e["state"].lower(), e["citation"].lower()), None)
+            # Rejections are EVIDENCE, not noise: each is a state the sweep found and
+            # the gate refused, and a gate that is too strict shrinks this count in the
+            # bubble-supportive direction. Logged and stored so a false negative shows up
+            # instead of looking like the state never existed.
+            for r in classified.get("rejected", []):
+                print(f"[STOPLIGHT] regulatory rejected {r['state']} "
+                      f"({r['citation']}): {r['why']}")
+            rejected = classified.get("rejected", [])
+            new_actions = list(by_key.values())
+            roster_changed = new_actions != actions
+            actions = new_actions
     except ValueError:
         pass                                              # sweep/classify failed -> keep prior
 
-    enacted_states = len(states) if states else prev.get("enacted_states")
+    # NOTE: no count is derived here. The FACTOR counts the roster daily and for
+    # free, which is what lets a temporary action retire on its own expiry date
+    # without waiting for the next billed run.
 
-    # Source 2 — DCW blocked-project count (own focused search, null-safe) ----------
-    blocked, dcw_failed = prev.get("dcw_blocked_projects"), False
+    # Source 2 — DCW opposition count (own focused search, null-safe) --------------
+    # REBUILT 2026-08-29. Two faults, and they are independent:
+    #
+    #   1. The metric was not reliably OBSERVABLE. The prompt demanded a blocked-ONLY
+    #      count; the source mostly publishes a combined blocked-or-delayed figure. The
+    #      validator did exactly as told and returned null on 8 of 9 calls, each of them
+    #      billed. Both figures are honest measures of local opposition -- what is
+    #      dishonest is not knowing which one you are holding. So both are accepted now
+    #      and the BASIS is recorded.
+    #
+    #   2. Two observations were compared with nothing recording whether they measured
+    #      the same thing. `dcw_prev_blocked` took the previous RUN's value, so it was a
+    #      run counter, not an observation counter. On 2026-08-18 a "Q1 2026 outright
+    #      cancellations" 20 was set against a SEEDED "blocked per quarter" 75 and fired
+    #      the factor's only arrow to date -- off a changed question, not a changed
+    #      world.
+    #
+    # An observation is now a RECORD (value, basis, period, quote, url, date) and the
+    # previous one is kept whole, replaced only when a new observation actually lands.
+    # The factor compares them and refuses when they are unlike; see regulatory.py.
+    dcw_obs = prev.get("dcw") or None
+    dcw_prev_obs = prev.get("dcw_prev") or None
+    dcw_failed = False
     try:
         dcw, m3 = llm.extract_json(
             "regulatory", "dcw",
@@ -882,19 +932,36 @@ def run_regulatory_multi():
             model=llm.STAGE2_MODEL, validate=schemas.validate_dcw_blocked, web_search=True)
         total_cost += m3["cost_usd"] or 0
         if dcw["dcw_blocked_projects"] is not None:   # null => no clean count, keep prior
-            blocked = dcw["dcw_blocked_projects"]
+            fresh = {"value": dcw["dcw_blocked_projects"],
+                     "basis": dcw.get("metric_basis"),
+                     "period": dcw.get("period_label"),
+                     "quote": dcw.get("source_quote"),
+                     "url": dcw.get("url"),
+                     "date": _today()}
+            # A restatement of the SAME period on the same basis is not a new
+            # observation, so it must not push the real prior one out of the window.
+            same = (dcw_obs and fresh["basis"] == dcw_obs.get("basis")
+                    and fresh["period"] == dcw_obs.get("period"))
+            if not same:
+                dcw_prev_obs = dcw_obs
+            dcw_obs = fresh
     except ValueError:
         dcw_failed = True
 
     rec = {
-        "enacted_states": enacted_states,
-        "states": states,
-        "dcw_blocked_projects": blocked,
-        "dcw_prev_blocked": prev.get("dcw_blocked_projects"),
+        # `actions` replaces `states`, and there is no stored count: the field names
+        # changed because the MEANING did, and a same-named field with a new meaning is
+        # the trap this codebase keeps writing down. `basis` says which rule a record
+        # was built under so the two are never silently compared.
+        "actions": actions,
+        "basis": "any_branch_in_force_statewide",
+        "classify_rejected": rejected,
+        "dcw": dcw_obs,
+        "dcw_prev": dcw_prev_obs,
         "asof": _today(),
-        "statute_changed": statute_changed,
+        "roster_changed": roster_changed,
         "dcw_failed": dcw_failed,
-        "provenance": "multi-search per-source (statute sweep->classify, Python-counted + DCW blocked)",
+        "provenance": "multi-search per-source (full-list sweep->prove, Python-reconciled + DCW blocked)",
     }
     write_input("regulatory", rec)
     return rec, round(total_cost, 4)
@@ -948,7 +1015,7 @@ def run(factor):
     if factor == "regulatory_multi":
         return run_regulatory_multi()[0]
     if factor == "regulatory":
-        return run_regulatory()
+        return run_regulatory_multi()[0]
     if factor in _EARNINGS:
         return run_earnings(factor)
     raise ValueError(f"unknown extractor: {factor}")

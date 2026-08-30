@@ -607,7 +607,10 @@
             ? `<circle cx="${x(si).toFixed(1)}" cy="${y(pts[si].value).toFixed(1)}" r="2.6" ` +
               `fill="currentColor" stroke="#0f172a" stroke-width="1.4"/>` : '';
         // The count comes back with the SVG so the label cannot claim a span the line
-        // does not draw — a factor with six days of history says 6, not 10.
+        // does not draw — a factor with six days of history says 6, not 10. It counts
+        // READINGS, not days: an asof-keyed factor's rows are one per OBSERVATION, so
+        // memory_canary's ten points span six weeks and silicon_payback's seven are
+        // quarterly prints. "10d" was the assumption that the rail is a calendar.
         // Gridlines draw FIRST so the line and fill sit on top of them.
         return { n: pts.length, svg:
             `<svg class="ab-spk abh-${light}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
@@ -1609,7 +1612,8 @@
               `<span><span class="k">Reading</span> <b class="abh-${c}">${esc(rd.metric || '—')}</b></span>` +
               fig.map(([k, v]) => `<span><span class="k">${esc(k)}</span> <b>${esc(v)}</b></span>`).join('') +
               `<span><span class="k">Prev</span> <b>${esc(prevTx)}</b></span>` +
-              (spark ? `<span class="sp"><span class="k">${spark.n}d</span>${spark.svg}</span>` : '') +
+              (spark ? '<span class="sp"><span class="k">' + spark.n +
+                       ' readings</span>' + spark.svg + '</span>' : '') +
             '</div>';
 
         // --- the view itself. A factor with a ledger gets the real thing; the rest get

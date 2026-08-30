@@ -45,7 +45,12 @@ FACTORS = [
     dict(id="silicon_payback", name="Silicon payback", rank=5,  cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="silicon_payback", asof_keyed=True),
     dict(id="leverage",        name="Leverage",        rank=6,  cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="leverage"),
     dict(id="market_credit",   name="Market credit",   rank=7,  cadence="daily",     catalyst=None,           highlight="state-change", builder="market_credit"),
-    dict(id="memory_canary",   name="Memory canary",   rank=8,  cadence="daily",     catalyst=None,           highlight="state-change", builder="memory_canary"),
+    # asof_keyed 2026-08-29: this factor polls daily and OBSERVES episodically -- 42
+    # snapshot days held 10 distinct observations. Keyed on the observation date, the
+    # log stops recording 32 restatements as if they were readings. Safe to flag: the
+    # only consumer of its history is its own ledger(), which is display; nothing does
+    # arithmetic on it (cf. concentration / silicon_e, which must NOT be flagged).
+    dict(id="memory_canary",   name="Memory canary",   rank=8,  cadence="daily",     catalyst=None,           highlight="state-change", builder="memory_canary", asof_keyed=True),
     dict(id="regulatory",      name="Regulatory",      rank=9,  cadence="daily",     catalyst=None,           highlight="new-tag",      builder="regulatory"),
     dict(id="heavy_haul",      name="Heavy haul",      rank=10, cadence="daily",     catalyst="self-gate",    highlight="state-change", builder="heavy_haul"),
     # infra_backlog demoted 8 -> 11 and flagged for refinement (2026-07-19): VRT

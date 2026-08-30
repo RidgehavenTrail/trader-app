@@ -293,7 +293,18 @@
                   + 'a dated list, so “the last 5” is <b>approximated</b> from the '
                   + 'down-share of the narrower window that holds at least 5 revisions, '
                   + '×5 and rounded. Pooling is by <b>count</b> and unweighted: a name '
-                  + 'that files more revisions carries more of the light.' }
+                  + 'that files more revisions carries more of the light.' },
+                { k: 'The clock', b:
+                    'The feed’s “last 7 days” is not a rolling window — it is a '
+                  + 'field the vendor refreshes in steps. Measured over this factor’s own '
+                  + 'log, <b>42 daily rows held ten distinct observations</b>, the longest '
+                  + 'unchanged for 13 days, and two vendor frames alternate. The reading '
+                  + 'now carries the date it was <b>OBSERVED</b> rather than the date we '
+                  + 'looked: <b>Observed</b> above is how long the current numbers have '
+                  + 'stood, and the log keeps one row per observation instead of one per '
+                  + 'poll. Distinct from <b>stale</b> in the provenance line, which counts '
+                  + 'days since the last poll and reads 0 here every day — a fresh poll '
+                  + 'and a fresh reading are different claims.' }
             ]
         },
         regulatory: {
@@ -1456,10 +1467,16 @@
             // ESTIMATES rides in the strip because it is the day's BASIS, not a detail:
             // '+1q · +1y' and 'all four' are different denominators, and a rail day from
             // before 2026-08-29 must not be read as if it were on today's rule.
-            figures: d => [['estimates', d.estimates || 'all four'],
+            // OBSERVED rides in the strip because the reading's own freshness is not
+            // the poll's: this factor polls daily and OBSERVES episodically -- 42
+            // snapshot days held ten observations. `stale` in the provenance line
+            // counts days since we LOOKED and reads 0 here daily; this counts days
+            // since the numbers last MOVED.
+            figures: d => [['observed', d.age_days == null ? '—'
+                             : (d.age_days === 0 ? 'today' : d.age_days + 'd ago')],
+                           ['estimates', d.estimates || 'all four'],
                            ['window', d.window],
-                           ['down', String(d.pool_down)],
-                           ['up', String(d.pool_up)]],
+                           ['down', String(d.pool_down)]],
             render:  (key, day, all) => key === 'windows'
                 ? abWindowsHTML(day, all[all.length - 1])
                 : abRevisionsHTML(day, all[all.length - 1])

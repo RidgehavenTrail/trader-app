@@ -92,8 +92,11 @@ def factor_markers(reg=None, today=None):
         'M/D'    a weekly poller with no discrete catalyst -> its next release day
 
     Precedence is deliberate: a daily poller is 'D' even when it ALSO has a dated
-    catalyst (memory_canary/heavy_haul/copper) — it moves every day regardless, so
-    a single future date would understate it. 'Truly daily' is read from the seed's
+    catalyst (memory_canary/heavy_haul/copper) — it is POLLED every day, so a single
+    future date would understate it. ("moves every day regardless" is what this said
+    until 2026-08-29, and for memory_canary it was not true: 42 snapshot days held 10
+    observations. The marker is about the POLL, which is daily; the reading's own
+    freshness is `extras.observation_age_days`.) 'Truly daily' is read from the seed's
     _pollers block, NOT registry cadence (regulatory's cadence reads 'daily' but it
     is a weekly sweep — the _pollers list has it right)."""
     reg = reg or load_registry()

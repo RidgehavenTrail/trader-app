@@ -63,6 +63,7 @@ Reference (2026-07-18 spec): RED, 0-of-5 down — pooled ~31 up / 0-1 down, a
 live DDR5 UP-burst. Earnings: SK Hynix ~07-28, MU ~09-23.
 """
 import datetime
+import json
 
 import yfinance as yf
 
@@ -161,6 +162,55 @@ def _frame_periods(frame):
     return out
 
 
+def _observation_key(per_ticker, window, basis):
+    """What makes two readings the SAME observation: identical counts, on the same
+    window, on the same counting basis. A basis change is always a new observation --
+    two rules applied to one set of numbers are not one measurement repeated."""
+    return json.dumps({"b": basis, "w": window,
+                       "t": {k: [v.get("up7"), v.get("down7"),
+                                 v.get("up30"), v.get("down30")]
+                             for k, v in sorted((per_ticker or {}).items())}},
+                      sort_keys=True, default=str)
+
+
+def _dated(per_ticker, window, basis, today):
+    """(asof, age_days, restated) -- the date this reading was OBSERVED, not the date
+    we looked at it.
+
+    THE CLOCK PROBLEM. yfinance's "last 7 days" is not a rolling window; it is a field
+    the vendor refreshes episodically. Measured over the snapshot log: 42 daily rows
+    hold TEN distinct observations, the longest unchanged for 13 days, and two vendor
+    frames alternate (SK Hynix's 30d pair ran 47/0 -> 35/21 -> 47/0 -> 35/23). So the
+    board was publishing a reading dated today that had last moved a fortnight ago, and
+    a "state-change" highlight fired on 08-13 and un-fired on 08-14 off that alternation
+    rather than off any analyst.
+
+    `asof` is therefore CARRIED while the counts are unchanged -- the reading keeps the
+    date it was first seen -- and the factor is `asof_keyed`, so the snapshot log files
+    one row per observation instead of one per poll. `observation_age_days` is how long
+    the current one has stood.
+
+    This is deliberately NOT the board's `stale_days`, which counts days since
+    `updated_at`: that measures when we last LOOKED and reads 0 here every day, because
+    the poll is genuinely daily. The poll being fresh and the observation being fresh
+    are different claims, and only one of them was on screen."""
+    key = _observation_key(per_ticker, window, basis)
+    prev = (store.history_payloads("memory_canary", 1) or [None])[0]
+    asof = today.isoformat()
+    restated = False
+    if prev:
+        pex = prev.get("extras") or {}
+        pkey = _observation_key(pex.get("per_ticker"), pex.get("window"),
+                                pex.get("basis") or "all_periods")
+        if pkey == key and prev.get("asof"):
+            asof, restated = prev["asof"], True
+    try:
+        age = (today - datetime.date.fromisoformat(asof)).days
+    except ValueError:
+        age = 0
+    return asof, max(age, 0), restated
+
+
 def _band(downs_of_5):
     """downs-of-5 -> (light, state). One definition, used by compute() and by the
     ledger's per-name and per-window what-if columns, so nothing on the panel can
@@ -215,6 +265,7 @@ def compute():
     window, downs_share = _select_window(up7, down7, up30, down30)
     downs_of_5 = round(downs_share * 5)
     light, state = _band(downs_of_5)
+    asof, age_days, restated = _dated(per_ticker, window, "two_estimates", today)
 
     return {
         "id": "memory_canary",
@@ -222,11 +273,16 @@ def compute():
         "value": downs_of_5,
         "metric": f"{downs_of_5}/5 dn",
         "state": state,
-        "asof": today.isoformat(),
+        # The OBSERVATION's date, carried while the counts are unchanged -- not today.
+        "asof": asof,
         # `basis` names the counting rule this row was computed under. Absent on every
         # row written before 2026-08-29, which is exactly what "all_periods" means --
         # see the REFERENCE DISCONTINUITY note above.
         "extras": {"window": window, "basis": "two_estimates",
+                   # How long the CURRENT observation has stood. The board's own
+                   # `stale_days` counts days since the last POLL and reads 0 here
+                   # daily; these are different claims and both belong on screen.
+                   "observation_age_days": age_days, "restated": restated,
                    "pooled_up7": up7, "pooled_down7": down7,
                    "pooled_up30": up30, "pooled_down30": down30,
                    "per_ticker": per_ticker,
@@ -336,6 +392,9 @@ def ledger(days=10, top=10):
             "metric": day.get("metric"),
             "window": window,
             "basis_rule": basis,
+            # How old the OBSERVATION was on this day -- not how long ago the day was.
+            "age_days": ex.get("observation_age_days"),
+            "restated": bool(ex.get("restated")),
             "estimates": estimates,
             "share": sel["share"],
             "pool_up": sel["up"], "pool_down": sel["down"], "pool_total": pool,

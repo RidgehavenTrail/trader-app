@@ -843,6 +843,109 @@
     .ab-sw { width:8px; height:8px; border-radius:2px; flex:none; display:inline-block; }
     .ab-sw-h { background:repeating-linear-gradient(45deg,#8b98a8 0 1.5px,transparent 1.5px 4px);
         border:1px solid rgba(139,152,168,.5); }
+    /* --- INFRA BACKLOG (factor #6) evidence views ---------------------------- */
+    /* A unit suffix on a hero value: the digits stay the display size and the unit
+       drops to something that reads as a unit rather than a second number. */
+    .ab-hero .u { font-size:22px; color:#64748b; margin-left:1px; }
+    /* The scale takes the band's free width, like heavy_haul's chart and for the same
+       reason — it is a horizontal axis, and the pies' 430px cap squashes it. */
+    .ib-scale { flex:1 1 auto; min-width:0; }
+    .ib-scale svg { width:100%; max-width:none; height:auto; display:block; }
+    .ib-tick { stroke:#64748b; stroke-width:1; }
+    .ib-tk { fill:#64748b; font-family:ui-monospace,monospace; font-size:9px;
+        text-anchor:middle; }
+    .ib-bl { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.1em;
+        text-transform:uppercase; text-anchor:middle; fill-opacity:.85; }
+    .ib-now { font-family:'Inter',system-ui,sans-serif; font-size:15px; font-weight:600;
+        text-anchor:middle; }
+    /* The cap, as the two-step it is. Written as was -> is rather than as one sentence
+       because the whole difficulty of this factor is that the number and the light
+       disagree on purpose, and a reader has to see both to trust either. */
+    .ib-cap { margin:2px 13px 0; padding:9px 12px 10px; border:1px solid #334155;
+        border-radius:4px; background:rgba(148,163,184,.045); }
+    .ib-was, .ib-is { font-family:ui-monospace,monospace; font-size:10.5px;
+        letter-spacing:.06em; text-transform:uppercase; }
+    .ib-arw { color:#64748b; margin:0 9px; }
+    .ib-capwhy { margin-top:6px; font-size:11.5px; line-height:1.6; color:#94a3b8;
+        max-width:88ch; }
+    .ib-capwhy b { color:#e2e8f0; font-weight:600; }
+    /* A verbatim quote is the whole evidence for a "stated" primitive, so it is set as
+       a quotation and not folded into a table cell — the extractor's own guard is that
+       the sentence must carry the number, and you cannot check that against a summary. */
+    .ib-quote { margin:8px 12px 10px; padding:8px 11px; border-left:2px solid #475569;
+        font-size:11.5px; line-height:1.6; color:#cbd5e1; background:rgba(148,163,184,.04); }
+    .ib-cite { display:block; margin-top:5px; font-family:ui-monospace,monospace;
+        font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
+    .ib-note { padding:7px 12px 9px; font-size:11px; line-height:1.55; color:#94a3b8; }
+    /* An ABSENCE has to render as something. A blank cell reads as "not looked at";
+       these legs were looked at and came back empty, which is a different fact. */
+    .ib-none { color:#64748b; font-style:italic; }
+    .ib-role { font-family:ui-monospace,monospace; font-size:8.5px; letter-spacing:.1em;
+        text-transform:uppercase; color:#64748b; margin-left:7px; }
+    /* --- HEAVY HAUL (factor #5) evidence views ------------------------------- */
+    /* The index picture takes the band's free width rather than the 430px cap the pies
+       keep. It is a time series: squeezing a year of bars into a pie's footprint is
+       exactly what makes a trend chart unreadable. */
+    .hh-chart { flex:1 1 auto; min-width:0; }
+    .hh-chart svg { width:100%; max-width:none; height:auto; display:block; }
+    .hh-mark { stroke:#e2e8f0; stroke-width:1; stroke-dasharray:3 3; opacity:.8; }
+    .hh-dot { fill:#a78bfa; stroke:#0f172a; stroke-width:1.5; }
+    .hh-high { stroke:#475569; stroke-width:1; stroke-dasharray:2 4; }
+    .hh-mk { fill:#64748b; font-family:ui-monospace,monospace; font-size:8.5px; }
+    .hh-tag { font-family:ui-monospace,monospace; font-size:9px; }
+    .hh-top .ab-hero .v, .hh-comp .ab-hero .v { color:#e2e8f0; }
+    .hh-of { font-size:22px; color:#64748b; margin-left:1px; }
+    /* The deviation bars carry SIGN BY DIRECTION, never by hue. Red and green are the
+       light's colours on this board, and this light is INVERTED — a name below its 50
+       is pro-burst — so a red bar under a green lamp would mean the opposite of the
+       lamp two rows above it. Position does the job and cannot be misread. */
+    .hh-dev { vertical-align:middle; }
+    .hh-zero { stroke:#334155; stroke-width:1; }
+    .hh-bar { fill:#94a3b8; }
+    /* The single rule on the table: above it, every name is under its own 50. */
+    .ab-ledger tbody tr.hh-cross td { border-top:1px solid #475569; }
+    /* One line per name, and the measure columns are FIXED. Six columns with no
+       widths pooled every spare pixel into the two bar cells — measured at 153px of
+       cell around an 88px bar — and the stacked name block put every row at 40.3px,
+       which is 645px of table for sixteen names. table-layout:fixed makes the three
+       stated widths authoritative and hands the remainder to the name. */
+    .hh-tbl { min-width:520px; table-layout:fixed; }
+    .hh-tbl tbody td { padding:3px 10px; }
+    .hh-tbl .nm2 { display:flex; align-items:baseline; gap:7px; min-width:0; }
+    .hh-tbl .nm2 .ab-sw { align-self:center; }
+    .hh-tk { font-family:ui-monospace,monospace; font-size:9px; color:#64748b;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hh-c1 { width:72px; }
+    .hh-c2 { width:150px; }
+    /* The bar sits WITH its number rather than in a column of its own — one boundary
+       fewer, and the pair reads as one measurement. */
+    .hh-cell { display:flex; align-items:center; gap:9px; }
+    .hh-cell b { font-weight:400; font-variant-numeric:tabular-nums; }
+    .hh-leg { flex:0 0 auto; min-width:196px; }
+    /* Sixteen magnitudes are a BAR LIST, not sixteen pie slices. The pie carries the
+       four sectors, which is inside the six a pie can actually hold. */
+    .hh-bars { padding:2px 13px 12px; }
+    .hh-bhd { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.12em;
+        text-transform:uppercase; color:#64748b; padding:8px 0 8px; }
+    .hh-bhd b { color:#94a3b8; font-weight:400; }
+    .hh-brow { display:flex; align-items:center; gap:9px; padding:2px 0;
+        font-family:ui-monospace,monospace; font-size:10.5px; }
+    .hh-bk { flex:0 0 46px; color:#e2e8f0; }
+    .hh-btr { position:relative; flex:1 1 auto; height:9px; min-width:0;
+        background:rgba(148,163,184,.07); border-radius:2px; }
+    .hh-btr i { position:absolute; left:0; top:0; height:9px; border-radius:2px;
+        display:block; }
+    /* The equal weight every name is given regardless. The gap between a bar and this
+       rule IS the distortion cap weighting would introduce, so it is drawn OVER the
+       fill rather than behind it. */
+    .hh-btr u { position:absolute; top:-2px; width:1px; height:13px; background:#e2e8f0;
+        opacity:.55; }
+    /* The dollars first and the share after it (user, 2026-08-29): a share of a
+       basket is only meaningful once you know the size of the thing being shared. */
+    .hh-bc { flex:0 0 58px; text-align:right; color:#e2e8f0;
+        font-variant-numeric:tabular-nums; }
+    .hh-bv { flex:0 0 46px; text-align:right; color:#94a3b8;
+        font-variant-numeric:tabular-nums; }
     .ab-sources .pulled { font-family:ui-monospace,monospace; font-size:10px; color:#94a3b8;
         white-space:nowrap; }
     .ab-sources .pulled .age { color:#64748b; }
@@ -1604,7 +1707,7 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/us-map.js?v=20260829a"></script>
-<script src="static/js/stoplight.js?v=20260829l"></script>
+<script src="static/js/stoplight.js?v=20260830b"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

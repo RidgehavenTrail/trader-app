@@ -96,3 +96,31 @@ def project_gate_date(closes, gate_bars):
         if d.weekday() < 5:
             left -= 1
     return d.isoformat(), int(remaining)
+
+
+def market_caps(tickers, workers=8):
+    """Current market cap in $ per ticker -> {ticker: float | None}.
+
+    `fast_info`, never `.info` — the full info dict is a much heavier scrape for one
+    number. It still costs ~0.6s a name, so the reads run in a small thread pool:
+    sixteen of them in series would put ten seconds in front of a panel open, and
+    they are independent network calls with nothing to serialise.
+
+    A name that fails comes back None instead of raising, which is the OPPOSITE of
+    `batched_closes` above and deliberately so. A missing close silently skews an
+    equal-weight index, so that one fails loud; a missing cap is composition colour
+    that feeds no light, so it must never cost a caller the rest of its ledger. The
+    view says which name it could not size rather than quietly dropping it from the
+    total."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(sym):
+        try:
+            fi = yf.Ticker(sym).fast_info
+            cap = fi.get("marketCap") if hasattr(fi, "get") else fi["market_cap"]
+            return sym, (float(cap) if cap else None)
+        except Exception:
+            return sym, None
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return dict(ex.map(one, tickers))

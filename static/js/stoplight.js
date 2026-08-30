@@ -360,6 +360,118 @@
                   + 'and the period it was measured on, so a mismatch is visible instead '
                   + 'of silent.' }
             ]
+        },
+        heavy_haul: {
+            // Glanceable (user, 2026-08-29). WHICH sixteen, and why equal weight, is the
+            // real content — and it is footnote detail, under Basket and Weighting below.
+            measures: 'Sixteen freight names that physically move the buildout, equal-weighted, '
+                    + 'against their own 50 and 200-bar trend.',
+            // Says nothing about which way freight is currently going. The rail, the
+            // sparkline and the constituent table all compute the live direction; a
+            // direction written into a static definition is asserted, not observed —
+            // the session-48 lesson, in the one place on this factor it could recur.
+            why: 'Freight is the buildout’s physical leg. Data centres are poured, trucked '
+               + 'and railed into place long before they compute, so a freight tape that is '
+               + 'still humming says the physical build has not been called off — and one '
+               + 'rolling over says it has, whatever the capex slides still promise.',
+            // INVERTED, like the board's other supply-side reads: green is freight rolling
+            // over (pro-burst), red is humming. The ranges are LADDER STATES, not cuts on
+            // one axis — see `edges`.
+            bands: [
+                { light: 'green',  range: 'below the 200',        mean: 'freight rolling over' },
+                { light: 'yellow', range: 'above, both true',     mean: 'distribution top' },
+                { light: 'orange', range: 'above, one true',      mean: 'weakening' },
+                { light: 'red',    range: 'above, neither',       mean: 'humming' }
+            ],
+            // ONE edge, and the omission is the honest answer rather than a gap. The
+            // sparkline plots this factor's metric, distance from the 200-bar MA, and the
+            // only band boundary that lives on that axis is zero — the 200 breach that
+            // turns the light green. Yellow, orange and red do not divide on distance from
+            // the 200 at all; they divide on the 50 and on bars since the high. A gridline
+            // drawn for them would be a line the series cannot cross.
+            edges: [0],
+            // No glyph pair: nothing here agrees or disagrees with a second series the way
+            // premium_share's token share does, and a key would promise a mark never drawn.
+            method: [
+                { k: 'Basket', b: 'Sixteen names that PHYSICALLY move the buildout — '
+                    + '<b>LTL</b> (less-than-truckload: many small shipments consolidated onto '
+                    + 'one trailer, the freight that moves a build-out’s parts rather than its '
+                    + 'bulk), truckload, flatbed, intermodal, the three US Class I rails, and utility '
+                    + 'fleet. Airlines, parcel and general forwarders are excluded on purpose: '
+                    + 'they measure consumer travel and e-commerce, not freight.' },
+                { k: 'Weighting', b: 'Equal weight, reset quarterly on the third Friday of '
+                    + 'Mar/Jun/Sep/Dec (XTN’s schedule), chain-linked from a fixed base of '
+                    + '<b>100</b> at 2021-08-02 — fixed, because rebasing at the fetch '
+                    + 'window made the level an artefact of the lookback. Equal <b>and not '
+                    + 'cap</b>: three rails are about <b>73%</b> of this basket’s market '
+                    + 'cap and are the whole investable rail universe, so cap weight would make '
+                    + 'this a rail proxy. Measured 2026-08-01, cap weight read <b>+1.64% above</b> '
+                    + 'its 50 while 13 of 16 names sat below their own. Equal weight is the '
+                    + 'breadth detector; see Composition.' },
+                { k: 'The ladder', b: 'Four states, and the hysteresis is the point. <b>Green '
+                    + 'dominates</b>: any close below the 200-bar MA, and nothing else is read. '
+                    + 'Above it, two conditions — below the 50-bar MA, and no new 52-week '
+                    + 'CLOSE high for <b>63</b> bars (copper’s gate) — give yellow on '
+                    + 'both, orange on one, red on neither. Orange is the worker: a brief breach '
+                    + 'that recovers cannot snap straight back to red. The 63-bar gate is '
+                    + 'SELF-EXECUTING, so its date is knowable ahead and is recomputed every '
+                    + 'pass rather than pinned — a new high resets it.' }
+            ]
+        },
+        infra_backlog: {
+            measures: 'VRT’s book-to-bill — new orders BOOKED divided by what it BILLED '
+                    + 'in the same period.',
+            // Says nothing about which way orders are currently going, and nothing about
+            // the number being old: the first is the sparkline's job and the second is a
+            // live figure the evidence view computes. A staleness written into a static
+            // definition would still be sitting here the quarter VRT starts publishing
+            // again.
+            why: 'The most LEADING read on the capex complex. Orders are signed before '
+               + 'guidance is given and long before concrete is poured, so this turns '
+               + 'first — the power and cooling gear a data centre cannot open without '
+               + 'is ordered while the capex slides still say everything is fine.',
+            bands: [
+                { light: 'green',  range: '< 0.9 twice',  mean: 'orders evaporating' },
+                { light: 'yellow', range: '0.9 – 1.0',    mean: 'softening' },
+                { light: 'red',    range: '> 1.0',        mean: 'orders flooding' }
+            ],
+            edges: [0.9, 1.0],
+            glyph: [
+                { sym: '+', arrow: 'plus',  mean: 'GEV’s unsold capacity AGREES' },
+                { sym: '−', arrow: 'minus', mean: 'GEV’s unsold capacity CONTRADICTS' }
+            ],
+            method: [
+                { k: 'The number', b: 'Book-to-bill is a dimensionless FLOW ratio — orders '
+                    + 'in over billings out, both from the same release and the same basis. '
+                    + 'Taken as management STATES it, else computed orders ÷ revenue, and '
+                    + '<b>never</b> derived from the change in backlog: scan-sourced backlog '
+                    + 'figures are routinely not comparable (RPO against backlog against '
+                    + 'different report dates), and that path once implied a <b>0.25×</b> '
+                    + 'immediately after a 2.9×. The validator rejects the banned path rather '
+                    + 'than trusting the number that comes out of it.' },
+                { k: 'The cap', b: 'VRT does not disclose orders every quarter — management '
+                    + 'has said so outright. While the leg is flagged undisclosed a RED is '
+                    + 'held at yellow, because a carried strong print must not keep asserting '
+                    + 'maximum bubble-support after the company has stopped publishing the '
+                    + 'metric. Deliberately a <b>cap and not a downgrade</b>: silence is soft '
+                    + 'evidence, enough to withdraw the strongest claim and never enough to '
+                    + 'manufacture a pro-burst one, so it can reach yellow and never green.' },
+                { k: 'Why green needs two', b: 'Book-to-bill is lumpy, so one print under '
+                    + '<b>0.9</b> is a data point and two consecutive are a turn. The bar is '
+                    + 'set there because VRT’s backlog is only about <b>0.9 years</b> of '
+                    + 'revenue — no cushion, so it needs a ratio above 1 just to hold ground. '
+                    + 'A green cannot be faked by share loss: for the ratio to fall from 2.9× '
+                    + 'to under 0.9, orders have to drop about <b>70%</b>.' },
+                { k: 'The glyph', b: 'GEV’s remaining UNSOLD generating capacity, in GW — a '
+                    + 'stock, not a flow, and a corroborator only: the light is VRT’s. The '
+                    + 'model emits the stated figure and <b>this code</b> resolves the '
+                    + 'direction, never the model — shrinking unsold capacity means demand is '
+                    + 'strong and agrees with red (+); growing means slots are reopening and '
+                    + 'contradicts it (−); inside a <b>±5 GW</b> deadband, or with only one '
+                    + 'print on the record, no glyph. Read the TIMING: a − beside today’s red '
+                    + 'is GEV latency, while a + returning AFTER VRT greens is the real '
+                    + 'sector-wide confirmation.' }
+            ]
         }
     };
 
@@ -1419,6 +1531,418 @@
     // sit from the recorded one before the pane says so, and it has to be per-factor
     // because the units are — 0.05 is a rounding difference on a percentage and most of
     // a band on a ratio that lives between 0.2 and 0.5.
+    // --- INFRA BACKLOG (factor #6) ---------------------------------------------
+    // The band hues are the BOARD's own light colours here, and that is correct rather
+    // than a reuse of reserved status colour: this scale IS the light scale. The bands
+    // are where the number turns each light, so painting them anything else would put a
+    // second colour language on top of the one the panel already speaks.
+    const AB_IB_BAND = { green: '#4ade80', yellow: '#fbbf24', red: '#f87171' };
+
+    // Where the reading sits on the book-to-bill scale, and what the light does with
+    // it. Drawn because the board row says "yellow · 2.9x" and those two look like a
+    // contradiction until you can see the cap: the NUMBER is red, and the light is
+    // held down a step because the company stopped publishing the number.
+    function abInfraScaleSVG(day) {
+        const btb = day.btb, hi = Math.max(1.3, btb * 1.14);
+        const W = 680, H = 92, PL = 10, PR = 10, Y = 34, BH = 22;
+        const X = v => PL + (v / hi) * (W - PL - PR);
+        const seg = (a, b, light) =>
+            `<rect x="${X(a).toFixed(1)}" y="${Y}" width="${(X(b) - X(a)).toFixed(1)}" ` +
+            `height="${BH}" fill="${AB_IB_BAND[light]}" fill-opacity=".18" ` +
+            `stroke="${AB_IB_BAND[light]}" stroke-opacity=".45" stroke-width="1"/>`;
+        const tick = (v, label) =>
+            `<line x1="${X(v).toFixed(1)}" y1="${Y - 5}" x2="${X(v).toFixed(1)}" ` +
+            `y2="${Y + BH + 5}" class="ib-tick"/>` +
+            `<text x="${X(v).toFixed(1)}" y="${Y + BH + 16}" class="ib-tk">${label}</text>`;
+        // The reading's marker wears the light the NUMBER earns, not the light the board
+        // shows. That is the point of the picture: the two differ, and a marker painted
+        // the capped colour would quietly agree with the cap instead of showing it.
+        const mx = X(btb);
+        const marker =
+            `<line x1="${mx.toFixed(1)}" y1="${Y - 13}" x2="${mx.toFixed(1)}" ` +
+            `y2="${Y + BH + 2}" stroke="${AB_IB_BAND[day.raw_light] || '#e2e8f0'}" ` +
+            'stroke-width="2"/>' +
+            `<text x="${mx.toFixed(1)}" y="${Y - 18}" class="ib-now" ` +
+            `fill="${AB_IB_BAND[day.raw_light] || '#e2e8f0'}">${btb.toFixed(1)}&#215;</text>`;
+        // A band is named only while it can HOLD its name — the measured rule the pies
+        // use, not a percentage threshold. The yellow band is 0.1 wide on a scale that
+        // runs past 3, so at a 2.9 reading it is ~20px against a ~34px word: the label
+        // would sit across its neighbours and paint the wrong band's colour over them.
+        // The 0.9 and 1.0 ticks carry that boundary instead, which is what ticks are for.
+        const labels = [[0, day.yellow_at, 'green'], [day.yellow_at, day.red_above, 'yellow'],
+                        [day.red_above, hi, 'red']]
+            .map(([a, b, l]) => (X(b) - X(a)) < l.length * 5.6 + 8 ? ''
+                : `<text x="${((X(a) + X(b)) / 2).toFixed(1)}" y="${Y + 15}" ` +
+                  `class="ib-bl" fill="${AB_IB_BAND[l]}">${l}</text>`).join('');
+        return '<div class="ib-scale"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="Book-to-bill scale: green below ${day.yellow_at}, yellow to ` +
+            `${day.red_above}, red above it; the reading sits at ${btb.toFixed(1)}">` +
+            seg(0, day.yellow_at, 'green') + seg(day.yellow_at, day.red_above, 'yellow') +
+            seg(day.red_above, hi, 'red') + labels +
+            tick(day.yellow_at, day.yellow_at.toFixed(1)) +
+            tick(day.red_above, day.red_above.toFixed(1)) + marker +
+            '</svg></div>';
+    }
+
+    // THE READING — where the number sits, and why the light is not what the number says.
+    function abInfraReadingHTML(day) {
+        const drop = day.to_green_pct;
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">orders must fall</span>' +
+              `<span class="v">${drop == null ? '—' : Math.round(Math.abs(drop))}` +
+              '<span class="u">%</span></span>' +
+              `<span class="s">to reach the ${day.yellow_at} green line</span>` +
+              '<span class="r">and green needs two prints, not one</span>' +
+            '</div>';
+        // The cap, stated as the two-step it is. Written from `capped` rather than from
+        // `undisclosed` so the sentence disappears on its own the quarter VRT publishes
+        // again, instead of needing a second rule to retire it.
+        const cap = day.capped
+            ? '<div class="ib-cap">' +
+                `<span class="ib-was abh-${AB_LC[day.raw_light]}">the number reads ` +
+                `${esc(day.raw_light)}</span>` +
+                '<span class="ib-arw">&rarr;</span>' +
+                `<span class="ib-is abh-${AB_LC[day.light]}">the light is held at ` +
+                `${esc(day.light)}</span>` +
+                '<div class="ib-capwhy">Capped, not downgraded. VRT stopped publishing ' +
+                'the metric' +
+                (day.undisclosed_since ? ` after <b>${esc(day.undisclosed_since)}</b>` : '') +
+                ', and going from effusive-and-quantified to qualitative-only is itself ' +
+                'information — enough to withdraw the strongest claim, never enough to ' +
+                'manufacture a pro-burst one. The cap can only reach yellow; it can ' +
+                'never reach green.</div>' +
+              '</div>'
+            : '<div class="ib-cap"><div class="ib-capwhy">Nothing is capped — the light ' +
+              'is what the number says.</div></div>';
+        const stale = day.age_days != null
+            ? `The <b>${day.btb.toFixed(1)}&#215;</b> is a <b>${esc(day.quarter)}</b> print, ` +
+              `<b>${day.age_days}</b> days old when this reading was taken`
+            : `The <b>${day.btb.toFixed(1)}&#215;</b> carries no quarter label, so its age ` +
+              'cannot be stated';
+        return '<div class="ab-pies ib-top">' + hero + abInfraScaleSVG(day) + '</div>' + cap +
+            `<div class="ab-overlapbar">${stale}. Book-to-bill is lumpy and VRT's backlog ` +
+            'is only about <b>0.9 years</b> of revenue, so it needs a ratio above 1 just to ' +
+            `hold ground — which is why a fall to <b>${day.yellow_at}</b> would take roughly ` +
+            `a <b>${drop == null ? '—' : Math.round(Math.abs(drop))}%</b> collapse in orders ` +
+            'and cannot be faked by share loss.</div>';
+    }
+
+    // TWO LEGS — what each input was asked, what it answered, and what it cost. Both
+    // legs are currently answering with a SILENCE of a different kind, and a silence
+    // renders as nothing at all unless something draws it.
+    function abInfraLegsHTML(day) {
+        const g = day.gev || {};
+        const row = (k, v, alt) =>
+            '<div class="ab-lrow">' +
+              `<span class="nm2">${esc(k)}</span>` +
+              `<span class="fig"><b>${v}</b>` +
+              `${alt ? ` <span class="alt">${esc(alt)}</span>` : ''}</span></div>`;
+        const quote = (q, cite) => q
+            ? `<div class="ib-quote">&ldquo;${esc(q)}&rdquo;` +
+              `${cite ? `<span class="ib-cite">${esc(cite)}</span>` : ''}</div>` : '';
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">since the last print</span>' +
+              `<span class="v">${day.age_days == null ? '—' : day.age_days}` +
+              '<span class="u">d</span></span>' +
+              `<span class="s">${esc(day.quarter || 'no quarter label')}` +
+              `${day.method ? ' · ' + esc(day.method) : ''}</span>` +
+              '<span class="r">VRT has not restated it since</span>' +
+            '</div>';
+
+        const vrt =
+            '<div class="ab-lens"><div class="lens-hd">' +
+              '<div class="t">VRT book-to-bill <span class="ib-role">drives the light</span></div>' +
+              `<div class="s">orders booked &divide; billings, same period</div></div>` +
+            row('reading', day.btb.toFixed(1) + '&#215;', day.quarter || '') +
+            row('previous print', day.prev_btb == null ? '—' : day.prev_btb.toFixed(1) + '&#215;') +
+            row('sourcing method', esc(day.method || '—'),
+                day.method === 'stated' ? 'from the call' : '') +
+            (day.undisclosed
+                ? row('this quarter', '<span class="ib-none">not disclosed</span>',
+                      day.unavailable_reason || '') +
+                  row('asked', esc(day.attempted_at || '—'),
+                      (day.attempts || 0) + ' attempt' + ((day.attempts || 0) === 1 ? '' : 's')) +
+                  row('spent chasing it', day.cost == null ? '—' : '$' + day.cost.toFixed(4)) +
+                  (day.undisclosed_reason ? `<div class="ib-note">${esc(day.undisclosed_reason)}` +
+                      `${day.vrt_url ? ` <a class="ab-src-a" href="${esc(day.vrt_url)}" ` +
+                        'target="_blank" rel="noopener noreferrer">transcript</a>' : ''}</div>` : '')
+                : row('this quarter', 'disclosed')) +
+            '</div>';
+
+        const gev =
+            '<div class="ab-lens"><div class="lens-hd">' +
+              '<div class="t">GEV unsold capacity <span class="ib-role">corroborates only</span></div>' +
+              '<div class="s">remaining available GW, a stock</div></div>' +
+            row('stated stock', g.total == null ? '—' : g.total + ' GW', g.as_of || '') +
+            row('prior stock', g.prev_total == null
+                ? '<span class="ib-none">none yet</span>' : g.prev_total + ' GW') +
+            row('direction', g.direction
+                ? esc(g.direction) : '<span class="ib-none">unresolved</span>',
+                g.direction_source ? esc(g.direction_source.replace('_', ' ')) : '') +
+            row('glyph', g.arrow === 'plus' ? '+' : g.arrow === 'minus' ? '&minus;'
+                : '<span class="ib-none">dark</span>',
+                g.arrow ? '' : '±' + g.deadband + ' GW deadband') +
+            (g.why_dark ? `<div class="ib-note">${esc(g.why_dark)}</div>` : '') +
+            quote(g.quote, g.as_of ? 'GEV · ' + g.as_of : 'GEV') +
+            '</div>';
+
+        return '<div class="ab-pies ib-legs">' + hero + '</div>' +
+            '<div class="ab-lenses ab-sides">' + vrt + gev + '</div>' +
+            '<div class="ab-overlapbar">The light rests on <b>one</b> number the company ' +
+            'no longer publishes, and the glyph that would corroborate it is dark — ' +
+            (g.why_dark ? esc(g.why_dark) : 'the direction has resolved') +
+            '. Both legs are answering with a silence, and the silences say different ' +
+            'things: VRT has stopped speaking, GEV has only spoken once.</div>';
+    }
+
+    // --- HEAVY HAUL (factor #5) ------------------------------------------------
+    // Sector hues for the Composition view. THREE hues and a neutral, and the count is
+    // MEASURED, not chosen: validate_palette.js (dataviz skill) passes this trio
+    // all-pairs on the panel's own #0f172a surface — worst CVD ΔE 8.2 deutan,
+    // normal-vision 18.5 — and FAILS on any fourth hue, violet against indigo measuring
+    // ΔE 14.1 to NORMAL vision against a hard floor of 15. So the three real sectors get
+    // hue and the residue gets the neutral every "Other" bucket gets, which is also what
+    // stops it reading as a fourth sector. Same three values regulatory's map uses: they
+    // never appear on screen together, and one validated set beats two.
+    const AB_HAUL_HUES = { rail: '#6366f1', ltl: '#ec4899',
+                           truckload: '#0e9fbf', specialised: '#8b98a8' };
+    const AB_HAUL_LBL = { rail: 'Rail', ltl: 'LTL',
+                          truckload: 'Truckload', specialised: 'Specialised' };
+
+    // The index picture is the CHARTS tab's own heavy_haul entry, fetched once and
+    // cached in the same `_chartData` that tab uses. Reused rather than re-sent with the
+    // ledger for two reasons: `_build_heavy_haul` calls the FACTOR's build_index, so the
+    // chart and the light cannot disagree about what the index is; and 252 bars stored
+    // in every daily ledger row would put the same series on disk once a day forever.
+    let _haulChartReq = null;
+    function abHaulChart() {
+        if (_chartData) return (_chartData.charts || []).find(c => c.id === 'heavy_haul') || null;
+        if (!_haulChartReq) {                     // one flight, then one re-render
+            _haulChartReq = fetch(`${API_BASE}/get_board_charts`)
+                .then(r => r.json())
+                .then(j => { _chartData = j; renderBubbleOverview(); })
+                .catch(() => { /* the table still renders; only the picture is missing */ });
+        }
+        return null;
+    }
+
+    // The index against its own 50 and 200-bar MAs, with the day on screen marked.
+    // Inline SVG, not lightweight-charts: this pane is rebuilt by innerHTML on every
+    // rail click, and a charting library instantiated into replaced DOM leaks its
+    // handles — the Charts tab keeps `_boardCharts` precisely to tear them down. The
+    // panel's other pictures (pips, pies, map) are inline SVG for the same reason.
+    // Trimmed to the last 252 bars because 252 is the window the factor MEASURES on
+    // (the 52-week high its gate counts from). The MAs are computed by charts.py over
+    // the full history and only then trimmed, so both lines are seeded at the left edge.
+    function abHaulIndexSVG(ch, markDate, highDate) {
+        const byName = {};
+        (ch.series || []).forEach(s => { byName[s.name] = s.data || []; });
+        const idx = byName['Index'] || [];
+        if (idx.length < 2) return '';
+        const N = 252, from = idx.length > N ? idx[idx.length - N].time : idx[0].time;
+        const cut = a => (a || []).filter(p => p.time >= from);
+        const lines = [['200-bar MA', '#f8fafc'], ['50-bar MA', '#22d3ee'], ['Index', '#a78bfa']]
+            .map(pair => ({ name: pair[0], color: pair[1], pts: cut(byName[pair[0]]) }))
+            .filter(s => s.pts.length > 1);
+        if (!lines.length) return '';
+
+        const W = 680, H = 190, PL = 6, PR = 44, PT = 10, PB = 14;
+        const days = cut(idx).map(p => p.time);
+        const x0 = Date.parse(days[0]), x1 = Date.parse(days[days.length - 1]);
+        let lo = Infinity, hi = -Infinity;
+        lines.forEach(s => s.pts.forEach(p => {
+            if (p.value < lo) lo = p.value;
+            if (p.value > hi) hi = p.value;
+        }));
+        const pad = (hi - lo) * 0.08 || 1;
+        lo -= pad; hi += pad;
+        const X = t => PL + (Date.parse(t) - x0) / (x1 - x0 || 1) * (W - PL - PR);
+        const Y = v => PT + (hi - v) / (hi - lo || 1) * (H - PT - PB);
+        const path = s => s.pts.map((p, i) => (i ? 'L' : 'M') + X(p.time).toFixed(1) +
+                                              ',' + Y(p.value).toFixed(1)).join(' ');
+
+        // The marked day and the 52-week high are the two dates the ladder is computed
+        // from, so they are the two the picture names. Drawn only when they fall inside
+        // the window: a high older than a year cannot exist by definition, but a rail
+        // day can predate the trim on a factor whose history outruns it.
+        const ix = lines.filter(s => s.name === 'Index')[0];
+        const inWin = d => d && d >= days[0] && d <= days[days.length - 1];
+        const at = d => ix.pts.filter(p => p.time >= d)[0] || ix.pts[ix.pts.length - 1];
+        let marks = '';
+        if (inWin(highDate)) {
+            const hx = X(at(highDate).time).toFixed(1);
+            marks += `<line x1="${hx}" y1="${PT}" x2="${hx}" y2="${H - PB}" class="hh-high"/>` +
+                     `<text x="${(+hx + 4).toFixed(1)}" y="${PT + 9}" class="hh-mk">52wk high</text>`;
+        }
+        if (inWin(markDate)) {
+            const p = at(markDate), mx = X(p.time).toFixed(1);
+            marks += `<line x1="${mx}" y1="${PT}" x2="${mx}" y2="${H - PB}" class="hh-mark"/>` +
+                     `<circle cx="${mx}" cy="${Y(p.value).toFixed(1)}" r="3.5" class="hh-dot"/>`;
+        }
+        // Direct labels at the right edge — three series, so identity is never carried
+        // by colour alone even without a legend box.
+        const tags = lines.map(s => {
+            const p = s.pts[s.pts.length - 1];
+            return `<text x="${W - PR + 5}" y="${(Y(p.value) + 3.5).toFixed(1)}" ` +
+                   `class="hh-tag" fill="${s.color}">${esc(s.name.replace('-bar MA', ''))}</text>`;
+        }).join('');
+        return '<div class="hh-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="Heavy-haul freight index over the last ${days.length} trading bars ` +
+            `against its 50 and 200-bar moving averages">` +
+            lines.map(s => `<path d="${path(s)}" fill="none" stroke="${s.color}" ` +
+                           `stroke-width="${s.name === 'Index' ? '2' : '1.5'}"` +
+                           `${s.name === 'Index' ? '' : ' stroke-opacity=".7"'}/>`).join('') +
+            marks + tags + '</svg></div>';
+    }
+
+    // CONSTITUENTS — the picture, then every name against its OWN trend.
+    // Sorted by distance from its own 50, STRONGEST first (user, 2026-08-29), so the
+    // column reads down from what is still holding its trend into what has lost it and
+    // the crossing point is a rule rather than a colour. Deliberately no red/green on the rows: on
+    // this board those hues mean the LIGHT, and this light is INVERTED — a name below
+    // its 50 is bearish for freight and therefore pro-burst for the factor, so painting
+    // it red would say the opposite of what red means one row above it.
+    function abHaulNamesHTML(day) {
+        const names = (day.names || []).slice().sort((a, b) => b.vs50 - a.vs50);
+        if (!names.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">below their own 50</span>' +
+              `<span class="v">${day.below50_n}<span class="hh-of">/${day.n_names}</span></span>` +
+              `<span class="s">${day.below200_n} of ${day.n_names} below the 200</span>` +
+              `<span class="r">index ${day.vs50 >= 0 ? '+' : ''}${day.vs50.toFixed(1)}% vs its 50</span>` +
+            '</div>';
+        const ch = abHaulChart();
+        const pic = ch && !ch.error && !ch.placeholder
+            ? abHaulIndexSVG(ch, day.date, day.high_date)
+            : '<div class="ab-tbd" style="padding:10px 13px">index chart loading…</div>';
+
+        // One scale for both columns, taken from the day's own widest deviation, so the
+        // two bars on a row are comparable and nothing is clipped at a fixed ceiling.
+        const span = Math.max.apply(null, names.map(n => Math.abs(n.vs50))
+                                    .concat(names.map(n => Math.abs(n.vs200)))) || 1;
+        const dev = v => {
+            const w = Math.abs(v) / span * 40;
+            return '<svg class="hh-dev" viewBox="0 0 88 12" width="88" height="12">' +
+                   '<line x1="44" y1="1" x2="44" y2="11" class="hh-zero"/>' +
+                   `<rect x="${(v < 0 ? 44 - w : 44).toFixed(1)}" y="3.5" ` +
+                   `width="${w.toFixed(1)}" height="5" rx="2" class="hh-bar"/></svg>`;
+        };
+        const num = v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        // The rule sits where the sign flips — the one place on the table that says
+        // "everything below this line is under its own trend". Drawn only when there is
+        // something on BOTH sides of it: a rule above row one separates the table from
+        // nothing and reads as a stray border.
+        let ruled = names[0].vs50 < 0;
+        const cell = v => `<td class="l hh-c2"><span class="hh-cell">${dev(v)}` +
+                          `<b>${num(v)}</b></span></td>`;
+        const body = names.map(n => {
+            let cross = false;
+            if (!ruled && n.vs50 < 0) { cross = true; ruled = true; }
+            return `<tr${cross ? ' class="hh-cross"' : ''}>` +
+              '<td class="l"><span class="nm2">' +
+                `<span class="ab-sw" style="background:${AB_HAUL_HUES[n.group] || '#8b98a8'}"></span>` +
+                `${esc(n.name)}` +
+                `<span class="hh-tk">${esc(n.key)} · ${esc(AB_HAUL_LBL[n.group] || n.group)}</span>` +
+              '</span></td>' +
+              `<td class="hh-c1">${n.last.toFixed(2)}</td>` +
+              cell(n.vs50) + cell(n.vs200) +
+            '</tr>';
+        }).join('');
+        const gate = day.cond_no_high
+            ? `the 52-week high is <b>${day.bars_since_high}</b> bars back, past the ` +
+              `<b>${day.gate_bars}</b>-bar gate`
+            : `<b>${day.gate_bars_remaining}</b> bars to the ${day.gate_bars}-bar gate on ` +
+              `<b>${esc(day.gate_date || '—')}</b>, absent a new high`;
+        return '<div class="ab-pies hh-top">' + hero + pic + '</div>' +
+            '<div class="ab-scroller"><table class="ab-ledger hh-tbl">' +
+            '<thead><tr><th class="l">Name</th><th class="hh-c1">Last</th>' +
+            '<th class="l hh-c2">vs its 50</th>' +
+            '<th class="l hh-c2">vs its 200</th></tr></thead>' +
+            `<tbody>${body}</tbody></table></div>` +
+            `<div class="ab-overlapbar"><b>${day.below50_n}</b> of ${day.n_names} names sit below ` +
+            `their own 50-bar MA while the index is <b>${num(day.vs200)}</b> against its 200 — ` +
+            `${gate}.</div>`;
+    }
+
+    // COMPOSITION — what the basket is MADE of, which is the case for weighting it flat.
+    // Four slices, inside the <=6 a pie can carry; the sixteen names get BARS underneath,
+    // which is the form that actually compares sixteen magnitudes. The rule across them
+    // is the equal weight each name is given regardless, so the gap between a bar and
+    // that rule is the distortion cap weighting would introduce.
+    function abHaulCompositionHTML(day, all) {
+        // Caps ride on the newest ledger day only — attaching today's to a three-week-old
+        // row would present today's composition as that day's. A recorded day carries the
+        // caps that were true when it was written, so an older day usually has its own.
+        const has = d => ((d || {}).names || []).some(n => n.cap != null);
+        const src = has(day) ? day : (all || []).filter(has)[0];
+        if (!src) return '<div class="ab-tbd" style="padding:12px 13px">no market caps on this ' +
+            'day — composition is recorded from the newest reading forward</div>';
+        const rows = (src.names || []).filter(n => n.cap != null).sort((a, b) => b.cap - a.cap);
+        const missing = (src.names || []).filter(n => n.cap == null);
+        const tot = rows.reduce((s, n) => s + n.cap, 0);
+        if (!tot) return '<div class="ab-tbd" style="padding:12px 13px">market caps unavailable</div>';
+
+        const g = {};
+        rows.forEach(n => { g[n.group] = (g[n.group] || 0) + n.cap; });
+        const order = ['rail', 'ltl', 'specialised', 'truckload'];
+        const inPie = order.filter(k => g[k]);
+        const slices = inPie.map(k => ({
+            value: g[k], fill: AB_HAUL_HUES[k],
+            title: `${AB_HAUL_LBL[k]} — ${abB(g[k] / 1e9)} (${(g[k] / tot * 100).toFixed(1)}%)`
+        }));
+        const each = 100 / (src.names || []).length;          // 6.25% — the equal weight
+        const railPct = (g.rail || 0) / tot * 100;
+        const railN = rows.filter(n => n.group === 'rail').length;
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">rail share of cap</span>' +
+              `<span class="v">${Math.round(railPct)}<span class="hh-of">%</span></span>` +
+              `<span class="s">${railN} of ${src.names.length} names</span>` +
+              `<span class="r">${(railN * each).toFixed(1)}% by design</span>` +
+            '</div>';
+        const pie = '<svg viewBox="0 0 300 172" role="img" aria-label="Market capitalisation of ' +
+            `the basket by sub-sector: rail ${Math.round(railPct)} percent of ` +
+            `${abB(tot / 1e9)}">` + abPie(150, 82, 66, slices, tot) + '</svg>';
+        const legend = inPie.map(k =>
+            '<div class="ab-lrow">' +
+              `<span class="ab-sw" style="background:${AB_HAUL_HUES[k]}"></span>` +
+              `<span class="nm2">${esc(AB_HAUL_LBL[k])}</span>` +
+              `<span class="fig"><b>${(g[k] / tot * 100).toFixed(1)}%</b> ` +
+              `<span class="alt">${(rows.filter(n => n.group === k).length * each).toFixed(2)}% ` +
+              'by design</span></span>' +
+            '</div>').join('');
+
+        const max = rows[0].cap / tot * 100;
+        const bars = rows.map(n => {
+            const pct = n.cap / tot * 100;
+            return '<div class="hh-brow">' +
+              `<span class="hh-bk">${esc(n.key)}</span>` +
+              '<span class="hh-btr">' +
+                `<i style="width:${(pct / max * 100).toFixed(2)}%;` +
+                `background:${AB_HAUL_HUES[n.group] || '#8b98a8'}"></i>` +
+                `<u style="left:${(each / max * 100).toFixed(2)}%"></u>` +
+              '</span>' +
+              `<span class="hh-bc">${abB(n.cap / 1e9)}</span>` +
+              `<span class="hh-bv">${pct.toFixed(1)}%</span>` +
+            '</div>';
+        }).join('');
+        const miss = missing.length
+            ? ` ${missing.length} name${missing.length > 1 ? 's' : ''} could not be sized (` +
+              missing.map(n => esc(n.key)).join(', ') + ') and sit outside the total.'
+            : '';
+        return '<div class="ab-pies hh-comp">' + hero + pie +
+            '<div class="ab-lens hh-leg">' + legend + '</div></div>' +
+            '<div class="hh-bars"><div class="hh-bhd">Every name by market cap · the rule is the ' +
+            `<b>${each.toFixed(2)}%</b> each one gets regardless</div>${bars}</div>` +
+            `<div class="ab-overlapbar">Three rails are <b>${railPct.toFixed(1)}%</b> of the ` +
+            `basket's ${abB(tot / 1e9)} and would run the light under cap weighting; equal weight ` +
+            `gives them <b>${(railN * each).toFixed(1)}%</b> and lets the ${rows.length - railN} ` +
+            `smaller names be seen.${miss}</div>`;
+    }
+
     const AB_VIEWS = {
         premium_share: {
             views:   [{ key: 'ledger', label: 'Ledger' }, { key: 'lenses', label: 'Two lenses' }],
@@ -1500,6 +2024,58 @@
                            ['excluded', String((d.excluded || []).length)]],
             render:  (key, day) => key === 'excluded'
                 ? abExcludedHTML(day) : abRosterHTML(day)
+        },
+        heavy_haul: {
+            // CONSTITUENTS leads: the light is a statement about the basket, and the basket
+            // is what the first view shows. Composition is the argument for HOW it is
+            // weighted, which is the question you ask second.
+            views:   [{ key: 'names',       label: 'Constituents' },
+                      { key: 'composition', label: 'Composition' }],
+            value:   d => d.vs200,
+            reading: d => (d.vs200 >= 0 ? '+' : '') + d.vs200.toFixed(1) + '%',
+            light:   d => d.light,
+            // A tenth of the reading's own precision (it is published to 0.1). Nothing
+            // should ever trip it: this ledger replays stored CLOSES, which are not
+            // restated, so a re-derived day equals the recorded one.
+            tol:     0.05,
+            // ...which is why the re-derivation banner does NOT borrow premium_share's
+            // wording. Nothing was re-priced here; the same bars were read again.
+            reconLabel: 'replayed from the same closes',
+            count:   d => d.n_names + ' names',
+            // The LADDER's own inputs, so the two conditions behind the light are on screen
+            // without spending a view on them: how many names are under their 50, where the
+            // index sits against its own 50, and how far the self-executing gate has left.
+            figures: d => [['below 50', d.below50_n + '/' + d.n_names],
+                           ['vs 50MA', (d.vs50 >= 0 ? '+' : '') + d.vs50.toFixed(1) + '%'],
+                           ['gate', d.cond_no_high ? 'open' : d.gate_bars_remaining + ' bars'],
+                           ['52wk high', abMD(d.high_date)]],
+            render:  (key, day, all) => key === 'composition'
+                ? abHaulCompositionHTML(day, all) : abHaulNamesHTML(day)
+        },
+        infra_backlog: {
+            // THE READING leads. The board row says "yellow · 2.9x" and those two read as
+            // a contradiction until the cap is visible, so the view that explains the
+            // light comes before the view that sources it.
+            views:   [{ key: 'reading', label: 'The reading' },
+                      { key: 'legs',    label: 'Two legs' }],
+            value:   d => d.btb,
+            reading: d => d.btb.toFixed(1) + '×',
+            light:   d => d.light,
+            // Half the reading's published precision. Nothing should trip it: this ledger
+            // re-reads the same stored record compute() reads, so the two cannot drift.
+            tol:     0.05,
+            reconLabel: 'read from the same record',
+            count:   d => '2 legs',
+            // The four facts a '2.9x' hides: which quarter it is, how old that made it,
+            // what the number would have read uncapped, and whether the corroborator has
+            // anything to say.
+            figures: d => [['print', d.quarter || 'unlabelled'],
+                           ['age', d.age_days == null ? '—' : d.age_days + 'd'],
+                           ['uncapped', d.capped ? d.raw_light : 'not capped'],
+                           ['glyph', (d.gev || {}).arrow === 'plus' ? '+'
+                                   : (d.gev || {}).arrow === 'minus' ? '−' : 'dark']],
+            render:  (key, day) => key === 'legs'
+                ? abInfraLegsHTML(day) : abInfraReadingHTML(day)
         }
     };
 
@@ -1577,7 +2153,7 @@
             `<span class="meta">${esc(d.date || '')}${today ? '' : ' · historical'}` +
             `${d.asof && d.asof !== d.date ? ' · as of ' + esc(d.asof) : ''}` +
             `${ledDay ? ' · ' + esc(v.count(ledDay)) : ''}` +
-            `${recon ? ' · <span class="ab-recon">re-priced today' +
+            `${recon ? ' · <span class="ab-recon">' + esc(v.reconLabel || 're-priced today') +
                        (recon.metric ? ' · recorded ' + esc(recon.metric) : '') +
                        '</span>' : ''}</span>` + vsw + '</div>';
 

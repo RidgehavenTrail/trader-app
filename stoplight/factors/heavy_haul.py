@@ -27,7 +27,8 @@ orange gate ~Sep 10 absent a new high.
 """
 import pandas as pd
 
-from ..sources.yfin import batched_closes, bars_since_52wk_high, project_gate_date
+from ..sources.yfin import (batched_closes, bars_since_52wk_high,
+                           market_caps, project_gate_date)
 
 TICKERS = ["ODFL", "SAIA", "XPO", "ARCB",                    # LTL
            "KNX", "WERN", "HTLD", "MRTN", "SNDR", "CVLG",    # truckload
@@ -36,6 +37,59 @@ TICKERS = ["ODFL", "SAIA", "XPO", "ARCB",                    # LTL
            "UNP", "CSX", "NSC",                              # rail
            "CTOS"]                                           # utility equipment
 GATE_BARS = 63
+
+# --- CONSTITUENT METADATA (display name + sub-sector) --------------------------
+# The GROUPING is a fact about the basket and lives here beside the tickers; the
+# COLOURS are display and live in the frontend. Four groups, and the fourth is a
+# residue rather than a peer: LSTR is flatbed/oversize brokerage, JBHT intermodal,
+# CTOS utility fleet — three different specialisations with one name each, which is
+# "Other", not a sector.
+#
+# WHY FOUR AND NOT SIX (the natural reading of the ticker comments): three of them
+# get a hue and the residue gets the neutral, because THREE is what this surface
+# will carry. `validate_palette.js` (dataviz skill) passes #6366f1/#ec4899/#0e9fbf
+# all-pairs on the panel's #0f172a — worst CVD ΔE 8.2 deutan, normal-vision 18.5 —
+# and FAILS the moment a fourth hue joins them: violet against indigo measures ΔE
+# 14.1 to NORMAL vision, under the hard floor of 15. Measured, not eyeballed, and
+# it is the same ceiling session 48 hit on silicon_payback's pies.
+NAMES = {
+    "ODFL": ("Old Dominion",   "ltl"),
+    "SAIA": ("Saia",           "ltl"),
+    "XPO":  ("XPO",            "ltl"),
+    "ARCB": ("ArcBest",        "ltl"),
+    "KNX":  ("Knight-Swift",   "truckload"),
+    "WERN": ("Werner",         "truckload"),
+    "HTLD": ("Heartland",      "truckload"),
+    "MRTN": ("Marten",         "truckload"),
+    "SNDR": ("Schneider",      "truckload"),
+    "CVLG": ("Covenant",       "truckload"),
+    "LSTR": ("Landstar",       "specialised"),
+    "JBHT": ("J.B. Hunt",      "specialised"),
+    "UNP":  ("Union Pacific",  "rail"),
+    "CSX":  ("CSX",            "rail"),
+    "NSC":  ("Norfolk Southern", "rail"),
+    "CTOS": ("Custom Truck",   "specialised"),
+}
+GROUP_LABELS = {"rail": "Rail", "ltl": "LTL",
+                "truckload": "Truckload", "specialised": "Specialised"}
+
+
+def _ladder(level, ma50, ma200, bars_since, gate_bars=GATE_BARS):
+    """The 4-state ladder — ONE implementation, called by both compute() and ledger().
+
+    Extracted 2026-08-29 when the ledger needed to replay the rule on past bars. A
+    second copy of a state machine is free to disagree with the first, which is the
+    same reason events.py reads the factor's own gate projection instead of
+    recomputing one: the evidence view must show the rule the light actually ran."""
+    if level < ma200:
+        return {"light": "green", "state": "below_trend",
+                "cond_below50": False, "cond_no_high": False, "n_conds": 0}
+    c50, chigh = level < ma50, bars_since >= gate_bars
+    n = int(c50) + int(chigh)
+    light, state = (("yellow", "distribution_top") if n == 2 else
+                    ("orange", "weakening") if n == 1 else ("red", "humming"))
+    return {"light": light, "state": state,
+            "cond_below50": c50, "cond_no_high": chigh, "n_conds": n}
 
 # --- INDEX METHODOLOGY (matched to XTN / S&P Select Industry, 2026-08-01) -------
 # Equal weight, RESET QUARTERLY on the third Friday of Mar/Jun/Sep/Dec (XTN's
@@ -141,18 +195,8 @@ def compute():
     high, high_date, bars_since = bars_since_52wk_high(idx)
     gate_date, gate_remaining = project_gate_date(idx, GATE_BARS)
 
-    if last < ma200:
-        light, state = "green", "below_trend"
-    else:
-        cond_below50 = last < ma50
-        cond_no_high = bars_since >= GATE_BARS
-        n_conds = int(cond_below50) + int(cond_no_high)
-        if n_conds == 2:
-            light, state = "yellow", "distribution_top"
-        elif n_conds == 1:
-            light, state = "orange", "weakening"
-        else:
-            light, state = "red", "humming"
+    lad = _ladder(last, ma50, ma200, bars_since)
+    light, state = lad["light"], lad["state"]
 
     return {
         "id": "heavy_haul",
@@ -178,6 +222,87 @@ def compute():
         },
     }
 
+
+def ledger(days=10):
+    """The evidence behind the light: every constituent against its OWN trend, and
+    what the basket is made of.
+
+    RE-DERIVED, from the same `batched_closes` pull compute() makes — but the word
+    carries less weight here than it does for premium_share, and the difference is
+    worth stating because the panel labels a re-derived day. premium_share re-prices
+    old token volumes against TODAY's price list, so a recomputed day can land in a
+    different BAND than the recorded one. This ledger reads historical CLOSES, which
+    are not restated: replaying 2026-08-07 gives the numbers the light saw on
+    2026-08-07. The reconstruction is faithful, and `AB_VIEWS.heavy_haul.reconLabel`
+    says so instead of borrowing premium_share's "re-priced today".
+
+    FREE — one yfinance batch, the same one the light and the chart already make.
+
+    Two things ride on the NEWEST day only, because neither is a property of a day:
+      - `cap`, the market cap per name. Attaching today's caps to a three-week-old
+        row would present today's composition as that day's. The scheduler captures
+        with days=1, so each RECORDED day does end up holding the caps that were
+        true when it was written — a real composition history, accumulated rather
+        than back-filled.
+      - nothing else; the index series is NOT stored here. The chart the view draws
+        is `/get_board_charts`'s heavy_haul entry, built by `_build_heavy_haul` from
+        this module's own `build_index` — so the picture and the light cannot
+        disagree, and 252 bars are not re-stored once a day forever."""
+    df = batched_closes(TICKERS, start=FETCH_START)
+    idx = build_index(df)
+
+    # ROLLING, not tail() — the generalisation of compute()'s `idx.tail(200).mean()`
+    # to a past bar. At the last bar the two are the same number by construction.
+    i50, i200 = idx.rolling(50).mean(), idx.rolling(200).mean()
+    n50, n200 = df.rolling(50).mean(), df.rolling(200).mean()
+
+    caps = {}
+    try:
+        caps = market_caps(TICKERS)
+    except Exception:
+        caps = {}           # composition greys out; the ladder view is unaffected
+
+    out = []
+    for k, pos in enumerate(range(len(idx) - 1, max(len(idx) - 1 - days, -1), -1)):
+        dt = idx.index[pos]
+        level, ma50, ma200 = float(idx.iloc[pos]), float(i50.iloc[pos]), float(i200.iloc[pos])
+        hist = idx.iloc[:pos + 1]
+        _, high_date, bars_since = bars_since_52wk_high(hist)
+        gate_date, gate_remaining = project_gate_date(hist, GATE_BARS)
+        lad = _ladder(level, ma50, ma200, bars_since)
+
+        names = []
+        for sym in TICKERS:
+            px = float(df[sym].iloc[pos])
+            m50, m200 = float(n50[sym].iloc[pos]), float(n200[sym].iloc[pos])
+            nm, grp = NAMES[sym]
+            row = {"key": sym, "name": nm, "group": grp, "last": round(px, 2),
+                   "vs50": round((px / m50 - 1) * 100, 1),
+                   "vs200": round((px / m200 - 1) * 100, 1),
+                   "below50": px < m50, "below200": px < m200}
+            if k == 0:                       # newest day only — see the docstring
+                row["cap"] = caps.get(sym)
+            names.append(row)
+
+        out.append({
+            "date": dt.date().isoformat(),
+            "index": round(level, 2),
+            "ma50": round(ma50, 2), "ma200": round(ma200, 2),
+            "vs50": round((level / ma50 - 1) * 100, 1),
+            "vs200": round((level / ma200 - 1) * 100, 1),
+            "high_date": high_date, "bars_since_high": bars_since,
+            "gate_bars": GATE_BARS, "gate_date": gate_date,
+            "gate_bars_remaining": gate_remaining,
+            # The BREADTH counts — the number this factor is equal-weighted in order
+            # to see, and the hero of the Constituents view. Cap weight reads the
+            # basket through three rails and cannot report it (see the header).
+            "below50_n": sum(1 for r in names if r["below50"]),
+            "below200_n": sum(1 for r in names if r["below200"]),
+            "n_names": len(names),
+            "names": names,
+            **lad,
+        })
+    return out
 
 if __name__ == "__main__":
     import json

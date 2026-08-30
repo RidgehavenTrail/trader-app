@@ -52,11 +52,23 @@ FACTORS = [
     # arithmetic on it (cf. concentration / silicon_e, which must NOT be flagged).
     dict(id="memory_canary",   name="Memory canary",   rank=8,  cadence="daily",     catalyst=None,           highlight="state-change", builder="memory_canary", asof_keyed=True),
     dict(id="regulatory",      name="Regulatory",      rank=9,  cadence="daily",     catalyst=None,           highlight="new-tag",      builder="regulatory"),
-    dict(id="heavy_haul",      name="Heavy haul",      rank=10, cadence="daily",     catalyst="self-gate",    highlight="state-change", builder="heavy_haul"),
+    # asof_keyed 2026-08-30: this factor polls daily but its index only PRINTS on a
+    # trading day, so Friday's bar was re-filed on the Saturday, the Sunday, and the
+    # Monday Yahoo had not yet assembled a new one -- 42 rows describing 29
+    # observations, with the rail's weekday label a day ahead of its own data. Safe on
+    # the same test memory_canary passed: NOTHING does arithmetic on this factor's
+    # history. charts.py re-derives the index live from the factor's own build_index,
+    # and events.py reads gate_date off the LIVE state rather than the log.
+    dict(id="heavy_haul",      name="Heavy haul",      rank=10, cadence="daily",     catalyst="self-gate",    highlight="state-change", builder="heavy_haul", asof_keyed=True),
     # infra_backlog demoted 8 -> 11 and flagged for refinement (2026-07-19): VRT
     # doesn't disclose orders/BtB every quarter, so the light-driving number is often
     # stale; GEV combined-figure scope can shift between prints. Still LIVE on the board.
-    dict(id="infra_backlog",   name="Infra backlog",   rank=11, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="infra_backlog", refine=True),
+    # asof_keyed 2026-08-30, and this is the silicon_payback case exactly: a QUARTERLY
+    # factor polled daily filed 42 rows over 5 data days, so the log recorded 37
+    # restatements as if they were readings and the rail offered 42 clicks at 5 answers.
+    # Safe on the same test the other three passed -- nothing does arithmetic on this
+    # factor's history (cf. concentration / silicon_e, which must NOT be flagged).
+    dict(id="infra_backlog",   name="Infra backlog",   rank=11, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="infra_backlog", refine=True, asof_keyed=True),
     dict(id="capex_pressure",  name="Capex pressure",  rank=12, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_pressure"),
     dict(id="capex_spigot",    name="Capex spigot",    rank=13, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_spigot"),
     dict(id="copper",          name="Copper",          rank=14, cadence="hourly",    catalyst="self-gate",    highlight="state-change", builder="copper"),

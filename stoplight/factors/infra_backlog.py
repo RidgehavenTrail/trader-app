@@ -31,10 +31,75 @@ gev_prev_total_available_gw, gev_stated_direction. Reference (2026-07-18 spec): 
 (red), VRT Q4'25 (verified); GEV glyph pends a stated stock-diff OR a stated
 management direction. Catalysts: GEV Jul 22, VRT Jul 29.
 """
+import datetime
+import re
+
 from ..extractors import read_input
 
 RED_ABOVE = 1.0
 YELLOW_AT = 0.9
+GEV_DEADBAND_GW = 5
+
+_QUARTER_RE = re.compile(r"^\D*Q([1-4])\D{0,3}((?:19|20)?\d\d)\s*$")
+
+
+def _quarter_end(label):
+    """'Q4 2025' / "Q4'25" -> date(2025, 12, 31). None when the label is not that
+    shape, because a label we cannot read must not become a guessed date — the whole
+    reason the quarter is recorded is to say how old the number is, and a wrong date
+    would answer that question confidently and wrongly.
+
+    VRT's fiscal year is the calendar year, so the quarter ends are the calendar ones.
+    That is an assumption about ONE company, written down rather than assumed silently;
+    a second name on this leg would need its own map."""
+    m = _QUARTER_RE.match(label or "")
+    if not m:
+        return None
+    q, y = int(m.group(1)), int(m.group(2))
+    if y < 100:
+        y += 2000
+    return datetime.date(y, q * 3, (31, 30, 30, 31)[q - 1])
+
+
+def _light(btb, prev, undisclosed):
+    """The ladder AND the non-disclosure cap — ONE implementation, called by compute()
+    and by ledger(). Returns (light, state, raw_light, raw_state): the capped answer
+    plus what the number ALONE would have said. The gap between the two is the entire
+    content of the Cap view, and a second copy of this rule would be free to disagree
+    with the light it is supposed to explain."""
+    if btb > RED_ABOVE:
+        raw, raw_state = "red", "orders_flooding"
+    elif btb >= YELLOW_AT:
+        raw, raw_state = "yellow", "softening"
+    elif prev is not None and prev < YELLOW_AT:
+        raw, raw_state = "green", "orders_evaporating"    # two consecutive sub-0.9
+    else:
+        raw, raw_state = "yellow", "sub0.9_unconfirmed"   # first sub-0.9 print
+    if raw == "red" and undisclosed:
+        return "yellow", "orders_undisclosed", raw, raw_state
+    return raw, raw_state, raw, raw_state
+
+
+def _gev_direction(cur, prv, stated):
+    """GEV's available-GW direction -> (direction, source, arrow). ONE implementation,
+    for the same reason as _light.
+
+    The user's hardened 2026-07-19 spec: the model emits STATED primitives and this
+    code resolves the trend, never the other way round. Numeric delta is PRIMARY and
+    wins when both exist; management's own stated direction is the FALLBACK that lets
+    the glyph light off a single reading; anything else leaves it dark."""
+    direction = source = None
+    if isinstance(cur, (int, float)) and isinstance(prv, (int, float)):
+        delta = cur - prv
+        direction = ("shrinking" if delta < -GEV_DEADBAND_GW
+                     else "growing" if delta > GEV_DEADBAND_GW else "flat")
+        source = "computed_delta"
+    elif (stated or {}).get("direction") in ("shrinking", "flat", "growing"):
+        direction = stated["direction"]
+        source = "stated_management"
+    # shrinking (unsold GW falling) = demand strong = AGREES with red -> plus
+    # growing   (slots reopening)   = demand evaporating = contradicts red -> minus
+    return direction, source, {"shrinking": "plus", "growing": "minus"}.get(direction)
 
 
 def compute():
@@ -60,16 +125,7 @@ def compute():
     leg = (d.get("sources") or {}).get("vrt_btb") or {}
     undisclosed = bool(leg.get("unavailable"))
 
-    if btb > RED_ABOVE and undisclosed:
-        light, state = "yellow", "orders_undisclosed"
-    elif btb > RED_ABOVE:
-        light, state = "red", "orders_flooding"
-    elif btb >= YELLOW_AT:
-        light, state = "yellow", "softening"
-    elif prev is not None and prev < YELLOW_AT:
-        light, state = "green", "orders_evaporating"   # two consecutive sub-0.9
-    else:
-        light, state = "yellow", "sub0.9_unconfirmed"  # first sub-0.9 print
+    light, state, _raw_light, _ = _light(btb, prev, undisclosed)
 
     # +/- corroborator: GEV available-GW direction, CODE-resolved (user's hardened
     # spec 2026-07-19 — the model emits STATED primitives, never an inferred trend).
@@ -84,17 +140,7 @@ def compute():
     cur = d.get("gev_total_available_gw")
     prv = d.get("gev_prev_total_available_gw")
     stated = d.get("gev_stated_direction") or {}
-    GEV_DEADBAND_GW = 5
-    direction = dir_source = None
-    if isinstance(cur, (int, float)) and isinstance(prv, (int, float)):
-        delta = cur - prv
-        direction = ("shrinking" if delta < -GEV_DEADBAND_GW
-                     else "growing" if delta > GEV_DEADBAND_GW else "flat")
-        dir_source = "computed_delta"
-    elif stated.get("direction") in ("shrinking", "flat", "growing"):
-        direction = stated["direction"]                  # management's stated trend
-        dir_source = "stated_management"
-    arrow = {"shrinking": "plus", "growing": "minus"}.get(direction)  # flat/None -> None
+    direction, dir_source, arrow = _gev_direction(cur, prv, stated)
 
     # standalone GEV reading in the board's inverted scheme (shrinking demand-strong
     # = red/bubble-supportive; growing = green/pro-burst) — display only; the LIGHT
@@ -124,6 +170,108 @@ def compute():
             "provenance": d.get("provenance"),
         },
     }
+
+
+def ledger(days=10, top=10):
+    """The evidence behind the light: what each leg was asked, what it answered, and
+    how old the answer is.
+
+    ONE CURRENT RECORD, like regulatory and silicon_payback and unlike premium_share.
+    The extractor store keeps only the latest record, so there is no honest way to
+    reconstruct what the legs said last Tuesday; this returns today's and the history
+    accumulates print by print as the scheduler records it. `days`/`top` are accepted
+    for signature parity and ignored — there are two legs, and trimming them would
+    remove the evidence.
+
+    FREE: re-reads the SAME input record compute() reads, through the same `_light`,
+    so the pane cannot disagree with the board.
+
+    THE POINT OF THIS VIEW is that both legs are currently answering with a SILENCE,
+    and a silence renders as nothing at all unless something draws it. VRT's
+    book-to-bill is a Q4'25 print the company has since declined to restate — it says
+    outright that it does not disclose orders — and the light is capped to yellow
+    because of it. GEV's glyph is dark not for want of a reading but because the one
+    reading it has changed year scope between prints. Neither fact is visible on a
+    board row that says '2.9x'."""
+    d = read_input("infra_backlog")
+    btb = d["vrt_book_to_bill"]
+    prev = d.get("prev_book_to_bill")
+    legs_in = d.get("sources") or {}
+    vrt_leg = legs_in.get("vrt_btb") or {}
+    gev_leg = legs_in.get("gev_gw") or {}
+    undisclosed = bool(vrt_leg.get("unavailable"))
+    light, state, raw_light, raw_state = _light(btb, prev, undisclosed)
+
+    asof = d.get("asof")
+    q_end = _quarter_end(d.get("vrt_quarter"))
+    # Aged against the READING's own date, not against today — the house rule from the
+    # Sources view. A quarter recorded in July must not look staler every time the
+    # panel is opened; it was that old when it was read, and that is the fact.
+    age_days = None
+    if q_end and asof:
+        try:
+            age_days = (datetime.date.fromisoformat(asof) - q_end).days
+        except ValueError:
+            age_days = None
+
+    # How far the orders line has to fall to reach the green threshold. The factor's
+    # header makes this argument in prose ("orders must drop ~70%"); this is the same
+    # claim as a live number, so it moves if the reading ever does.
+    to_green_pct = round((YELLOW_AT / btb - 1) * 100, 1) if btb else None
+
+    gev_stock = d.get("gev_available_gw") or {}
+    cur, prv = d.get("gev_total_available_gw"), d.get("gev_prev_total_available_gw")
+    stated = d.get("gev_stated_direction") or {}
+    direction, dir_source, arrow = _gev_direction(cur, prv, stated)
+    # Why the glyph is dark, in the deriver's own terms rather than as an absence.
+    # 'awaiting a second stated stock' is a different state from 'management called it
+    # flat', and a view that showed both as a blank would hide which one is true.
+    if direction:
+        gev_why = None
+    elif cur is not None:
+        gev_why = ("one stated stock so far — the delta needs two, and the glyph does "
+                   "not fire off a single print")
+    else:
+        gev_why = "no stated unsold-GW figure on the record yet"
+
+    return [{
+        "date": asof,
+        "light": light, "state": state,
+        # What the NUMBER alone says, before the cap. Equal to `light` when nothing
+        # was capped, so the view can simply compare them.
+        "raw_light": raw_light, "raw_state": raw_state,
+        "capped": light != raw_light,
+        "btb": btb, "prev_btb": prev,
+        "method": d.get("vrt_method"), "quarter": d.get("vrt_quarter"),
+        "quarter_end": q_end.isoformat() if q_end else None,
+        "age_days": age_days,
+        "red_above": RED_ABOVE, "yellow_at": YELLOW_AT,
+        "to_green_pct": to_green_pct,
+        "undisclosed": undisclosed,
+        "undisclosed_since": vrt_leg.get("period_end") if undisclosed else None,
+        "undisclosed_reason": vrt_leg.get("reason") if undisclosed else None,
+        "unavailable_reason": vrt_leg.get("unavailable_reason") if undisclosed else None,
+        "attempted_at": vrt_leg.get("attempted_at"),
+        "attempts": vrt_leg.get("attempts"),
+        # What chasing a number that is not published has cost so far. It accumulates
+        # across consecutive failures on purpose (run.py), so it answers "how much has
+        # this cost me", not "what did the last try cost".
+        "cost": vrt_leg.get("cost"),
+        "vrt_source": vrt_leg.get("source"), "vrt_url": vrt_leg.get("url"),
+        "gev": {
+            "total": cur, "prev_total": prv,
+            "direction": direction, "direction_source": dir_source,
+            "arrow": arrow,
+            "as_of": gev_stock.get("as_of") or stated.get("as_of"),
+            "method": gev_stock.get("method"),
+            "quote": gev_stock.get("source_quote") or stated.get("source_quote"),
+            "url": gev_stock.get("url") or gev_leg.get("url"),
+            "by_year": gev_stock.get("by_year") or [],
+            "deadband": GEV_DEADBAND_GW,
+            "why_dark": gev_why,
+        },
+        "provenance": d.get("provenance"),
+    }]
 
 
 if __name__ == "__main__":

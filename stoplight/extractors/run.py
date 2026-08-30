@@ -561,7 +561,18 @@ def run_infra_backlog_multi(only=None, period_end=None):
         per_source[src["id"]] = {**data, "_cost": round(meta["cost_usd"] or 0, 4),
                                  "_routed": meta["model_routed"], "refreshed_at": _today()}
 
-    btb = per_source.get("vrt_btb", {}).get("book_to_bill", prev.get("vrt_book_to_bill"))
+    # A CARRIED VALUE MUST CARRY ITS LABELS WITH IT (2026-08-30). `btb` fell back to the
+    # prior when the leg did not pull, but `vrt_method` was read from the CURRENT pull
+    # only and `quarter` was never lifted into the record at all — so a validated,
+    # returned quarter label was discarded on arrival and the carried 2.9 sat beside
+    # `vrt_method: null` with no period on it. The stale-print guard was doing its job
+    # in the validator and then losing the answer in the assembly, which is the same
+    # shape as the newsletter spec's pnl-input bug: the field exists, the plumbing
+    # drops it. Nothing can say how old a carried number is if its label does not
+    # travel with it, and this factor's whole difficulty is that its number is old.
+    _vrt = per_source.get("vrt_btb", {})
+    _fresh_btb = "book_to_bill" in _vrt
+    btb = _vrt["book_to_bill"] if _fresh_btb else prev.get("vrt_book_to_bill")
     if btb is None:
         raise ValueError("infra_backlog: VRT book-to-bill extraction failed, no prior")
 
@@ -586,8 +597,20 @@ def run_infra_backlog_multi(only=None, period_end=None):
 
     rec = {
         "vrt_book_to_bill": btb,
-        "vrt_method": per_source.get("vrt_btb", {}).get("method"),   # stated | orders_over_revenue
-        "prev_book_to_bill": prev.get("vrt_book_to_bill"),
+        "vrt_method": (_vrt.get("method") if _fresh_btb                  # stated | orders_over_revenue
+                       else prev.get("vrt_method")),
+        "vrt_quarter": (_vrt.get("quarter") if _fresh_btb                # the period the number IS
+                        else prev.get("vrt_quarter")),
+        # ONLY A FRESH PRINT ADVANCES `prev` (2026-08-30). This used to be an
+        # unconditional `prev.get("vrt_book_to_bill")`, which on a CARRIED run set the
+        # previous print to the carried current one — the same number twice. That
+        # defeats the green rule, whose entire point is that b-t-b is lumpy and one
+        # sub-0.9 print is a data point while two are a turn: after a single sub-0.9
+        # print, any later run that carried VRT (a GEV-only earnings refresh, say)
+        # would have made `prev` sub-0.9 as well and the factor would have gone GREEN
+        # off ONE print confirming itself. A carry is not an observation.
+        "prev_book_to_bill": (prev.get("vrt_book_to_bill") if _fresh_btb
+                              else prev.get("prev_book_to_bill")),
         "gev_available_gw": gev_stock,                    # the verbatim stock (or None)
         "gev_total_available_gw": gev_total,              # combined else sum(by_year)
         "gev_prev_total_available_gw": gev_prev_total,    # prior total, for the deriver's diff

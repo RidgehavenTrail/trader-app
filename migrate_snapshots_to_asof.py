@@ -1,6 +1,6 @@
 """Re-key ONE factor's snapshot rows on the DATA date they report.
 
-Usage: python migrate_snapshots_to_asof.py <factor_id> [--apply]
+Usage: python migrate_snapshots_to_asof.py <factor_id> [--keep-last] [--apply]
 
 WHY (2026-08-28). The detail panel's rail is the snapshot log, one row per ET write
 date; the Ledger is one row per data date; the panel joins them on `asof`
@@ -88,19 +88,47 @@ def restored_row(date, led, created_at):
         })
 
 
-def plan(snaps, ledgers):
+def plan(snaps, ledgers, keep_last=False):
+    """Which capture of a data day survives.
+
+    DEFAULT: the EARLIEST. That is right when the duplicates are re-pricings of the
+    same day — a later run reading a moved price is re-pricing the day, not observing
+    it again (premium_share's floor, heavy_haul's restated closes).
+
+    `keep_last` INVERTS it, and exists because that premise does not always hold
+    (infra_backlog, 2026-08-30). Two of its data days disagreed for reasons that are
+    not re-pricings: the non-disclosure CAP shipped on 2026-07-30, mid-life of the
+    2026-07-31 data day, so the first capture of that day is red under a rule that has
+    since been corrected and the 29 captures after it are yellow. Keeping the earliest
+    would have left the log asserting red on the newest data day while the board — which
+    reads state, not snapshots, and would NOT have changed — showed yellow. A rule fix
+    and a value correction both make the LATER capture the better record; only a
+    re-pricing makes the earlier one better. The caller decides which it is looking at,
+    because nothing in the rows themselves distinguishes the two."""
     keep, dropped = {}, []
     for s in sorted(snaps, key=lambda s: s["created_at"]):     # earliest first
         cur = keep.get(s["asof"])
         if cur is None:
             keep[s["asof"]] = s
+        elif keep_last:
+            keep[s["asof"]] = s                 # the later capture wins
+            dropped.append((cur, s))            # (lost, won)
         else:
             dropped.append((s, cur))
     restored = []
     for date, (basis, led, created_at) in sorted(ledgers.items()):
         if basis == "recorded" and date not in keep:
             # created_at is the LEDGER's — the moment the lost reading was captured.
-            row = restored_row(date, led, created_at)
+            # RESTORE IS premium_share-SHAPED (restored_row reads share/comm_tok/floor),
+            # so a factor whose ledger carries different keys is skipped rather than
+            # crashed on. Reported, never silent: an unrestorable orphan is a real hole
+            # in the history and the operator has to know it stayed one.
+            try:
+                row = restored_row(date, led, created_at)
+            except (KeyError, TypeError):
+                print(f"  SKIP  {date}: recorded ledger day has no snapshot and its "
+                      f"payload is not restorable for {FID} — left missing")
+                continue
             keep[date] = row
             restored.append(row)
     return keep, dropped, restored
@@ -108,11 +136,13 @@ def plan(snaps, ledgers):
 
 def main():
     apply = "--apply" in sys.argv
-    print("factor:", FID)
+    keep_last = "--keep-last" in sys.argv
+    print("factor:", FID, "| tie-break:", "LAST capture wins" if keep_last
+          else "first capture wins (default)")
     con = sqlite3.connect(store.SNAPSHOT_DB)
     try:
         snaps, ledgers = load(con)
-        keep, dropped, restored = plan(snaps, ledgers)
+        keep, dropped, restored = plan(snaps, ledgers, keep_last=keep_last)
 
         print(f"{len(snaps)} snapshot rows -> {len(keep)} data days "
               f"({len(dropped)} re-priced duplicates dropped, {len(restored)} restored)\n")
@@ -120,9 +150,11 @@ def main():
         print(f"re-keyed (write date -> data date): {len(moved)}")
         for s in sorted(dropped, key=lambda t: t[0]["date"], reverse=True):
             lost, won = s
+            why = ("superseded by a later capture of the same day held by"
+                   if keep_last else "later re-price of a day held by")
             print(f"  DROP  write {lost['date']} (asof {lost['asof']}, {lost['value']}, "
-                  f"{lost['created_at']}) - later re-price of a day held by "
-                  f"{won['date']} ({won['value']})")
+                  f"{lost['reading'].get('light')}, {lost['created_at']}) - {why} "
+                  f"{won['date']} ({won['value']}, {won['reading'].get('light')})")
         for r in restored:
             print(f"  RESTORE {r['date']} = {r['value']} {r['reading']['light']} "
                   f"(from recorded ledger)")

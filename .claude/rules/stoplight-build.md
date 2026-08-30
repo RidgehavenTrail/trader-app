@@ -82,6 +82,71 @@ both. Euphemus' prototype said the same: *only the evidence block changes shape 
 remaining work below is a VOCABULARY FILL, not a genericisation project, and per-factor content (the
 sparkline's band-edge gridlines, for instance) does not have to wait for it.
 
+**SESSION 49 (2026-08-29) — FACTORS 3 AND 4, AND THE SHAPES A LEDGER CAN TAKE.** Read this
+with the session-48 section below; that one is still the mechanism, this one is what two more
+factors taught about it.
+
+**THERE ARE NOW THREE LEDGER SHAPES, AND THE CHOICE IS NOT STYLISTIC — it decides whether the
+pane can contradict the light.**
+| shape | who | can it disagree with the light? |
+|---|---|---|
+| SNAPSHOT-DERIVED | memory_canary | **No.** It re-shapes the day's own recorded `extras`, so it is reading the numbers the light was decided on. Free — no source call, on the panel or in the scheduler's capture. |
+| INPUT-DERIVED | silicon_payback, regulatory | No, but only one CURRENT record exists; history accumulates print by print as the scheduler records it. |
+| RE-DERIVED | premium_share | **Yes** — it re-prices old volumes at today's list, which is why the `ledgers` table and the `recorded`/`reconstructed` distinction exist at all. |
+Reach for snapshot-derived whenever the evidence already rides in the payload:
+`backfill_ledger_from_snapshots.py <factor_id> [--apply]` seeds the history as `recorded`, and
+its whitelist refuses any factor whose ledger re-derives from a live source.
+
+**`AB_WHY.method` MAY BE A LIST of `{k, b}` topics**, rendering as headed footnote columns
+(`.ab-foot` is already an auto-fit grid, so they flow and wrap unaided). A string still renders
+as one column headed Method. Use it when a note covers several subjects — memory_canary's is
+Basket / Horizon / Counting, regulatory's is What counts / What it costs / The arrow.
+**Keep `measures` GLANCEABLE** (user, 2026-08-29): the About box must answer "what does this
+measure" in a couple of seconds. Detail belongs in the footnotes, not the header.
+
+**A PICTURE MAY BE TWO OBJECTS.** memory_canary's band is a pips svg pinned LEFT and a canary
+svg pinned RIGHT with `space-between` giving the gap the slack. One drawing can only be pinned
+to ONE edge: capped it leaves the slack on the right of a wide pane, uncapped it scales the
+whole band with the row (a 900px row is a 225px-tall picture). Size such a pair by **WIDTH with
+`height:auto`** — flex-shrink then distributes proportionally so both keep one scale. Sizing by
+HEIGHT cannot shrink and overflows a narrow band.
+
+**A MAP IS A BUILD ARTEFACT, NOT A RUNTIME ONE.** `gen_us_map.py` → `static/js/us-map.js` (36KB,
+51 pre-projected paths); the runtime only fills them. The source TopoJSON is committed against
+the `*.json` ignore rule so it rebuilds from a clean checkout. Two traps, both of which looked
+plausible enough to ship: **Albers increases NORTHWARD while SVG increases downward** (the map
+renders upside down), and **Alaska's Aleutians cross the antimeridian**, so its bounding box
+spans the globe and the mainland fits to a speck until the positive lobe is brought round by
+360. Choosing a real map over a tile grid is a DECISION with a cost: seven states including
+Texas cover ~25% of the land and 14% of the count, so a map overstates coverage on a
+count metric. The user made that call knowingly.
+
+**A SECOND COLOUR LANGUAGE NEEDS ITS OWN VALIDATION.** regulatory's map colours by INSTRUMENT
+(`#6366f1` statute · `#ec4899` executive order · `#0e9fbf` commission rule) because the band
+colour is already spoken for. Run `scripts/validate_palette.js` from the `dataviz` skill against
+this panel's surface (`#0f172a`), `--pairs all` for a map: the shipped set passes lightness
+band, chroma floor, CVD (worst ΔE 8.2 deutan), normal-vision (18.5 vs a floor of 15) and
+contrast. **Do not substitute by eye** — the blue/violet pairs that look obviously distinct
+measure ΔE 0.5 apart under deuteranopia, and the first four candidate sets all failed. Keep the
+new hues clear of red/yellow/green, which mean the light.
+
+**PROSE IN A TABLE WEARS TEXT INK, NEVER A HUE** — and never the `.sl` subtitle style, which is
+9px nowrap-with-ellipsis and built for a one-line citation. A reason column in `.sl` reads as
+unreadable grey mush with the long entries clipped.
+
+**AN EXCLUSION THAT LEAVES NO TRACE CANNOT BE TOLD FROM AN OVERSIGHT.** regulatory's second view
+is what it REJECTED, with reasons, and it is arguably the more useful half. Same principle
+inside the extractor: the classify validator RETURNS its rejections so the scheduler can log
+them, because a gate that is too strict shrinks that count in the bubble-supportive direction.
+
+**AND THE ONE THAT COST THE MOST THIS SESSION: A SWEEP'S USER MESSAGE IS ITS SEARCH QUERY.**
+regulatory's read "Sweep now: every state action in force today" and returned an EMPTY national
+list with six actions quoted in its own prompt. Survivable while the leg was a yes/no delta
+detector; fatal once it had to enumerate. Give every web-search leg a real multi-angle query
+constant the way `_DCW_QUERY` has one — the fix cost 2 cents and immediately found two states.
+
+---
+
 **SESSION 48 (2026-08-28) — SILICON PAYBACK IS THE SECOND FACTOR WITH AN EVIDENCE VIEW, AND
 THE PATTERN FOR THE REST IS NOW SET.** Everything below is REUSABLE — it was decided while
 building factor #5 but almost none of it is about factor #5. Read this before building the
@@ -193,9 +258,9 @@ recorded at all, and Copilot's is 28 days behind the reading. Derivations (a x4,
 are NOT sources and get a footnote, never rows that imply a publisher.
 
 **THE ONE SHORTCUT, AND THE NEXT TASK:** the definitions are hand-written in `static/js/stoplight.js`'s
-`AB_WHY` with `premium_share` and `silicon_payback` filled — **2 of 16** (was 1; corrected
-2026-08-28 rather than left to outlive its own resolution, which is this repo's recurring
-documentation failure). Every factor's thresholds live as docstring prose plus loose
+`AB_WHY` — **4 of 16** as of session 49 (premium_share, silicon_payback, memory_canary,
+regulatory; was 2, corrected here rather than left to outlive its own resolution, which is this
+repo's recurring documentation failure). Every factor's thresholds live as docstring prose plus loose
 constants (`GREEN_BELOW`, `RED_AT_OR_ABOVE`, `GREEN_BPS`...) and `stoplight_state.json` carries none at
 all. Promote a structured `definition` (measures / why / bands / glyph) into the 16 factor modules and
 the legend renders for all of them — the source changes, the render does not. Settle the glyph

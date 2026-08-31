@@ -639,6 +639,13 @@ _CAPEX_COMPANIES = ["MSFT", "GOOGL", "AMZN", "META", "ORCL"]
 # on). Documented constants — UPDATE ANNUALLY as each FY closes. Basis note:
 # GOOGL/ORCL are ~all GAAP PP&E (minimal leases); MSFT/AMZN/META add finance leases.
 # (Set 2026-07-19 from FY2025 actuals; reproduces the ~+80% aggregate on-basis.)
+# SUPERSEDED 2026-08-31 for the LIGHT: capex_spigot.compute() now derives each
+# prior from the SEC financials store (capex + finance-lease principal payments)
+# rather than reading these. Measured against the filings these five were never on
+# one basis -- GOOGL/ORCL pure GAAP, META lease-inclusive, MSFT neither, and AMZN's
+# was its GUIDANCE figure, $6.8B under its own filed number. Kept because the
+# extractor still writes them into the record, where the panel shows them beside
+# the derived value so the correction is visible rather than silent.
 PINNED_CAPEX_PRIORS = {"MSFT": 88.7, "GOOGL": 91.4, "AMZN": 125.0,
                        "META": 72.0, "ORCL": 55.7}
 

@@ -91,6 +91,42 @@ def _connect():
            )"""
     )
     con.execute(
+        # AS-REPORTED QUARTERLY FINANCIALS, from SEC XBRL (2026-08-30). A closed
+        # quarter's operating cash flow and capex are IMMUTABLE facts; capex_pressure
+        # used to re-ask yfinance for them on every poll and take whatever rolling
+        # window it served, which was 5-7 quarters, one name a quarter behind the
+        # rest, and one with a hole in the middle. This table is the same answer the
+        # snapshots table above is: keep what a vendor only shows transiently.
+        """CREATE TABLE IF NOT EXISTS financials (
+               symbol       TEXT NOT NULL,
+               period_end   TEXT NOT NULL,   -- fiscal quarter end; the key, with symbol
+               period_start TEXT NOT NULL,
+               ocf          REAL NOT NULL,
+               capex        REAL NOT NULL,   -- stored POSITIVE (an outflow's magnitude)
+               fin_lease    REAL NOT NULL DEFAULT 0,  -- finance-lease PRINCIPAL PAYMENTS,
+                                             -- the cash leg of "capex including finance
+                                             -- leases". 0 when the company files no such
+                                             -- tag; fin_lease_filed says which it is.
+               fin_lease_filed INTEGER NOT NULL DEFAULT 0,
+               ocf_basis    TEXT NOT NULL,   -- 'filed' (a 3-month fact as reported) |
+               capex_basis  TEXT NOT NULL,   -- 'derived' (differenced out of the YTD
+                                             -- facts; the only way to get Q4, which no
+                                             -- 10-Q reports)
+               ocf_tag      TEXT,
+               capex_tag    TEXT,            -- which us-gaap tag it came from: AMZN
+                                             -- switched tags in 2017 and both are kept
+               form         TEXT,
+               accn         TEXT,
+               filed        TEXT,
+               fy           INTEGER,
+               fp           TEXT,
+               restated     INTEGER NOT NULL DEFAULT 0,
+               first_seen   TEXT NOT NULL,   -- when WE first stored it, not when filed
+               updated_at   TEXT NOT NULL,
+               PRIMARY KEY (symbol, period_end)
+           )"""
+    )
+    con.execute(
         """CREATE TABLE IF NOT EXISTS snapshots (
                factor_id  TEXT NOT NULL,
                date       TEXT NOT NULL,   -- ET observation date (YYYY-MM-DD)
@@ -120,6 +156,13 @@ def _connect():
            )"""
     )
     # Migration: add raw_response to a pre-existing table (older runs get NULL).
+    fcols = [r[1] for r in con.execute("PRAGMA table_info(financials)").fetchall()]
+    if fcols and "fin_lease" not in fcols:
+        # Added 2026-08-31 when the spigot's priors moved off pinned constants and onto
+        # a derived lease-inclusive basis. CREATE TABLE IF NOT EXISTS will not add a
+        # column to a table that already exists, so the migration is explicit.
+        con.execute("ALTER TABLE financials ADD COLUMN fin_lease REAL NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE financials ADD COLUMN fin_lease_filed INTEGER NOT NULL DEFAULT 0")
     cols = [r[1] for r in con.execute("PRAGMA table_info(llm_calls)").fetchall()]
     if "raw_response" not in cols:
         con.execute("ALTER TABLE llm_calls ADD COLUMN raw_response TEXT")
@@ -254,6 +297,76 @@ def has_ledger_day(factor_id, date):
     finally:
         con.close()
     return row[0] if row else None
+
+
+def record_financials(rows):
+    """Upsert as-reported quarter rows -> {'added', 'changed', 'unchanged'}.
+
+    A closed quarter does not move, so re-importing the same numbers is a NO-OP and
+    the common case. When a value DOES move, SEC itself has accepted a restatement
+    (sec._dedupe already resolved which filing wins); the row updates and `first_seen`
+    is preserved, so the store still says when we first knew about the period even
+    though the figure has since been corrected. This is the opposite tie-break from
+    the snapshot log's `keep_first`, and deliberately: a snapshot's duplicates are the
+    same observation re-recorded, while these are a company correcting its own filing."""
+    con = _connect()
+    now = now_iso()
+    counts = {"added": 0, "changed": 0, "unchanged": 0}
+    try:
+        for r in rows:
+            key = (r["symbol"], r["period_end"])
+            cur = con.execute(
+                "SELECT ocf, capex, fin_lease FROM financials WHERE symbol=? "
+                "AND period_end=?", key).fetchone()
+            if (cur is not None and abs(cur[0] - r["ocf"]) < 1
+                    and abs(cur[1] - r["capex"]) < 1
+                    and abs((cur[2] or 0) - (r.get("fin_lease") or 0)) < 1):
+                counts["unchanged"] += 1
+                continue
+            counts["changed" if cur is not None else "added"] += 1
+            con.execute(
+                "INSERT INTO financials (symbol, period_end, period_start, ocf, capex,"
+                " fin_lease, fin_lease_filed,"
+                " ocf_basis, capex_basis, ocf_tag, capex_tag, form, accn, filed, fy, fp,"
+                " restated, first_seen, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(symbol, period_end) DO UPDATE SET"
+                "   period_start=excluded.period_start, ocf=excluded.ocf,"
+                "   capex=excluded.capex, fin_lease=excluded.fin_lease,"
+                "   fin_lease_filed=excluded.fin_lease_filed,"
+                "   ocf_basis=excluded.ocf_basis,"
+                "   capex_basis=excluded.capex_basis, ocf_tag=excluded.ocf_tag,"
+                "   capex_tag=excluded.capex_tag, form=excluded.form, accn=excluded.accn,"
+                "   filed=excluded.filed, fy=excluded.fy, fp=excluded.fp,"
+                "   restated=excluded.restated, updated_at=excluded.updated_at",
+                (r["symbol"], r["period_end"], r["period_start"], r["ocf"], r["capex"],
+                 r.get("fin_lease") or 0.0, int(bool(r.get("fin_lease_filed"))),
+                 r["ocf_basis"], r["capex_basis"], r.get("ocf_tag"), r.get("capex_tag"),
+                 r.get("form"), r.get("accn"), r.get("filed"), r.get("fy"), r.get("fp"),
+                 int(bool(r.get("restated"))), now, now))
+        con.commit()
+    finally:
+        con.close()
+    return counts
+
+
+def financials(symbol, limit=None):
+    """Stored quarters for one symbol, OLDEST FIRST — the order a TTM is summed in."""
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT symbol, period_end, period_start, ocf, capex, fin_lease,"
+            " fin_lease_filed, ocf_basis, capex_basis, ocf_tag, capex_tag, form, accn,"
+            " filed, fy, fp, restated, first_seen FROM financials WHERE symbol=? "
+            "ORDER BY period_end", (symbol,)
+        ).fetchall()
+    finally:
+        con.close()
+    cols = ("symbol", "period_end", "period_start", "ocf", "capex", "fin_lease",
+            "fin_lease_filed", "ocf_basis", "capex_basis", "ocf_tag", "capex_tag",
+            "form", "accn", "filed", "fy", "fp", "restated", "first_seen")
+    out = [dict(zip(cols, r)) for r in rows]
+    return out[-limit:] if limit else out
 
 
 def history_payloads(factor_id, limit=30):

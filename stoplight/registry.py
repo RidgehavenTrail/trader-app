@@ -69,8 +69,11 @@ FACTORS = [
     # Safe on the same test the other three passed -- nothing does arithmetic on this
     # factor's history (cf. concentration / silicon_e, which must NOT be flagged).
     dict(id="infra_backlog",   name="Infra backlog",   rank=11, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="infra_backlog", refine=True, asof_keyed=True),
-    dict(id="capex_pressure",  name="Capex pressure",  rank=12, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_pressure"),
-    dict(id="capex_spigot",    name="Capex spigot",    rank=13, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_spigot"),
+    # asof_keyed 2026-08-31: quarterly factors polled daily. capex_pressure filed 44
+    # rows over 2 data days, capex_spigot 43 over 4 — the silicon_payback case again.
+    # Safe on the same test: nothing does arithmetic on either factor's history.
+    dict(id="capex_pressure",  name="Capex pressure",  rank=12, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_pressure", asof_keyed=True),
+    dict(id="capex_spigot",    name="Capex spigot",    rank=13, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_spigot", asof_keyed=True),
     dict(id="copper",          name="Copper",          rank=14, cadence="hourly",    catalyst="self-gate",    highlight="state-change", builder="copper"),
     dict(id="inflation",       name="Inflation",       rank=15, cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="inflation"),
     dict(id="net_liquidity",   name="Net liquidity",   rank=16, cadence="weekly",    catalyst="data-release", highlight="new-tag",      builder="net_liquidity"),

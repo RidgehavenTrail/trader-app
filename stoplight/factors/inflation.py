@@ -19,6 +19,7 @@ SOURCE: FRED PCEPILFE — the INDEX, not the rate: YoY = idx / idx[-12mo] - 1.
 Data lags ~4-6wk. Reference (2026-07-18 spec): 3.41% (May-2026), barely yellow,
 one tick from the >3.5% green line, trail climbing 6 months straight.
 """
+from .. import store
 from ..sources.fred import fred_series
 
 GREEN_ABOVE = 3.5
@@ -48,6 +49,35 @@ def compute():
         "asof": asof,
         "extras": {"trail_6mo": trail, "source": "FRED PCEPILFE (core PCE YoY)"},
     }
+
+
+
+def ledger(days=10, top=10):
+    """The last six core-PCE prints against the two lines that cut them.
+
+    SNAPSHOT-DERIVED — `trail_6mo` rides in the day's own extras. ONE view: this factor
+    is a level with no direction by design, and the six prints ARE the evidence. They
+    are also a different series from the rail beside them: the rail is one row per day
+    this board looked, the trail is one point per MONTH the BEA published."""
+    out = []
+    for day in store.history_payloads("inflation", days):
+        ex = day.get("extras") or {}
+        trail = ex.get("trail_6mo") or []
+        if not trail:
+            continue
+        out.append({
+            "date": day.get("asof") or day.get("date"),
+            "light": day.get("light"), "state": day.get("state"),
+            "yoy": day.get("value"),
+            "trail": list(trail),
+            "green_above": GREEN_ABOVE, "red_at_or_below": RED_AT_OR_BELOW,
+            # Distance to the line the factor is one tick from, stated rather than left
+            # to be eyeballed off six numbers.
+            "to_green": round(GREEN_ABOVE - (day.get("value") or 0), 2),
+            "climbing": all(b >= a for a, b in zip(trail, trail[1:])),
+            "source": ex.get("source"),
+        })
+    return out
 
 
 if __name__ == "__main__":

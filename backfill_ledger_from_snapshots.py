@@ -40,7 +40,7 @@ from stoplight.registry import BY_ID
 # The factors whose ledger() reads the SNAPSHOT LOG rather than a live source. A list,
 # not a guess: being wrong here writes a reconstruction into the store wearing the word
 # `recorded`, which is the one thing the ledgers table exists to prevent.
-SNAPSHOT_DERIVED = {"memory_canary"}
+SNAPSHOT_DERIVED = {"memory_canary", "capex_pressure"}
 
 
 def main(argv):

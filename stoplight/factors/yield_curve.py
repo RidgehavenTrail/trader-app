@@ -20,6 +20,7 @@ armed window).
 SOURCE: FRED DGS10, DGS3MO. Current reference (2026-07-18 spec): +0.86, green,
 crossed back ~1yr ago.
 """
+from .. import store
 from ..sources.fred import fred_series
 
 LOOKBACK_YEARS = 3
@@ -57,6 +58,36 @@ def compute():
         "asof": asof,
         "extras": extras,
     }
+
+
+
+def ledger(days=10, top=10):
+    """Where we are in the sequence: when the curve crossed back, and how long ago.
+
+    SNAPSHOT-DERIVED — the crossover date and the months since it both ride in the
+    day's own `extras`, so this re-shapes the record rather than re-deriving it. Free,
+    and it cannot disagree with the light.
+
+    The SERIES itself is not carried here. It lives in `/get_board_charts` — 1391 points
+    back to 2000, with the recession bands and the zero line already on it — and the
+    view fetches that once, the same way heavy_haul's does. Storing twenty-six years of
+    spread in every daily ledger row would put the same history on disk forever."""
+    out = []
+    for day in store.history_payloads("yield_curve", days):
+        ex = day.get("extras") or {}
+        out.append({
+            "date": day.get("asof") or day.get("date"),
+            "light": day.get("light"), "state": day.get("state"),
+            "spread": day.get("value"),
+            "crossover_date": ex.get("crossover_date"),
+            "months_since": ex.get("months_since_crossover"),
+            # The band the historical recessions landed in, after the crossover. Stated
+            # as data so the view draws it from the same numbers the docstring cites.
+            "window_from_months": 6, "window_to_months": 18,
+            "lookback_years": LOOKBACK_YEARS,
+            "source": ex.get("source"),
+        })
+    return out
 
 
 if __name__ == "__main__":

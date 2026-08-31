@@ -472,6 +472,321 @@
                     + 'is GEV latency, while a + returning AFTER VRT greens is the real '
                     + 'sector-wide confirmation.' }
             ]
+        },
+        capex_pressure: {
+            measures: 'Capex as a share of operating cash flow, per company, over the '
+                    + 'trailing four quarters — can each hyperscaler pay for its own build?',
+            // Deliberately silent on which way the ratios are currently going: the arrow,
+            // the sparkline and the Direction view all compute that live, and a direction
+            // written into a static definition goes stale the first print that contradicts
+            // it. Same rule that kept the trend out of silicon_payback's copy.
+            why: 'The point at which the build stops being paid for out of the business. '
+               + 'Under 100% a company is funding its data centres from the cash they and '
+               + 'the rest of its operations throw off; over it, the difference comes from '
+               + 'the balance sheet.',
+            // INVERTED, like the board's other supply-side reads: green is the pro-burst
+            // end. Five per-company lights, then a MAJORITY, with tie-breaks that defer
+            // toward red (see The majority, below).
+            bands: [
+                { light: 'green',  range: '> 100%',    mean: 'funded off the balance sheet' },
+                { light: 'yellow', range: '75 – 100%', mean: 'burning too much' },
+                { light: 'red',    range: '< 75%',     mean: 'self-funding' }
+            ],
+            edges: [75, 100],
+            glyph: [
+                { sym: '↓', arrow: 'down', mean: 'ratios RISING — burning more' },
+                { sym: '↑', arrow: 'up',   mean: 'ratios FALLING — pulling back' }
+            ],
+            method: [
+                { k: 'The basket', b: 'MSFT, GOOGL, AMZN, META and ORCL, <b>unweighted</b> '
+                    + '— five individual lights and then a majority. Dollar-weighting would '
+                    + 'shrink ORCL from canary to rounding error, and ORCL is the name this '
+                    + 'factor was built to watch.' },
+                { k: 'The window', b: 'Trailing <b>four contiguous quarters</b>, so the '
+                    + 'season is complete and a Q4-heavy capex pattern cannot masquerade as '
+                    + 'a trend. The arrow compares it with the <b>same four quarters a year '
+                    + 'earlier</b> — one basis for every name, always.' },
+                { k: 'Over the gate', b: 'Above <b>100%</b> the difference comes from '
+                    + 'debt, cash reserves or someone else’s money, and that is a decision a '
+                    + 'board has to keep re-making every quarter — which is what makes this '
+                    + 'the pro-burst end of the scale. Under <b>75%</b> the build sits '
+                    + 'comfortably inside what operations throw off; the band between is the '
+                    + 'one worth watching.' },
+                { k: 'The majority', b: 'Five lights can deadlock, and the tie-breaks defer '
+                    + 'toward red: a green/red tie cancels to <b>yellow</b>, and two '
+                    + 'adjoining tiers defer <b>up</b> (2 red + 2 yellow reads red). The '
+                    + 'pane names the rule whenever one actually fired.' },
+                { k: 'The numbers', b: 'Taken from <b>SEC XBRL</b> as filed, not from a '
+                    + 'vendor window, and kept: 315 quarters and counting. Most arrive as '
+                    + 'discrete 3-month facts; Q4 is differenced out of the year-to-date '
+                    + 'ones, because no 10-Q reports it. Cross-checked against yfinance on '
+                    + 'the 30 overlapping quarters — <b>25 agree, 0 differ</b>, and the '
+                    + 'other five are periods the vendor left empty.' }
+            ]
+        },
+        capex_spigot: {
+            measures: 'Hyperscaler forward capex GUIDANCE against the prior year, '
+                    + 'basket aggregate — is the money still flowing?',
+            why: 'The demand side of the buildout, taken from what the spenders say they '
+               + 'will spend. Guidance is a promise made on a call and revised on the '
+               + 'next one, so it turns before the cash does — a cut here is the moment '
+               + 'the build is called off out loud.',
+            // INVERTED: green is the CUT. Confirming half of the capex pair.
+            bands: [
+                { light: 'green',  range: '< −10%',      mean: 'guidance cut' },
+                { light: 'yellow', range: '−10 to +10%', mean: 'flat / decelerating' },
+                { light: 'red',    range: '> +10%',      mean: 'spigot wide open' }
+            ],
+            edges: [-10, 10],
+            // NO GLYPH PAIR, and that is a decision rather than an omission: the measure
+            // is already a RATE, so its direction is in the number. An arrow here would
+            // be a second derivative. Contrast capex_pressure, a LEVEL, which earns one.
+            method: [
+                { k: 'The pair', b: 'The CONFIRMING half. Capex pressure greens first, as '
+                    + 'names breach 100% of their own cash flow; the spigot greens after, '
+                    + 'when that forces the guidance down. Given the lag a green here is '
+                    + '<b>confirmation, not warning</b> — the warning is a layer up, in '
+                    + 'pressure and infra backlog.' },
+                { k: 'The weighting', b: '<b>Dollar-weighted</b>: sum of guidance divided '
+                    + 'by sum of prior, so the biggest spender moves the light most. That '
+                    + 'is deliberately the opposite of capex pressure, which is unweighted '
+                    + 'so ORCL stays a canary. Here a dollar is a dollar whoever spends it.' },
+                { k: 'The prior', b: 'DERIVED from SEC filings every pass — capex plus '
+                    + '<b>finance-lease principal payments</b>, which is what these '
+                    + 'companies mean by "including finance leases". It used to be five '
+                    + 'pinned constants, and measured against the filings they were never '
+                    + 'on one basis: two were pure GAAP, one included leases, one was '
+                    + 'neither, and AMZN’s was its GUIDANCE figure rather than an '
+                    + 'actual — <b>$6.8B</b> under its own filed number, understated in the '
+                    + 'direction that inflates this reading. Now one convention, '
+                    + 'self-updating as each year closes.' },
+                { k: 'What is soft', b: 'Only the FORWARD number is model-pulled, because '
+                    + 'only it is genuinely soft. Each company is asked separately and the '
+                    + 'aggregate is assembled in Python; a company that does not guide is '
+                    + 'left OUT of the sum rather than counted as a zero, which would read '
+                    + 'as a cut it never made.' }
+            ]
+        },
+        // --- The eight that were left. None of these emits an arrow, so none carries a
+        // glyph pair: a key here would promise a mark the board never draws.
+        yield_curve: {
+            measures: 'The 10-year Treasury yield minus the 3-month, and whether that '
+                    + 'spread has already been inverted and come back.',
+            why: 'The definitional anchor — is the window open? Inversion preceded six of '
+               + 'the last seven recessions, but the inversion is not the trigger: the '
+               + 'recession lands six to eighteen months after the spread crosses back '
+               + 'to normal.',
+            bands: [
+                { light: 'green',  range: 'positive, after an inversion', mean: 'window open' },
+                { light: 'yellow', range: 'inverted now',                 mean: 'clock loading' },
+                { light: 'red',    range: 'positive, never inverted',     mean: 'nothing armed' }
+            ],
+            // Zero is the only line on this axis: it is where inversion begins and ends.
+            // The green/red split is not a level at all — it is whether an inversion sits
+            // BEHIND the current positive reading, which no gridline can show.
+            edges: [0],
+            method: [
+                { k: 'Sequence, not level', b: 'A positive spread means opposite things '
+                    + 'before and after an inversion, so this factor is a state machine, '
+                    + 'not a threshold. Green is the <b>crossover</b> window and carries '
+                    + 'months-since in its reading; the historical recessions landed in '
+                    + 'the <b>6–18 month</b> band after it.' },
+                { k: 'The lookback', b: 'Three years. An inversion older than that belongs '
+                    + 'to a previous cycle and no longer arms anything.' },
+                { k: 'Source', b: 'FRED <b>DGS10</b> and <b>DGS3MO</b>, daily and free.' }
+            ]
+        },
+        concentration: {
+            measures: 'Semiconductor weight in the S&P 500 — at its RUNNING PEAK, not '
+                    + 'today’s print.',
+            why: 'The magnitude of what is inflated. This is a pre-burst instrument, so '
+               + 'what matters is not where concentration sits now but the height the '
+               + 'unwind would start from — and a peak, once made, does not un-happen.',
+            bands: [
+                { light: 'green',  range: '> 20%',    mean: 'peak concentration' },
+                { light: 'yellow', range: '15 – 20%', mean: 'elevated' },
+                { light: 'red',    range: '< 15%',    mean: 'unremarkable' }
+            ],
+            edges: [15, 20],
+            method: [
+                { k: 'Peak, not print', b: 'The LIGHT reads the running maximum over the '
+                    + 'log; the sparkline plots the CURRENT daily weight, so the two do '
+                    + 'not track — today can fall while the light holds. Red is '
+                    + 'structurally unreachable by design: a peak cannot come back down.' },
+                { k: 'The basis', b: '<b>Float-adjusted</b> index weights from the SSGA SPY '
+                    + 'daily holdings file. A raw-cap basis reads about <b>1.09&times;</b> '
+                    + 'lower and is kept in the record as reference only — never mixed into '
+                    + 'the running max, which would corrupt the peak with two conventions.' },
+                { k: 'The 2000 shape', b: 'Top-10 weight reached <b>25%</b> then against '
+                    + '<b>38%</b> now — but 2000 was a wide large-cap mania and today is an '
+                    + 'ultra-narrow handful, and 2000 <b>spiked</b> where today has '
+                    + '<b>ground</b> up over years. Sharpest tell: then the biggest names '
+                    + 'carried the HIGHEST multiples (Cisco 130×), so it was multiple-driven; '
+                    + 'today they carry the lowest, so it is earnings-driven.' },
+                { k: 'Why 2007 is blank', b: '<b>2008 was a credit bubble, not a '
+                    + 'concentration one.</b> Equity breadth sat at <b>0.339</b> against a '
+                    + '0.353 median — near normal — while the risk built in mortgages and the '
+                    + 'banks holding them. That shape is read by <b>market credit</b> (the '
+                    + 'spark) and <b>leverage</b> (how violent the unwind), never here. Today '
+                    + 'is argued to be a hybrid, so read all three together.' },
+                { k: 'The backfill', b: 'Rows for 2026-04-15 to 07-17 are RECONSTRUCTED — '
+                    + 'each name’s float weight scaled back by its price ratio. Validated '
+                    + 'twice: the reconstruction’s latest value matched the live file to '
+                    + '<b>0.01pp</b>, and the peak lands on the same date as the raw-basis '
+                    + 'peak.' }
+            ]
+        },
+        rate_path: {
+            measures: 'The 2-year yield minus fed funds — the pivot — and how far it has '
+                    + 'moved in six months.',
+            why: 'Whether the market is repricing toward TIGHTENING, which is the cause a '
+               + 'burst needs, or toward cuts, which is the reaction to one. Reading the '
+               + 'pivot rather than the Fed’s own words gets the market’s answer before '
+               + 'the committee gives theirs.',
+            // TWO bands, not three, and that is the factor rather than an omission: it
+            // fires on either of two conditions or it does not fire.
+            bands: [
+                { light: 'green', range: '6mo move ≥ +0.50, or pivot < 0',
+                  mean: 'tightening, or pricing cuts' },
+                { light: 'red',   range: 'otherwise', mean: 'status quo' }
+            ],
+            edges: [0, 0.5],
+            method: [
+                { k: 'Two ways to green', b: 'A floored six-month move of <b>+0.50</b> or '
+                    + 'more (repricing toward tightening), OR a raw pivot below <b>zero</b> '
+                    + '(the market pricing cuts outright). Either is pro-burst; the reasons '
+                    + 'differ and both are named in the reading.' },
+                { k: 'Why floored', b: 'The six-month comparison floors the earlier pivot at '
+                    + 'zero, so a <b>fading inversion</b> cannot be read as fresh '
+                    + 'tightening. Without it, a move from −1.0 to −0.5 would score +0.5 and '
+                    + 'fire a signal that is the opposite of what happened.' },
+                { k: 'Strength', b: 'Amplitude is a watch, not a threshold: <b>+0.5</b> puts '
+                    + 'it on, <b>+1.0</b> and up is 2022-grade. Post-1994 the pivot averages '
+                    + 'about +0.31 and has ranged −1.5 to +2.2.' }
+            ]
+        },
+        leverage: {
+            measures: 'FINRA customer margin debt divided by free credit balances — '
+                    + 'borrowing against the cash cushion behind it.',
+            why: 'How violent the unwind would be, not whether it has started. This is a '
+               + 'LOADED gauge: it says the tank is full, and a full tank tells you the '
+               + 'size of the fire without telling you when it lights.',
+            bands: [
+                { light: 'green',  range: '> 2.0×',     mean: 'leverage maxed — primed' },
+                { light: 'yellow', range: '1.5 – 2.0×', mean: 'elevated' },
+                { light: 'red',    range: '< 1.5×',     mean: 'cushioned' }
+            ],
+            edges: [1.5, 2.0],
+            method: [
+                { k: 'The 2.0 line', b: 'ANCHORED, not chosen: the average of the two peaks '
+                    + 'that matter — <b>1.85×</b> at the dot-com top and <b>2.19×</b> in the '
+                    + '2021 mania. Red is near-moot by design; at a record ratio the bubble '
+                    + 'pops long before leverage bleeds back to 1.5.' },
+                { k: 'What it misses', b: 'FINRA covers CUSTOMER margin only — no prime '
+                    + 'brokerage, no repo, no total-return swaps, so an Archegos is '
+                    + 'invisible here. It therefore <b>understates</b> system leverage, '
+                    + 'which is the safe direction for a burst board to err in.' },
+                { k: 'Which half moves', b: 'The numerator does the work: margin debt has '
+                    + 'gone <b>$936B → $1.50T</b> while free credit stayed roughly flat.' }
+            ]
+        },
+        market_credit: {
+            measures: 'The ICE BofA US high-yield option-adjusted spread, in basis points '
+                    + '— and whether a widening has HELD.',
+            why: 'The spark. Everything else on this board describes how much fuel is '
+               + 'stacked; credit is where a bubble actually catches, because it is the '
+               + 'price at which the marginal borrower can still roll.',
+            bands: [
+                { light: 'green',  range: '> 500bps, held 10 prints', mean: 'stress that stuck' },
+                { light: 'yellow', range: '400 – 500bps',             mean: 'widening, unconfirmed' },
+                { light: 'red',    range: '< 400bps',                 mean: 'firewall holding' }
+            ],
+            edges: [400, 500],
+            method: [
+                { k: 'The hold clause', b: 'LOAD-BEARING. Green needs every one of the last '
+                    + '<b>10</b> prints above 500bps — a two-week hold — so a one-day spike '
+                    + 'reads yellow. Two historical false alarms healed within weeks, and '
+                    + 'April 2025’s <b>461bps</b> spike correctly never fired.' },
+                { k: 'Red is not safe', b: 'Red means no stress NOW, which is a different '
+                    + 'claim. Spreads hit record tights immediately before the 2007 blowout.' },
+                { k: 'It gaps', b: 'The move from tights to 600+ took WEEKS in 2008 and in '
+                    + '2020. This does not drift into position; expect the reading to jump.' }
+            ]
+        },
+        copper: {
+            measures: 'Copper against its own 200-bar trend, and how long since it last '
+                    + 'made a 52-week closing high.',
+            why: 'The real economy’s pulse, and the one industrial read on this board that '
+               + 'is not about AI at all. Copper turning while the buildout still hums is '
+               + 'the tell that demand is narrowing to one story.',
+            bands: [
+                { light: 'green',  range: 'below the 200',        mean: 'rolling over' },
+                { light: 'yellow', range: 'above, no high in 63',  mean: 'stalling' },
+                { light: 'red',    range: 'above, high inside 63', mean: 'humming' }
+            ],
+            edges: [0],
+            method: [
+                { k: 'Deliberately aggressive', b: 'The user’s own rule, and explicitly '
+                    + '<b>not backtested</b>. Green dominates on any breach of the 200, with '
+                    + 'no persistence clause by choice: copper has not closed below its 200 '
+                    + 'once in 2026, so a green would break a ten-month streak and is a real '
+                    + 'event rather than noise.' },
+                { k: 'The gate', b: '<b>63 trading bars</b> — a quarter of trading, not '
+                    + 'calendar days. Self-executing, so the date is knowable ahead and is '
+                    + 'recomputed every pass; any new high resets it.' },
+                { k: 'No price line', b: 'There is no absolute level here on purpose — a '
+                    + 'copper price has no fixed meaning across decades. The tariff premium '
+                    + 'in the COMEX front month distorts the LEVEL, not the trend.' }
+            ]
+        },
+        inflation: {
+            measures: 'Core PCE, year over year — the Fed’s own targeted gauge.',
+            why: 'What keeps the Fed trapped. Every other factor here assumes a rescue is '
+               + 'possible; this is the one that says whether it is. Hot inflation removes '
+               + 'the option to cut into a falling market.',
+            bands: [
+                { light: 'green',  range: '> 3.5%',   mean: 'Fed trapped' },
+                { light: 'yellow', range: '2 – 3.5%', mean: 'elevated, manageable' },
+                { light: 'red',    range: '≤ 2%',     mean: 'rescue available' }
+            ],
+            edges: [2.0, 3.5],
+            method: [
+                { k: 'Core PCE, not CPI', b: 'Core PCE runs roughly <b>0.3–0.5pp below</b> '
+                    + 'CPI. Never read a CPI print against these lines — it would sit a '
+                    + 'third of a band too high.' },
+                { k: 'Level only', b: 'No direction, no lookback, by design. The question is '
+                    + 'whether the Fed’s hands are tied today, and that is a level.' },
+                { k: 'The blind spot', b: 'Accepted, not solved: a demand-COLLAPSE '
+                    + 'disinflation to 2% would colour red here while meaning the opposite. '
+                    + 'The demand factors — copper, heavy haul — green at the same time in '
+                    + 'that scenario and catch it. Never read ≤2% as all-clear.' }
+            ]
+        },
+        net_liquidity: {
+            measures: 'Fed balance sheet less the Treasury General Account less reverse '
+                    + 'repo — and its 13-week change.',
+            why: 'The tide the whole market floats on, and the softest leg here. It moves '
+               + 'slowly and explains a lot after the fact, which is exactly why it is '
+               + 'read as a sustained direction rather than a level.',
+            bands: [
+                { light: 'green',  range: '13wk < −$0.2T, held', mean: 'draining' },
+                { light: 'yellow', range: 'within ±$0.2T',       mean: 'flat' },
+                { light: 'red',    range: '13wk > +$0.2T, held', mean: 'expanding' }
+            ],
+            edges: [-0.2, 0.2],
+            method: [
+                { k: 'The sustain clause', b: 'LOAD-BEARING. The 13-week move must agree '
+                    + 'with the 6-month trend, because <b>TGA swings of $200–400B a '
+                    + 'quarter</b> dominate the series. Never flip this light on one '
+                    + 'Treasury-account move.' },
+                { k: 'The band', b: 'Calibrated, not picked: the last three years’ 13-week '
+                    + 'changes have a standard deviation of <b>$0.176T</b>, so ±$0.2T is '
+                    + 'one sigma of noise. A 2018-onward window was rejected — the COVID '
+                    + 'explosion inflates it.' },
+                { k: 'The unit trap', b: 'WALCL and the TGA are in <b>millions</b>, reverse '
+                    + 'repo is in <b>billions</b>. Mixing them once produced a −$749T '
+                    + 'reading; the alignment is asserted in the builder.' }
+            ]
         }
     };
 
@@ -1697,6 +2012,634 @@
             'things: VRT has stopped speaking, GEV has only spoken once.</div>';
     }
 
+    // --- YIELD CURVE (one view) -------------------------------------------------
+    // The board-charts payload by id, cached in the same `_chartData` the Charts tab
+    // fills. Separate from abHaulChart on purpose: that one works and is not mine to
+    // disturb, and the eight lines it would save are not worth touching a view the
+    // user is happy with.
+    let _ycChartReq = null;
+    function abChartById(id) {
+        if (_chartData) return (_chartData.charts || []).find(c => c.id === id) || null;
+        if (!_ycChartReq) {
+            _ycChartReq = fetch(`${API_BASE}/get_board_charts`)
+                .then(r => r.json())
+                .then(j => { _chartData = j; renderBubbleOverview(); })
+                .catch(() => { /* the reading still renders; only the picture is missing */ });
+        }
+        return null;
+    }
+
+    // The Charts tab's own yield-curve entry, drawn in the panel: the spread, the
+    // stretches it spent INVERTED, and the recessions that followed. Nothing layered on
+    // top (user, 2026-08-31) — an earlier cut marked every un-inversion and shaded the
+    // 6-18 month window after each, which is a different chart than the one that
+    // already exists and works.
+    function abYieldChartSVG(ch) {
+        const ser = (ch.series || [])[0] || {};
+        const pts = ser.data || [];
+        if (pts.length < 2) return '';
+        const W = 680, H = 180, PL = 28, PR = 12, PT = 8, PB = 26;
+        const t0 = Date.parse(pts[0].time), t1 = Date.parse(pts[pts.length - 1].time);
+        const yr = ch.y_range || { min: -2, max: 5 };
+        const X = t => PL + (Date.parse(t) - t0) / (t1 - t0 || 1) * (W - PL - PR);
+        const Y = v => PT + (yr.max - v) / (yr.max - yr.min) * (H - PT - PB);
+
+        // Recessions underneath everything: they are the outcome, so they sit behind
+        // the evidence rather than on top of it.
+        const rec = (ch.bands || []).map(b =>
+            `<rect x="${X(b.from).toFixed(1)}" y="${PT}" ` +
+            `width="${Math.max(X(b.to) - X(b.from), 1).toFixed(1)}" ` +
+            `height="${H - PT - PB}" class="yc-rec"><title>recession ${esc(b.from)} to ` +
+            `${esc(b.to)}</title></rect>`).join('');
+
+        // A YEAR GRID, because a 26-year line with no x-axis cannot be read for
+        // WHEN (user, 2026-08-31). Every year gets a hairline so a date can be counted
+        // off, every fifth gets a stronger one and a label so you are never counting
+        // more than two. Drawn under the data, never over it.
+        const y0 = new Date(t0).getUTCFullYear() + 1;
+        const y1 = new Date(t1).getUTCFullYear();
+        let grid = '';
+        for (let y = y0; y <= y1; y++) {
+            const x = X(y + '-01-01');
+            if (x < PL || x > W - PR) continue;
+            const major = y % 5 === 0;
+            grid += `<line x1="${x.toFixed(1)}" y1="${PT}" x2="${x.toFixed(1)}" ` +
+                    `y2="${H - PB}" class="${major ? 'yc-gridmaj' : 'yc-grid'}"/>`;
+            if (major) {
+                grid += `<text x="${x.toFixed(1)}" y="${H - PB + 13}" ` +
+                        `class="yc-xlab">${y}</text>`;
+            }
+        }
+        // The series starts inside its first year, so that year never gets a gridline
+        // and the leftmost label would be 2005 — leaving the five years you would be
+        // counting back through unlabelled. Anchor it at the edge instead.
+        grid += `<text x="${PL}" y="${H - PB + 13}" class="yc-xlab" ` +
+                `text-anchor="start">${new Date(t0).getUTCFullYear()}</text>`;
+        // The SPREAD gets the same treatment as the years: a hairline every point so
+        // a level can be read off directly, a stronger line and a label every two so you
+        // are never counting more than one. Zero is skipped — it has its own rule below,
+        // and it is the only level on this axis that means something.
+        let hgrid = '';
+        for (let v = Math.ceil(yr.min); v <= Math.floor(yr.max); v++) {
+            if (v === 0) continue;
+            hgrid += `<line x1="${PL}" y1="${Y(v).toFixed(1)}" x2="${W - PR}" ` +
+                     `y2="${Y(v).toFixed(1)}" class="${v % 2 === 0 ? 'yc-gridmaj'
+                                                                   : 'yc-grid'}"/>`;
+        }
+        const zero = `<line x1="${PL}" y1="${Y(0).toFixed(1)}" x2="${W - PR}" ` +
+                     `y2="${Y(0).toFixed(1)}" class="yc-zero"/>`;
+        // The area BELOW zero is the inversion, filled rather than merely crossed: on a
+        // 26-year axis the inverted stretches are a few pixels wide and a line alone
+        // loses them. This is the payload's own `baseline` styling, in SVG.
+        const below = 'M' + pts.map(p => X(p.time).toFixed(1) + ',' +
+                      Y(Math.min(p.value, 0)).toFixed(1)).join(' L') +
+                      ` L${X(pts[pts.length - 1].time).toFixed(1)},${Y(0).toFixed(1)}` +
+                      ` L${X(pts[0].time).toFixed(1)},${Y(0).toFixed(1)} Z`;
+        const line = 'M' + pts.map(p => X(p.time).toFixed(1) + ',' +
+                     Y(p.value).toFixed(1)).join(' L');
+        const last = pts[pts.length - 1];
+        // Labelled on the majors, plus the top of the range so the axis is closed.
+        const lab = [];
+        for (let v = Math.ceil(yr.min); v <= Math.floor(yr.max); v++) {
+            if (v % 2 === 0 || v === Math.floor(yr.max)) lab.push(v);
+        }
+        const ticks = lab.map(v =>
+            `<text x="${PL - 4}" y="${(Y(v) + 3.5).toFixed(1)}" class="yc-ax">` +
+            `${v > 0 ? '+' : ''}${v}</text>`).join('');
+        return '<div class="yc-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="The 10-year minus 3-month spread since ${esc(pts[0].time)}, with ` +
+            'the inverted stretches filled and recessions shaded">' +
+            rec + grid + hgrid + ticks + zero +
+            `<path d="${below}" class="yc-inv"/>` +
+            `<path d="${line}" fill="none" stroke="${ser.color || '#60a5fa'}" ` +
+            'stroke-width="1.6"/>' +
+            `<circle cx="${X(last.time).toFixed(1)}" cy="${Y(last.value).toFixed(1)}" ` +
+            `r="3.5" fill="${ser.color || '#60a5fa'}" stroke="#0f172a" stroke-width="1.5"/>` +
+            '</svg></div>';
+    }
+
+    function abYieldHTML(day) {
+        const band = ((AB_WHY.yield_curve || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const head =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+              `${day.months_since != null ? day.months_since.toFixed(1) : '—'}` +
+              '<i>mo</i></span>' +
+              '<span class="k">since the crossover</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="s">${day.crossover_date
+                  ? 'crossed ' + esc(day.crossover_date)
+                  : 'no crossover in the window'}</span>` +
+            '</div>';
+        const ch = abChartById('yield_curve');
+        const pic = ch && !ch.error && !ch.placeholder
+            ? abYieldChartSVG(ch)
+            : '<div class="ab-tbd" style="padding:10px 13px">chart data loading…</div>';
+        const key =
+            '<div class="yc-key">' +
+              '<span><i class="yc-i-inv"></i>inverted (10yr &lt; 3mo)</span>' +
+              '<span><i class="yc-i-rec"></i>recession</span>' +
+            '</div>';
+        return head + pic + key +
+            '<div class="ab-overlapbar">The inversion arms the clock; the ' +
+            '<b>un-inversion</b> starts it. Inversion preceded six of the last seven ' +
+            'recessions, and they landed ' + day.window_from_months + '–' +
+            day.window_to_months + ' months after the spread crossed back' +
+            (day.crossover_date
+                ? ` — this one crossed <b>${esc(day.crossover_date)}</b>, ` +
+                  `${day.months_since.toFixed(1)} months ago.`
+                : '.') + '</div>';
+    }
+
+    // --- CONCENTRATION (one view) ----------------------------------------------
+    // The peak and the print on one axis, because the whole subtlety of this factor is
+    // that they are different numbers: the LIGHT reads the running maximum, the
+    // sparkline beside it plots today. Drawing both is the only way the pane stops
+    // looking like it disagrees with itself.
+    function abConcHTML(day) {
+        const band = ((AB_WHY.concentration || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">peak</span>' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.peak_pct.toFixed(2)}` +
+              '<span class="cc-of">%</span></span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="r">today ${day.current_pct.toFixed(2)}% · ` +
+              `${day.off_peak.toFixed(2)}pp off</span>` +
+            '</div>';
+
+        const W = 360, H = 96, PL = 10, PR = 10, Y = 30, BH = 20;
+        const hi = Math.max(day.green_at * 1.28, day.peak_pct * 1.12);
+        const X = v => PL + (v / hi) * (W - PL - PR);
+        const seg = (a, b, light) =>
+            `<rect x="${X(a).toFixed(1)}" y="${Y}" width="${(X(b) - X(a)).toFixed(1)}" ` +
+            `height="${BH}" fill="${AB_IB_BAND[light]}" fill-opacity=".16" ` +
+            `stroke="${AB_IB_BAND[light]}" stroke-opacity=".4"/>`;
+        const mark = (v, cls, label, up) =>
+            `<line x1="${X(v).toFixed(1)}" y1="${up ? Y - 12 : Y + BH}" ` +
+            `x2="${X(v).toFixed(1)}" y2="${up ? Y + BH : Y + BH + 12}" class="${cls}"/>` +
+            `<text x="${X(v).toFixed(1)}" y="${up ? Y - 16 : Y + BH + 24}" ` +
+            `class="cc-mk">${label}</text>`;
+        const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="Semiconductor weight: running peak ${day.peak_pct}% against ` +
+            `today's ${day.current_pct}%, on a scale banded at ${day.yellow_at} and ` +
+            `${day.green_at} percent">` +
+            seg(0, day.yellow_at, 'red') + seg(day.yellow_at, day.green_at, 'yellow') +
+            seg(day.green_at, hi, 'green') +
+            mark(day.peak_pct, 'cc-peak', 'peak ' + day.peak_pct.toFixed(1) + '%', true) +
+            mark(day.current_pct, 'cc-now', 'today ' + day.current_pct.toFixed(1) + '%', false) +
+            '</svg>';
+
+        // The roster is a ROSTER. `members` carries tickers and no weights, so there is
+        // nothing here to rank or chart, and listing them as chips says exactly that.
+        const chips = (day.members || []).map(m =>
+            `<span class="cc-chip">${esc(m)}</span>`).join('');
+        const rawline = day.raw_peak_pct != null
+            ? `The same peak on a RAW-cap basis reads <b>${day.raw_peak_pct}%</b> — about ` +
+              '1.09&times; lower, and kept as reference only. Mixing the two conventions ' +
+              'into one running maximum would corrupt the number the light is cut on.'
+            : '';
+        return '<div class="ab-pies">' + hero + svg + '</div>' +
+            `<div class="cc-roster"><div class="cc-rh">${day.n_members} GICS ` +
+            'semiconductor members · float-adjusted SPY weights</div>' + chips + '</div>' +
+            `<div class="ab-overlapbar">The light reads the <b>peak</b>; the strip above ` +
+            `reads <b>today</b>. They are ${day.off_peak.toFixed(2)}pp apart, and a peak ` +
+            `cannot come back down — which is why red is unreachable here by design. ` +
+            rawline + '</div>';
+    }
+
+    // ANALOGUES — what this reading looks like against the two bubbles it is usually
+    // measured against, and the one it CANNOT see.
+    //
+    // The view's job is session 28's finding rather than a league table: concentration
+    // detects the 2000 kind of bubble and is blind to the 2007 kind, because 2008 was a
+    // CREDIT bubble and equity concentration sat near its median through it. So 2007's
+    // row is deliberately an absence with a reason, not a number filled in to make the
+    // table look complete — and it points at the lights that DO cover that shape.
+    function abConcAnaloguesHTML(day) {
+        const rows = (day.analogues || []).concat([day.today]).filter(Boolean);
+        if (!rows.length) return '<div class="ab-tbd" style="padding:12px 13px">' +
+            'no analogues on this reading</div>';
+        const top = rows.map(r => r.top10_pct).filter(v => v != null);
+        const max = Math.max.apply(null, top.concat([40]));
+        const hero =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.today.top10_pct}` +
+              '<i>%</i></span>' +
+              '<span class="k">top-10 weight today</span>' +
+              `<span class="s">2000 reached ${(day.analogues[0] || {}).top10_pct}%</span>` +
+              `<span class="s">tame was ${(day.analogues[2] || {}).top10_pct}%</span>` +
+            '</div>';
+        // A bar per era on the one measure that spans three of the four. 2007 has no
+        // top-10 figure on the record, so it gets no bar — the gap IS the point.
+        const bars = rows.map(r => {
+            const now = r.era === 'today';
+            const w = r.top10_pct != null ? (r.top10_pct / max * 100) : 0;
+            return '<div class="ca-row">' +
+              `<span class="ca-era${now ? ' now' : ''}">${esc(r.era)}</span>` +
+              '<span class="ca-tr">' +
+                (r.top10_pct != null
+                  ? `<i style="width:${w.toFixed(1)}%" class="${now ? 'now' : ''}"></i>`
+                  : '<span class="ca-na">no top-10 figure on the record</span>') +
+              '</span>' +
+              `<span class="ca-v">${r.top10_pct != null ? r.top10_pct + '%' : '—'}</span>` +
+            '</div>';
+        }).join('');
+
+        const src = s => s === 'measured'
+            ? '<span class="ca-src ok">measured</span>'
+            : s === 'published' ? '<span class="ca-src">published</span>'
+            : s === 'recalled' ? '<span class="ca-src warn">recalled, unsourced</span>' : '';
+        const body = rows.map(r => {
+            const now = r.era === 'today';
+            return `<tr${now ? ' class="ca-now"' : ''}>` +
+              `<td class="l"><div class="mdl"><div class="nm2">${esc(r.era)}` +
+                `${r.detected ? '' : '<span class="ca-blind">not detected</span>'}</div>` +
+                `<div class="sl">${esc(r.label)}</div></div></td>` +
+              `<td>${r.top10_pct != null ? r.top10_pct + '%' : '—'}</td>` +
+              `<td class="l">${r.breadth != null
+                  ? `<span class="pulled">${r.breadth}</span>` +
+                    `<div class="sl">${esc(r.breadth_metric || '')}</div>` : '—'}</td>` +
+              `<td class="l">${r.semis_pct != null
+                  ? (r.semis_range ? r.semis_range + '%' : r.semis_pct.toFixed(2) + '%')
+                    + ' ' + src(r.semis_src)
+                  : '<span class="sl">&mdash;</span>'}</td>` +
+            '</tr>';
+        }).join('');
+
+        const seven = (day.analogues || []).find(a => a.era === '2007') || {};
+        return hero +
+            `<div class="ca-bars"><div class="ca-bh">Top-10 share of the S&amp;P 500</div>` +
+            bars + '</div>' +
+            '<div class="ab-scroller"><table class="ab-ledger ca-tbl">' +
+            '<thead><tr><th class="l">Era</th><th>Top-10</th><th class="l">Breadth</th>' +
+            '<th class="l">Semis</th></tr></thead>' + `<tbody>${body}</tbody></table></div>` +
+            '<div class="ab-srcfoot"><b>2007 is the finding, not a gap.</b> ' +
+            esc(seven.note || '') + ' No single measure spans all four eras and none is ' +
+            'faked to fill the table: RSP is equal-weight and was born in 2003, so 2000 ' +
+            'has no RSP/SPY and uses the deep OEX/GSPC stand-in instead. The semi weights ' +
+            'for 2000 and the tame baseline are <b>recalled, not sourced</b> — they are ' +
+            'the softest numbers here and are marked as such wherever they appear.</div>';
+    }
+
+    // --- INFLATION (one view) ---------------------------------------------------
+    // Six prints and two lines. A level-only factor has no direction to draw, but the
+    // PRINTS are a different series from the rail beside them -- one point per month the
+    // BEA published, against one row per day this board looked -- so they are worth
+    // their own picture rather than being mistaken for the same thing.
+    function abInflationHTML(day) {
+        const t = day.trail || [];
+        if (!t.length) return '<div class="ab-tbd" style="padding:12px 13px">' +
+            'no trail on this reading</div>';
+        const band = ((AB_WHY.inflation || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">core PCE</span>' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.yoy.toFixed(2)}` +
+              '<span class="cc-of">%</span></span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="r">${Math.abs(day.to_green).toFixed(2)}pp ` +
+              `${day.to_green >= 0 ? 'below' : 'above'} the green line</span>` +
+            '</div>';
+        const W = 360, H = 130, PL = 26, PR = 14, PT = 12, PB = 22;
+        const lo = Math.min(day.red_at_or_below - 0.2, Math.min.apply(null, t) - 0.2);
+        const hi = Math.max(day.green_above + 0.3, Math.max.apply(null, t) + 0.2);
+        const X = i => PL + (i / Math.max(t.length - 1, 1)) * (W - PL - PR);
+        const Y = v => PT + (hi - v) / (hi - lo) * (H - PT - PB);
+        const line = (v, light, label) =>
+            `<line x1="${PL}" y1="${Y(v).toFixed(1)}" x2="${W - PR}" ` +
+            `y2="${Y(v).toFixed(1)}" stroke="${AB_IB_BAND[light]}" stroke-width="1" ` +
+            'stroke-dasharray="3 3" stroke-opacity=".6"/>' +
+            `<text x="${PL - 4}" y="${(Y(v) + 3.5).toFixed(1)}" class="cc-ax">${label}</text>`;
+        const path = t.map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ',' +
+                           Y(v).toFixed(1)).join(' ');
+        const dots = t.map((v, i) =>
+            `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" ` +
+            `r="${i === t.length - 1 ? 4.5 : 3}" fill="${i === t.length - 1
+                ? (AB_IB_BAND[day.light] || '#94a3b8') : '#64748b'}">` +
+            `<title>${v.toFixed(2)}%</title></circle>`).join('');
+        const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="The last ${t.length} core-PCE prints against the 2 and 3.5 ` +
+            'percent lines">' +
+            line(day.green_above, 'green', day.green_above.toFixed(1)) +
+            line(day.red_at_or_below, 'red', day.red_at_or_below.toFixed(1)) +
+            `<path d="${path}" fill="none" stroke="#94a3b8" stroke-width="1.5"/>` + dots +
+            `<text x="${PL}" y="${H - 6}" class="cc-ax2">oldest</text>` +
+            `<text x="${W - PR}" y="${H - 6}" class="cc-ax2" text-anchor="end">latest` +
+            '</text></svg>';
+        const vals = t.map((v, i) =>
+            `<span class="cc-pt${i === t.length - 1 ? ' now' : ''}">${v.toFixed(2)}</span>`)
+            .join('<span class="cc-sep">›</span>');
+        return '<div class="ab-pies">' + hero + svg + '</div>' +
+            `<div class="cc-trail">${vals}</div>` +
+            `<div class="ab-overlapbar">Six monthly prints, ${day.climbing
+                ? 'each at or above the last' : 'not monotonic — it has come off its high'}. ` +
+            `This is core PCE, which runs <b>0.3–0.5pp below</b> CPI, so a CPI print read ` +
+            'against these lines would sit a third of a band too high.</div>';
+    }
+
+    // --- CAPEX SPIGOT (factor #8) ----------------------------------------------
+    // TWO marks per company, and only one of them is coloured: the prior year is what
+    // WAS and wears the neutral, the guided year is what is being claimed now and
+    // wears the accent. Same encoding as capex_pressure's dumbbell — the past is a
+    // reference, not a second entity — and it keeps green/yellow/red free to mean the
+    // light, which on this factor is a single aggregate rather than five per-name
+    // bands. #6366f1 is the indigo already validated against this surface.
+    const AB_CS_NOW = '#6366f1';
+    const AB_CS_WAS = '#475569';
+
+    // Prior against guided, per company, sorted by guided dollars — which is also the
+    // order of influence, because this aggregate is DOLLAR-weighted.
+    function abSpigotBarsSVG(day) {
+        const ns = day.names || [];
+        if (!ns.length) return '';
+        const W = 360, RH = 30, PT = 14, PB = 22, PL = 46, PR = 44;
+        const H = PT + ns.length * RH + PB;
+        const hi = Math.max.apply(null, ns.map(n => n.guidance_b || 0)) * 1.1 || 1;
+        const X = v => (v / hi) * (W - PL - PR);
+        const rows = ns.map((n, i) => {
+            const y = PT + i * RH;
+            const wp = Math.max(X(n.prior_b || 0), 1), wg = Math.max(X(n.guidance_b || 0), 1);
+            return `<text x="${PL - 7}" y="${(y + 15).toFixed(1)}" class="cs-tk">` +
+                   `${esc(n.key)}</text>` +
+                   `<rect x="${PL}" y="${y + 2}" width="${wp.toFixed(1)}" height="7" rx="2" ` +
+                   `fill="${AB_CS_WAS}"><title>${esc(n.key)} prior year — ` +
+                   `$${n.prior_b}B</title></rect>` +
+                   `<rect x="${PL}" y="${y + 12}" width="${wg.toFixed(1)}" height="9" rx="2" ` +
+                   `fill="${AB_CS_NOW}"><title>${esc(n.key)} guided — $${n.guidance_b}B, ` +
+                   `${n.weight_pct}% of the basket</title></rect>` +
+                   `<text x="${(PL + wg + 5).toFixed(1)}" y="${(y + 20).toFixed(1)}" ` +
+                   `class="cs-v">$${n.guidance_b}B</text>`;
+        }).join('');
+        return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Prior-year ' +
+            'capex against guided capex for each company, in billions">' + rows +
+            `<text x="${PL}" y="${H - 6}" class="cs-lg">` +
+            `<tspan fill="${AB_CS_WAS}">&#9632;</tspan> prior year   ` +
+            `<tspan fill="${AB_CS_NOW}">&#9632;</tspan> guided</text>` + '</svg>';
+    }
+
+    // THE SPIGOT — the aggregate, and the five guides it is made of.
+    function abSpigotHTML(day) {
+        const band = ((AB_WHY.capex_spigot || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">reading</span>' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+              `${day.yoy >= 0 ? '+' : ''}${Math.round(day.yoy)}<span class="cs-of">%</span>` +
+              '</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="r">$${day.total_prior_b}B &rarr; $${day.total_guidance_b}B</span>` +
+            '</div>';
+        // Each row carries its SHARE of the guided dollars, because that is what this
+        // name is worth to the light. A dollar-weighted aggregate has no equal members.
+        const rows = (day.names || []).map(n =>
+            '<div class="ab-lrow">' +
+              `<span class="ab-sw" style="background:${AB_CS_NOW}"></span>` +
+              `<span class="nm2">${esc(n.key)}</span>` +
+              `<span class="fig"><b>${n.yoy_pct >= 0 ? '+' : ''}` +
+              `${Math.round(n.yoy_pct)}%</b>` +
+              `<span class="alt">${n.weight_pct}% of basket</span></span>` +
+            '</div>').join('');
+        const miss = (day.undisclosed || []).length
+            ? ` <b>${day.undisclosed.map(esc).join(', ')}</b> did not guide, so ` +
+              'the sum is short a member rather than carrying a zero.' : '';
+        return '<div class="ab-pies">' + hero + abSpigotBarsSVG(day) +
+            '<div class="ab-lens cs-leg">' + rows + '</div></div>' +
+            `<div class="ab-overlapbar">$${day.total_prior_b}B of prior spend against ` +
+            `$${day.total_guidance_b}B guided. Dollar-weighted on purpose — <b>sum of ` +
+            `guidance &divide; sum of prior</b>, so the biggest spender moves the light ` +
+            `most. ` +
+            `That is the opposite of capex pressure next door, which is unweighted so ` +
+            `ORCL stays a canary. No arrow here: the measure is already a RATE, and an ` +
+            `arrow on a rate would be a second derivative.${miss}</div>`;
+    }
+
+    // SOURCES — every guide with where it was read and when. The shape session 48
+    // called worth copying, and it earns itself here the same way: one of the five has
+    // no pull date recorded at all.
+    function abSpigotSourcesHTML(day) {
+        const ns = day.names || [];
+        if (!ns.length) return '<div class="ab-tbd" style="padding:12px 13px">' +
+            'no guidance on this record</div>';
+        const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); }
+                            catch (e) { return ''; } };
+        // Aged against the READING's own date, never against today: a July print must
+        // not look staler every time the panel is opened.
+        const age = d => {
+            if (!d || !day.date) return null;
+            const ms = Date.parse(day.date + 'T00:00:00Z') - Date.parse(d + 'T00:00:00Z');
+            return isNaN(ms) ? null : Math.round(ms / 86400000);
+        };
+        const body = ns.map(n => {
+            const a = age(n.refreshed_at);
+            return '<tr>' +
+              `<td class="l"><div class="mdl"><div class="nm2">${esc(n.key)}</div>` +
+                `<div class="sl">${esc(n.basis || '')}</div></div></td>` +
+              `<td>$${n.guidance_b}B</td>` +
+              `<td class="l">${n.refreshed_at
+                  ? `<span class="pulled">${esc(n.refreshed_at)}` +
+                    `${a != null ? ` <span class="age">${a}d</span>` : ''}</span>`
+                  : '<span class="cs-nodate">no pull date</span>'}</td>` +
+              `<td class="l">${n.prior_derived
+                  ? `<span class="pulled">$${n.prior_b}B</span>` +
+                    `<div class="sl">${esc((n.prior_period_start || '').slice(0, 7))}` +
+                    `..${esc((n.prior_period_end || '').slice(0, 7))}</div>`
+                  : '<span class="cs-nodate">no prior</span>'}</td>` +
+              `<td class="l">${n.url ? `<a class="ab-src-a" href="${esc(n.url)}" ` +
+                  `target="_blank" rel="noopener noreferrer">${esc(host(n.url) || 'source')}</a>`
+                  : '<span class="sl">&mdash;</span>'}</td>` +
+            '</tr>';
+        }).join('');
+        const nodate = ns.filter(n => !n.refreshed_at).map(n => n.key);
+        return '<div class="ab-scroller"><table class="ab-ledger cs-tbl">' +
+            '<thead><tr><th class="l">Company &amp; basis</th><th>Guided</th>' +
+            '<th class="l">Pulled</th><th class="l">Prior (derived)</th>' +
+            '<th class="l">Source</th>' +
+            '</tr></thead>' + `<tbody>${body}</tbody></table></div>` +
+            '<div class="ab-srcfoot">Only the GUIDED figure is model-pulled. The ' +
+            'PRIOR is <b>derived from SEC filings</b> — capex plus finance-lease ' +
+            'principal payments over the year each company actually guides against, ' +
+            'which for ORCL is its own June-to-May fiscal year and for the other four ' +
+            'is the calendar year (MSFT guides on the calendar year even though its ' +
+            'fiscal one ends in June — reading its fiscal year instead would be 29% ' +
+            'light). So the soft half and the hard half are separated, and the hard ' +
+            'half updates itself.' +
+            (nodate.length ? ` <b>${nodate.map(esc).join(', ')}</b> carries no pull date ` +
+             'at all, so its age against this reading cannot be stated.' : '') +
+            '</div>';
+    }
+
+    // --- CAPEX PRESSURE (factor #7) --------------------------------------------
+    // Bars wear the BAND colours, and here that is the literal meaning rather than a
+    // borrowing: each bar IS a per-company light, and the majority of those five
+    // lights is the factor's light. Painting them anything else would put a second
+    // colour language on top of the one the row above already speaks.
+    const AB_CP_C = { green: '#4ade80', yellow: '#fbbf24', red: '#f87171' };
+
+    // Five ratios against the two gates that cut them. A bar list, not a pie: this is
+    // five independent magnitudes measured against a threshold, not parts of a whole,
+    // and the thresholds are the whole point — you read this to see who is over 100.
+    function abCapexBarsSVG(day) {
+        const ns = (day.names || []).slice().sort((a, b) => b.pct - a.pct);
+        if (!ns.length) return '';
+        const W = 360, RH = 26, PT = 16, PB = 20, PL = 44, PR = 34;
+        const H = PT + ns.length * RH + PB;
+        const hi = Math.max(day.green_above * 1.25,
+                            Math.max.apply(null, ns.map(n => n.pct)) * 1.08);
+        const X = v => PL + (v / hi) * (W - PL - PR);
+        const gate = (v, label) =>
+            `<line x1="${X(v).toFixed(1)}" y1="${PT - 6}" x2="${X(v).toFixed(1)}" ` +
+            `y2="${H - PB + 3}" class="cp-gate"/>` +
+            `<text x="${X(v).toFixed(1)}" y="${H - PB + 14}" class="cp-gl">${label}</text>`;
+        const bars = ns.map((n, i) => {
+            const y = PT + i * RH;
+            const w = Math.max(X(n.pct) - PL, 1);
+            return `<text x="${PL - 7}" y="${(y + 12).toFixed(1)}" class="cp-tk">` +
+                   `${esc(n.key)}</text>` +
+                   `<rect x="${PL}" y="${y + 3}" width="${w.toFixed(1)}" height="12" ` +
+                   `rx="3" fill="${AB_CP_C[n.light] || '#94a3b8'}" fill-opacity=".85">` +
+                   `<title>${esc(n.key)} — ${n.pct}% of operating cash flow</title></rect>` +
+                   `<text x="${(PL + w + 5).toFixed(1)}" y="${(y + 13).toFixed(1)}" ` +
+                   `class="cp-v">${n.pct}%</text>`;
+        }).join('');
+        return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Capex as a ' +
+            `share of operating cash flow for ${ns.length} companies, against the ` +
+            `${day.yellow_at}% and ${day.green_above}% gates">` +
+            gate(day.yellow_at, day.yellow_at + '%') +
+            gate(day.green_above, day.green_above + '%') + bars + '</svg>';
+    }
+
+    // THE FIVE — who is over the gates, and what the majority made of it.
+    function abCapexNamesHTML(day) {
+        const band = ((AB_WHY.capex_pressure || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">reading</span>' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.through}` +
+              `<span class="cp-of">/${day.n_names}</span></span>` +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              '<span class="r">through the ' + day.green_above + '% gate</span>' +
+            '</div>';
+        const ns = (day.names || []).slice().sort((a, b) => b.pct - a.pct);
+        const rows = ns.map(n =>
+            '<div class="ab-lrow">' +
+              `<span class="ab-sw" style="background:${AB_CP_C[n.light] || '#94a3b8'}"></span>` +
+              `<span class="nm2">${esc(n.key)}</span>` +
+              `<span class="fig"><b>${n.pct}%</b>` +
+              `<span class="alt">${esc((n.period_end || '').slice(0, 7))}</span></span>` +
+            '</div>').join('');
+        // The tie-break is named only when one actually fired. Five lights can deadlock
+        // and the resolution defers toward red on purpose; a pane that showed just the
+        // winning colour would hide that a rule was involved at all.
+        const tie = day.tie_break
+            ? `<div class="cp-tie"><span class="k">tie-break</span> ${esc(day.tie_break)}</div>`
+            : '';
+        const c = day.counts || {};
+        const named = (day.through_names || []).length
+            ? ` (${(day.through_names || []).map(esc).join(' and ')})` : '';
+        return '<div class="ab-pies">' + hero + abCapexBarsSVG(day) +
+            '<div class="ab-lens cp-leg">' + rows + '</div></div>' + tie +
+            `<div class="ab-overlapbar"><b>${c.red || 0}</b> of ${day.n_names} are ` +
+            `self-funding under ${day.yellow_at}%; <b>${c.green || 0}</b>${named} sit ` +
+            `above ${day.green_above}% and are funding the build off the balance sheet. ` +
+            'Unweighted on purpose — dollar-weighting would shrink ORCL from canary to ' +
+            'rounding error.</div>';
+    }
+
+    // DIRECTION — each name against ITSELF a year ago, which is what the arrow reads.
+    //
+    // COLOUR MEANS SOMETHING DIFFERENT HERE, on purpose (user, 2026-08-31). In The five
+    // a mark wears the band its LEVEL sits in. In this view it wears the direction of
+    // the MOVE against the board's inverted scale: green is pro-burst, so a ratio
+    // RISING is travelling toward green and is drawn green even while its level is
+    // still red, and a ratio falling is drawn red. The two views answer different
+    // questions — where a name stands, and which way it is going — and a name can
+    // honestly be red in one and green in the other. The caption under the marks says
+    // so, because a reader arriving from the first view will otherwise read these as
+    // bands.
+    function _cpMove(delta) {
+        return delta > 0 ? AB_CP_C.green : delta < 0 ? AB_CP_C.red : '#94a3b8';
+    }
+
+    function abCapexDirectionHTML(day) {
+        const ns = (day.names || []).filter(n => n.prior_pct != null)
+            .slice().sort((a, b) => b.delta - a.delta);
+        if (!ns.length) return '<div class="ab-tbd" style="padding:12px 13px">' +
+            'no year-ago window on this reading</div>';
+        const worse = ns.filter(n => n.delta > 0).length;
+        const hero =
+            '<div class="ab-hero">' +
+              '<span class="k">burning more</span>' +
+              `<span class="v">${worse}<span class="cp-of">/${ns.length}</span></span>` +
+              '<span class="s">than a year ago</span>' +
+              `<span class="r">arrow ${esc(day.arrow || 'none')}</span>` +
+            '</div>';
+        // A dumbbell per name: where it was, where it is, joined. The pair is the point
+        // -- a level alone cannot say whether the build is accelerating.
+        const W = 360, RH = 26, PT = 16, PB = 20, PL = 44, PR = 34;
+        const H = PT + ns.length * RH + PB;
+        const hi = Math.max.apply(null, ns.map(n => Math.max(n.pct, n.prior_pct))) * 1.12;
+        const X = v => PL + (v / hi) * (W - PL - PR);
+        const marks = ns.map((n, i) => {
+            const y = PT + i * RH + 9;
+            return `<text x="${PL - 7}" y="${(y + 4).toFixed(1)}" class="cp-tk">` +
+                   `${esc(n.key)}</text>` +
+                   `<line x1="${X(n.prior_pct).toFixed(1)}" y1="${y}" ` +
+                   `x2="${X(n.pct).toFixed(1)}" y2="${y}" class="cp-join" ` +
+                   `stroke="${_cpMove(n.delta)}" stroke-opacity=".55"/>` +
+                   `<circle cx="${X(n.prior_pct).toFixed(1)}" cy="${y}" r="3.5" ` +
+                   `class="cp-then"><title>${esc(n.key)} a year ago — ` +
+                   `${n.prior_pct}%</title></circle>` +
+                   `<circle cx="${X(n.pct).toFixed(1)}" cy="${y}" r="4.5" ` +
+                   `fill="${_cpMove(n.delta)}"><title>${esc(n.key)} now — ${n.pct}%, ` +
+                   `${n.delta > 0 ? 'up' : n.delta < 0 ? 'down' : 'flat'} ` +
+                   `${Math.abs(n.delta)} points toward ` +
+                   `${n.delta > 0 ? 'green' : 'red'}</title></circle>` +
+                   `<text x="${(X(Math.max(n.pct, n.prior_pct)) + 6).toFixed(1)}" ` +
+                   `y="${(y + 4).toFixed(1)}" class="cp-v">+${n.delta}</text>`;
+        }).join('');
+        const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="Each company's capex-to-cash-flow ratio a year ago and now; ` +
+            `colour marks the direction of the move, green toward the pro-burst end">` +
+            marks + '</svg>';
+        const rows = ns.map(n =>
+            '<div class="ab-lrow">' +
+              `<span class="ab-sw" style="background:${_cpMove(n.delta)}"></span>` +
+              `<span class="nm2">${esc(n.key)}</span>` +
+              `<span class="fig"><b>${n.prior_pct}% &rarr; ${n.pct}%</b>` +
+              `<span class="alt">${n.delta > 0 ? '+' : ''}${n.delta}</span></span>` +
+            '</div>').join('');
+        // States the basis rather than assuming it. Rows recorded before 2026-08-31 hold
+        // a fiscal-YEAR prior against a TTM current -- not comparable, and the delta on
+        // such a row is a difference between two different measurements.
+        const mixed = ns.filter(n => !n.comparable).length;
+        // Identity is never colour alone, and here the colour is carrying a meaning
+        // it does NOT carry one view to the left — so it gets named rather than left to
+        // be inferred from five marks that all happen to point the same way today.
+        const key =
+            '<div class="cp-key">' +
+              `<span><i style="background:${AB_CP_C.green}"></i>toward green — ` +
+              'ratio rising, burning more</span>' +
+              `<span><i style="background:${AB_CP_C.red}"></i>toward red — ` +
+              'ratio falling, pulling back</span>' +
+              '<span class="cp-keynote">colour is the MOVE here, not the band</span>' +
+            '</div>';
+        return '<div class="ab-pies">' + hero + svg +
+            '<div class="ab-lens cp-leg">' + rows + '</div></div>' + key +
+            `<div class="ab-overlapbar">Both windows are four contiguous quarters of the ` +
+            `same company, one year apart` +
+            (mixed ? `, except <b>${mixed}</b> recorded before the basis was fixed — ` +
+                     'those pair a fiscal-year prior with a TTM current and are not ' +
+                     'comparable' : '') +
+            `. Ratios RISING means burning more, which is why the arrow points ` +
+            `<b>${esc(day.arrow || 'nowhere')}</b> toward burst.</div>`;
+    }
+
     // --- HEAVY HAUL (factor #5) ------------------------------------------------
     // Sector hues for the Composition view. THREE hues and a neutral, and the count is
     // MEASURED, not chosen: validate_palette.js (dataviz skill) passes this trio
@@ -2076,6 +3019,101 @@
                                    : (d.gev || {}).arrow === 'minus' ? '−' : 'dark']],
             render:  (key, day) => key === 'legs'
                 ? abInfraLegsHTML(day) : abInfraReadingHTML(day)
+        },
+        capex_pressure: {
+            // THE FIVE leads, for the same reason silicon_payback's pies do: it is what
+            // the factor is for. The light is a majority of five per-company lights, so
+            // the five ARE the reading, and Direction is the check you run on them.
+            views:   [{ key: 'names',     label: 'The five' },
+                      { key: 'direction', label: 'Direction' }],
+            value:   d => d.through,
+            reading: d => d.through + '/' + d.n_names + ' thru',
+            light:   d => d.light,
+            // The reading is an INTEGER count of names through the gate, so half a step
+            // is a whole band away from being a rounding difference — and this ledger
+            // re-shapes the day's own snapshot rather than re-deriving it, so the two
+            // cannot drift in the first place.
+            tol:     0.5,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => d.n_names + ' companies',
+            // The band mix, the tie-break if one fired, and the direction — the three
+            // things a bare "2/5 thru" cannot tell you.
+            figures: d => [['mix', `${(d.counts || {}).green || 0}g/` +
+                                   `${(d.counts || {}).yellow || 0}y/` +
+                                   `${(d.counts || {}).red || 0}r`],
+                           ['tie-break', d.tie_break ? 'fired' : 'none'],
+                           ['arrow', d.arrow || 'none'],
+                           ['through', (d.through_names || []).join(' ') || '—']],
+            render:  (key, day) => key === 'direction'
+                ? abCapexDirectionHTML(day) : abCapexNamesHTML(day)
+        },
+        capex_spigot: {
+            // THE SPIGOT leads: the aggregate is the reading, and the five guides are
+            // what it is made of. Sources is the check you run on them.
+            views:   [{ key: 'spigot',  label: 'The spigot' },
+                      { key: 'sources', label: 'Sources' }],
+            value:   d => d.yoy,
+            reading: d => (d.yoy >= 0 ? '+' : '') + Math.round(d.yoy) + '%',
+            light:   d => d.light,
+            tol:     0.05,
+            reconLabel: 'read from the same record',
+            count:   d => d.n_names + ' companies',
+            figures: d => [['guided', '$' + d.total_guidance_b + 'B'],
+                           ['prior', '$' + d.total_prior_b + 'B'],
+                           ['widest', (d.names || []).length
+                               ? d.names.reduce((a, b) => a.yoy_pct > b.yoy_pct ? a : b).key
+                               : '—'],
+                           ['undisclosed', (d.undisclosed || []).length
+                               ? d.undisclosed.join(' ') : 'none']],
+            render:  (key, day) => key === 'sources'
+                ? abSpigotSourcesHTML(day) : abSpigotHTML(day)
+        },
+        // ONE view each (user, 2026-08-31): the switcher only renders past a single
+        // entry, so a lone view costs no chrome and promises no second tab.
+        concentration: {
+            views:   [{ key: 'peak', label: 'Peak & print' },
+                      { key: 'analogues', label: 'Analogues' }],
+            value:   d => d.peak_pct,
+            reading: d => d.peak_pct.toFixed(2) + '%',
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => d.n_members + ' members',
+            figures: d => [['today', d.current_pct.toFixed(2) + '%'],
+                           ['off peak', d.off_peak.toFixed(2) + 'pp'],
+                           ['basis', 'float'],
+                           ['raw peak', d.raw_peak_pct != null ? d.raw_peak_pct + '%' : '—']],
+            render:  (key, day) => key === 'analogues'
+                ? abConcAnaloguesHTML(day) : abConcHTML(day)
+        },
+        inflation: {
+            views:   [{ key: 'trail', label: 'The trail' }],
+            value:   d => d.yoy,
+            reading: d => d.yoy.toFixed(2) + '%',
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => d.trail.length + ' prints',
+            figures: d => [['to green', d.to_green.toFixed(2) + 'pp'],
+                           ['6mo ago', d.trail[0].toFixed(2) + '%'],
+                           ['high', Math.max.apply(null, d.trail).toFixed(2) + '%'],
+                           ['monotonic', d.climbing ? 'yes' : 'no']],
+            render:  (key, day) => abInflationHTML(day)
+        },
+        yield_curve: {
+            views:   [{ key: 'history', label: 'History' }],
+            value:   d => d.spread,
+            reading: d => (d.spread >= 0 ? '+' : '') + d.spread.toFixed(2),
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => d.months_since != null
+                ? d.months_since.toFixed(1) + ' months in' : 'no crossover',
+            figures: d => [['crossed', d.crossover_date || '—'],
+                           ['months', d.months_since != null ? d.months_since.toFixed(1) : '—'],
+                           ['window', d.window_from_months + '–' + d.window_to_months + 'mo'],
+                           ['lookback', d.lookback_years + 'y']],
+            render:  (key, day) => abYieldHTML(day)
         }
     };
 

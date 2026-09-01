@@ -2152,6 +2152,226 @@
                 : '.') + '</div>';
     }
 
+    // --- LEVERAGE (one view) -----------------------------------------------------
+    // The ratio since 1999, against the two thresholds and the four peaks the 2.0 line
+    // is set FROM. Drawing the anchors on the line rather than as free-floating levels
+    // is the point: the green threshold is the average of the 2000 and 2021 peaks, so
+    // seeing those two marked shows why it sits where it does, which no number in the
+    // About box can.
+    function abLeverageHTML(day) {
+        const ser = day.series || [];
+        const band = ((AB_WHY.leverage || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const peak = day.peak || {};
+        const head =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.ratio.toFixed(2)}` +
+              '<i>&times;</i></span>' +
+              '<span class="k">margin debt / free credit</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `${peak.ratio ? `<span class="s">peak ${peak.ratio.toFixed(2)} ` +
+                `${esc((peak.date || '').slice(0, 7))}</span>` : ''}` +
+            '</div>';
+        if (!ser.length) {
+            return head + '<div class="ab-tbd" style="padding:12px 13px">' +
+                (day.series_error ? 'history unavailable &mdash; ' + esc(day.series_error)
+                                  : 'history rides on the newest reading only') + '</div>';
+        }
+
+        const W = 680, H = 210, L = 30, R = 14, T = 10, B = 24;
+        const t0 = Date.parse(ser[0][0]), t1 = Date.parse(ser[ser.length - 1][0]);
+        const hi = Math.max(3.6, Math.max.apply(null, ser.map(p => p[1])) * 1.05);
+        const X = t => L + (Date.parse(t) - t0) / (t1 - t0 || 1) * (W - L - R);
+        const Y = v => T + (hi - v) / hi * (H - T - B);
+
+        // The bands the light is cut on, under everything. Green is the top of the
+        // scale here because the board is inverted: leverage MAXED is pro-burst.
+        let g = `<rect x="${L}" y="${T}" width="${W - L - R}" ` +
+                `height="${(Y(day.green_above) - T).toFixed(1)}" class="lv-green"/>` +
+                `<rect x="${L}" y="${Y(day.green_above).toFixed(1)}" width="${W - L - R}" ` +
+                `height="${(Y(day.yellow_above) - Y(day.green_above)).toFixed(1)}" ` +
+                'class="lv-yellow"/>';
+        for (let y = 2000; y <= new Date(t1).getUTCFullYear(); y++) {
+            const x = X(y + '-01-01');
+            if (x < L || x > W - R) continue;
+            const maj = y % 5 === 0;
+            g += `<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" ` +
+                 `y2="${H - B}" class="${maj ? 'yc-gridmaj' : 'yc-grid'}"/>`;
+            if (maj) g += `<text x="${x.toFixed(1)}" y="${H - B + 13}" class="rp-ax" ` +
+                          `text-anchor="middle">${y}</text>`;
+        }
+        for (let v = 1; v <= Math.floor(hi); v++) {
+            g += `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(v).toFixed(1)}" class="yc-grid"/>` +
+                 `<text x="${L - 5}" y="${(Y(v) + 3.5).toFixed(1)}" class="rp-ax" ` +
+                 `text-anchor="end">${v}</text>`;
+        }
+        [[day.green_above, 'lv-lg'], [day.yellow_above, 'lv-ly']].forEach(function (t) {
+            g += `<line x1="${L}" y1="${Y(t[0]).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(t[0]).toFixed(1)}" class="${t[1]}"/>`;
+        });
+
+        const line = 'M' + ser.map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' L');
+        // Each anchor marked where it happened. `matches` is the build-time check that
+        // the series still reproduces the pinned constant; a drifted one is drawn in
+        // the warning colour rather than passed off as agreeing.
+        const marks = (day.anchors || []).map(function (a) {
+            const x = X(a.date), y = Y(a.ratio);
+            return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" ` +
+                   `class="${a.matches ? 'lv-anch' : 'lv-anch-bad'}"><title>${esc(a.label)} ` +
+                   `&middot; ${a.ratio.toFixed(2)} &middot; ${esc(a.date)}` +
+                   `${a.matches ? '' : ' (does not match the pinned ' + a.pinned + ')'}` +
+                   '</title></circle>' +
+                   `<text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}" class="lv-al" ` +
+                   `text-anchor="middle">${esc(a.label)} ${a.ratio.toFixed(2)}</text>`;
+        }).join('');
+        const lastP = ser[ser.length - 1];
+        const now = `<circle cx="${X(lastP[0]).toFixed(1)}" cy="${Y(lastP[1]).toFixed(1)}" ` +
+            'r="4" class="lv-now"/>';
+        const svg = '<div class="rp-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="Margin debt divided by free credit, monthly since ` +
+            `${esc((day.series_from || '').slice(0, 4))}, with the 1.5 and 2.0 thresholds ` +
+            'and the 2000, 2007, 2008 and 2021 anchors marked">' + g +
+            `<path d="${line}" fill="none" stroke="#a78bfa" stroke-width="1.8"/>` +
+            marks + now + '</svg></div>';
+
+        const key =
+            '<div class="yc-key">' +
+              '<span><i class="lv-i-g"></i>green &mdash; above ' + day.green_above + '&times;</span>' +
+              '<span><i class="lv-i-y"></i>yellow &mdash; ' + day.yellow_above +
+              '&ndash;' + day.green_above + '&times;</span>' +
+              '<span><i class="rp-i-dot" style="background:#f8fafc"></i>anchors</span>' +
+            '</div>';
+        const offPeak = (peak.ratio && Math.abs(peak.ratio - day.ratio) > 0.005)
+            ? ` It is <b>${(peak.ratio - day.ratio).toFixed(2)}</b> off the high of ` +
+              `<b>${peak.ratio.toFixed(2)}</b> set in ${esc((peak.date || '').slice(0, 7))}.`
+            : ' That is the high of the whole series.';
+        return head + svg + key +
+            `<div class="ab-overlapbar">The <b>${day.green_above}&times;</b> line is ` +
+            'ANCHORED, not chosen: it is the average of the two peaks that matter, ' +
+            `<b>1.85</b> in 2000 and <b>2.19</b> in 2021. Today reads ` +
+            `<b>${day.ratio.toFixed(2)}&times;</b>, above both.${offPeak} The numerator ` +
+            `does the work &mdash; margin debt <b>$${Math.round(day.margin_debt_b)}B</b> ` +
+            `against free credit <b>$${Math.round(day.free_credit_b)}B</b>, which has ` +
+            'stayed roughly flat while the debt climbed.</div>';
+    }
+
+    // --- RATE PATH (one view) ---------------------------------------------------
+    // THE TWO ROUTES. This factor greens on EITHER of two conditions and they are
+    // independent, which no single line can show: plotting the pivot against its own
+    // six-month change puts both on one picture, with everything left of zero the
+    // inverted route and everything above the trigger the tightening one. Every month
+    // since 1994 is a dot, so today reads against where the rule has actually spent its
+    // time rather than against an assertion about it.
+    //
+    // Chosen over a time series (user, 2026-08-31) because the Charts tab's Fed dial
+    // already answers "where are rates going over time", and a second answer to that
+    // question one tab away is duplication that is hard to notice later.
+    const AB_RP_C = { tightening: '#4ade80', inverted: '#f87171', quiet: '#64748b' };
+
+    function abRatePathHTML(day) {
+        const TRIG = day.trigger;
+        const cloud = day.cloud || [];
+        const state = (p, d) => d >= TRIG ? 'tightening' : (p < 0 ? 'inverted' : 'quiet');
+
+        const head =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+              `${day.pivot >= 0 ? '+' : ''}${day.pivot.toFixed(2)}</span>` +
+              '<span class="k">pivot</span>' +
+              `<span class="s">6mo change ${day.delta_6mo >= 0 ? '+' : ''}` +
+              `${day.delta_6mo.toFixed(2)}</span>` +
+              `<span class="s">${esc(day.state || '')}</span>` +
+            '</div>';
+
+        if (!cloud.length) {
+            return head + '<div class="ab-tbd" style="padding:12px 13px">' +
+                (day.cloud_error
+                    ? 'history unavailable &mdash; ' + esc(day.cloud_error)
+                    : 'history rides on the newest reading only') + '</div>';
+        }
+
+        const W = 680, H = 290, L = 42, R = 14, T = 12, B = 32;
+        const ps = cloud.map(c => c[0]).concat([day.pivot]);
+        const ds = cloud.map(c => c[1]).concat([day.delta_6mo]);
+        const x0 = Math.min(-2, Math.min.apply(null, ps));
+        const x1 = Math.max(2.5, Math.max.apply(null, ps));
+        const y0 = Math.min(-1.5, Math.min.apply(null, ds));
+        const y1 = Math.max(2.5, Math.max.apply(null, ds));
+        const X = v => L + (v - x0) / (x1 - x0) * (W - L - R);
+        const Y = v => T + (y1 - v) / (y1 - y0) * (H - T - B);
+
+        // The two green regions, under everything: left of zero, and above the trigger.
+        let g = `<rect x="${L}" y="${T}" width="${(X(0) - L).toFixed(1)}" ` +
+                `height="${H - T - B}" class="rp-win"/>` +
+                `<rect x="${L}" y="${T}" width="${W - L - R}" ` +
+                `height="${(Y(TRIG) - T).toFixed(1)}" class="rp-win"/>`;
+        for (let v = Math.ceil(x0); v <= Math.floor(x1); v++) {
+            g += `<line x1="${X(v).toFixed(1)}" y1="${T}" x2="${X(v).toFixed(1)}" ` +
+                 `y2="${H - B}" class="${v === 0 ? 'yc-gridmaj' : 'yc-grid'}"/>` +
+                 `<text x="${X(v).toFixed(1)}" y="${H - B + 13}" class="rp-ax" ` +
+                 `text-anchor="middle">${v > 0 ? '+' + v : v}</text>`;
+        }
+        for (let v = Math.ceil(y0); v <= Math.floor(y1); v++) {
+            g += `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(v).toFixed(1)}" class="${v === 0 ? 'yc-gridmaj' : 'yc-grid'}"/>` +
+                 `<text x="${L - 6}" y="${(Y(v) + 3.5).toFixed(1)}" class="rp-ax" ` +
+                 `text-anchor="end">${v > 0 ? '+' + v : v}</text>`;
+        }
+        g += `<line x1="${L}" y1="${Y(TRIG).toFixed(1)}" x2="${W - R}" ` +
+             `y2="${Y(TRIG).toFixed(1)}" class="rp-trig"/>` +
+             `<text x="${W - R - 4}" y="${(Y(TRIG) - 5).toFixed(1)}" class="rp-ax" ` +
+             `text-anchor="end" fill="${AB_RP_C.tightening}">tightening &ge; +${TRIG}</text>` +
+             `<text x="${(X(0) - 6).toFixed(1)}" y="${T + 11}" class="rp-ax" ` +
+             `text-anchor="end" fill="${AB_RP_C.inverted}">&#9666; inverted</text>`;
+
+        const dots = cloud.map(c =>
+            `<circle cx="${X(c[0]).toFixed(1)}" cy="${Y(c[1]).toFixed(1)}" r="2" ` +
+            `fill="${AB_RP_C[state(c[0], c[1])]}" opacity=".5"><title>pivot ` +
+            `${c[0].toFixed(2)} &middot; 6mo ${c[1].toFixed(2)}</title></circle>`).join('');
+        const now = `<circle cx="${X(day.pivot).toFixed(1)}" ` +
+            `cy="${Y(day.delta_6mo).toFixed(1)}" r="5" class="rp-now"><title>today ` +
+            `${esc(day.date)} &middot; pivot ${day.pivot.toFixed(2)} &middot; 6mo ` +
+            `${day.delta_6mo.toFixed(2)}</title></circle>` +
+            `<text x="${(X(day.pivot) + 10).toFixed(1)}" ` +
+            `y="${(Y(day.delta_6mo) + 4).toFixed(1)}" class="rp-ax" fill="#e2e8f0">today</text>`;
+        const axes = `<text x="${W / 2}" y="${H - 3}" class="rp-ax" ` +
+            'text-anchor="middle">pivot &mdash; 2yr minus fed funds</text>' +
+            `<text x="12" y="${T + 2}" class="rp-ax" text-anchor="end" ` +
+            `transform="rotate(-90 12 ${T + 2})">6-month change (floored)</text>`;
+
+        const svg = '<div class="rp-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" ' +
+            'role="img" aria-label="The pivot against its floored six-month change, one ' +
+            'point a month since 1994, with both green regions shaded and today marked">' +
+            g + dots + now + axes + '</svg></div>';
+        // Swatches take the SHAPE of the mark they stand for -- an area for the shaded
+        // regions, dots for the plotted months. Drawing both as the same square made the
+        // region read as an object of its own (user, 2026-08-31).
+        const key =
+            '<div class="yc-key">' +
+              '<span><i class="rp-i-win"></i>shaded &mdash; green window</span>' +
+              `<span><i class="rp-i-dot" style="background:${AB_RP_C.tightening}"></i>tightening</span>` +
+              `<span><i class="rp-i-dot" style="background:${AB_RP_C.inverted}"></i>inverted</span>` +
+              `<span><i class="rp-i-dot" style="background:${AB_RP_C.quiet}"></i>quiet</span>` +
+              '<span><i class="rp-i-dot" style="background:#e2e8f0"></i>today</span>' +
+            '</div>';
+        const far = day.to_tightening != null && day.to_tightening > 0
+            ? `<b>${day.to_tightening.toFixed(2)}</b> from the tightening line`
+            : `<b>${Math.abs(day.to_inverted).toFixed(2)}</b> from the inverted line`;
+        return head + svg + key +
+            '<div class="ab-overlapbar">Green fires on <b>either</b> condition, and they ' +
+            'are unrelated: a six-month move of <b>+' + TRIG + '</b> or more is the market ' +
+            'repricing toward TIGHTENING, a raw pivot below <b>zero</b> is it pricing CUTS. ' +
+            'One is the burst’s cause, the other its reaction. Today is ' + far +
+            '. The six-month change floors the earlier pivot at zero, so a fading ' +
+            'inversion cannot be read as fresh tightening' +
+            (day.pivot_prior != null && day.pivot_prior < 0
+                ? ` — and it is doing that now: the prior pivot was <b>` +
+                  `${day.pivot_prior.toFixed(2)}</b>, floored to 0, which is why the two ` +
+                  'figures above read the same.'
+                : '.') + '</div>';
+    }
+
     // --- CONCENTRATION (one view) ----------------------------------------------
     // The peak and the print on one axis, because the whole subtlety of this factor is
     // that they are different numbers: the LIGHT reads the running maximum, the
@@ -3114,6 +3334,40 @@
                            ['window', d.window_from_months + '–' + d.window_to_months + 'mo'],
                            ['lookback', d.lookback_years + 'y']],
             render:  (key, day) => abYieldHTML(day)
+        },
+        rate_path: {
+            views:   [{ key: 'routes', label: 'The two routes' }],
+            value:   d => d.pivot,
+            reading: d => (d.pivot >= 0 ? '+' : '') + d.pivot.toFixed(2),
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => (d.cloud || []).length ? (d.cloud.length + ' months') : 'no history',
+            // The DISTANCE to each route, which is the thing a single reading cannot say
+            // and the reason this factor was invisible on its second condition.
+            figures: d => [['6mo change', (d.delta_6mo >= 0 ? '+' : '') + d.delta_6mo.toFixed(2)],
+                           ['to tightening', d.to_tightening != null
+                               ? (d.to_tightening > 0 ? d.to_tightening.toFixed(2) : 'fired') : '—'],
+                           ['to inverted', d.to_inverted != null
+                               ? d.to_inverted.toFixed(2) : '—'],
+                           ['prior pivot', d.pivot_prior != null
+                               ? (d.pivot_prior >= 0 ? '+' : '') + d.pivot_prior.toFixed(2) : '—']],
+            render:  (key, day) => abRatePathHTML(day)
+        },
+        leverage: {
+            views:   [{ key: 'history', label: 'Since 1999' }],
+            value:   d => d.ratio,
+            reading: d => d.ratio.toFixed(2) + '\u00d7',
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day\u2019s own record',
+            count:   d => d.n_months ? d.n_months + ' months' : 'no history',
+            figures: d => [['margin debt', '$' + Math.round(d.margin_debt_b) + 'B'],
+                           ['free credit', '$' + Math.round(d.free_credit_b) + 'B'],
+                           ['peak', d.peak ? d.peak.ratio.toFixed(2) + '\u00d7' : '\u2014'],
+                           ['vs 2000', d.ratio && (d.refs || {})['2000_peak']
+                               ? (d.ratio / d.refs['2000_peak']).toFixed(1) + '\u00d7' : '\u2014']],
+            render:  (key, day) => abLeverageHTML(day)
         }
     };
 

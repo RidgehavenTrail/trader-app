@@ -28,7 +28,12 @@ Direction convention (INVERTED board): GREEN = pro-burst, RED = bubble-supportiv
 FACTORS = [
     dict(id="yield_curve",     name="Yield curve",     rank=1,  cadence="daily",     catalyst=None,           highlight="state-change", builder="yield_curve"),
     dict(id="concentration",   name="Concentration",   rank=2,  cadence="daily",     catalyst=None,           highlight="state-change", builder="concentration"),
-    dict(id="rate_path",       name="Rate path",       rank=3,  cadence="weekly",    catalyst="data-release", highlight="new-tag",      builder="rate_path"),
+    # asof_keyed 2026-08-31: DGS2 prints on business days and FRED publishes it with
+    # a lag, so a Friday poll sees Thursday and the weekend carries it forward --
+    # 44 rows over 30 actual prints, 13 of them written on a Sat or Sun. Every
+    # duplicate group is identical, so no correction is involved and keep-first is
+    # right. Safe on the usual test: nothing does arithmetic on this history.
+    dict(id="rate_path",       name="Rate path",       rank=3,  cadence="weekly",    catalyst="data-release", highlight="new-tag",      builder="rate_path", asof_keyed=True),
     # asof_keyed: this factor's snapshot row is keyed on the DATA date it reports, not
     # the ET date it was written. OpenRouter publishes the completed day with a lag, so
     # a write-date key files two ET days under one data day and orphans another — the
@@ -43,7 +48,12 @@ FACTORS = [
     # Safe here specifically -- nothing does arithmetic on this factor's history the way
     # concentration and silicon_e do on their own.
     dict(id="silicon_payback", name="Silicon payback", rank=5,  cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="silicon_payback", asof_keyed=True),
-    dict(id="leverage",        name="Leverage",        rank=6,  cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="leverage"),
+    # asof_keyed 2026-08-31: FINRA publishes margin statistics MONTHLY, about six
+    # weeks after the reference month -- the asof moved 2026-06-01 -> 2026-07-01 on
+    # 2026-08-15. Polled daily, that filed 44 rows for 2 published figures, 13 of
+    # them on a Sat or Sun. Every duplicate group is identical, so keep-first is
+    # right; nothing does arithmetic on this history.
+    dict(id="leverage",        name="Leverage",        rank=6,  cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="leverage", asof_keyed=True),
     dict(id="market_credit",   name="Market credit",   rank=7,  cadence="daily",     catalyst=None,           highlight="state-change", builder="market_credit"),
     # asof_keyed 2026-08-29: this factor polls daily and OBSERVES episodically -- 42
     # snapshot days held 10 distinct observations. Keyed on the observation date, the

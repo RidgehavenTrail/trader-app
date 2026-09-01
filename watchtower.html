@@ -915,6 +915,35 @@
     .yc-key i { width:11px; height:9px; border-radius:2px; flex:none; }
     .yc-i-rec { background:rgba(148,163,184,.35); }
     .yc-i-inv { background:rgba(248,113,113,.5); }
+    /* --- LEVERAGE single view --------------------------------------------------- */
+    /* Green sits at the TOP of this scale: the board is inverted and leverage maxed is
+       the pro-burst end, so the shading runs upward, not downward. */
+    .lv-green { fill:rgba(74,222,128,.10); }
+    .lv-yellow { fill:rgba(251,191,36,.08); }
+    .lv-lg { stroke:#4ade80; stroke-width:1; stroke-dasharray:4 3; opacity:.75; }
+    .lv-ly { stroke:#fbbf24; stroke-width:1; stroke-dasharray:3 4; opacity:.55; }
+    .lv-anch { fill:#f8fafc; stroke:#0f172a; stroke-width:1.5; }
+    /* An anchor the rebuilt series no longer reproduces is drawn in the warning colour
+       rather than passed off as agreeing with its pinned constant. */
+    .lv-anch-bad { fill:#fbbf24; stroke:#0f172a; stroke-width:1.5; }
+    .lv-al { fill:#94a3b8; font-family:ui-monospace,monospace; font-size:9px; }
+    .lv-now { fill:#a78bfa; stroke:#0f172a; stroke-width:1.5; }
+    .lv-i-g { width:14px; height:11px; border-radius:2px; flex:none;
+        background:rgba(74,222,128,.20); }
+    .lv-i-y { width:14px; height:11px; border-radius:2px; flex:none;
+        background:rgba(251,191,36,.18); }
+    /* --- RATE PATH single view ------------------------------------------------ */
+    .rp-chart { margin:0 13px 4px; min-width:0; }
+    .rp-chart svg { width:100%; max-width:none; height:auto; display:block; }
+    .rp-win { fill:rgba(74,222,128,.10); }
+    .rp-trig { stroke:#4ade80; stroke-width:1; stroke-dasharray:4 3; opacity:.8; }
+    .rp-now { fill:#e2e8f0; stroke:#0f172a; stroke-width:2; }
+    .rp-ax { fill:#64748b; font-family:ui-monospace,monospace; font-size:9.5px; }
+    /* A swatch takes the shape of the mark it stands for: an area for the shaded
+       window, dots for the plotted months. */
+    .rp-i-win { width:14px; height:11px; border-radius:2px; flex:none;
+        background:rgba(74,222,128,.10); }
+    .rp-i-dot { width:8px; height:8px; border-radius:50%; flex:none; }
     /* --- CONCENTRATION analogues view ----------------------------------------- */
     .ca-bars { padding:2px 13px 10px; }
     .ca-bh { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.12em;
@@ -1832,7 +1861,7 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/us-map.js?v=20260829a"></script>
-<script src="static/js/stoplight.js?v=20260831s"></script>
+<script src="static/js/stoplight.js?v=20260831u"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

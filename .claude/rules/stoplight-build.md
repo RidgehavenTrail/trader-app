@@ -82,6 +82,64 @@ both. Euphemus' prototype said the same: *only the evidence block changes shape 
 remaining work below is a VOCABULARY FILL, not a genericisation project, and per-factor content (the
 sparkline's band-edge gridlines, for instance) does not have to wait for it.
 
+**SESSION 50 (2026-08-31) — THE PANEL IS FILLED, AND THREE SOURCES STOP BEING TRUSTED ON
+FAITH.** Read this with 48 and 49 below; those are the mechanism, this is what filling the last
+twelve entries taught.
+
+**A VENDOR WINDOW IS NOT A RECORD.** capex_pressure re-asked yfinance for its quarters every poll
+and took whatever the rolling window held — 5-7 quarters a name, so its own DOCUMENTED primary
+arrow basis (which needs 8) could never fire, and every stored reading used a fallback the
+docstring calls occasional. New `sources/sec.py` takes them from SEC XBRL and the `financials`
+table keeps them: 315 quarters, back to 2008, no key and no charge. Three traps, all measured:
+most quarters are filed as discrete 3-month facts but **Q4 must be DIFFERENCED out of the
+year-to-date ones** (no 10-Q reports it); **AMZN switched capex tags in 2017** and "first tag with
+any facts" silently truncated nine years; restatements exist (14 of them) and the latest filing
+wins with the superseded value kept.
+
+**VALIDATE A REPLACEMENT AGAINST WHAT IT REPLACES, AS A FUNCTION.** `sec.cross_check` compares
+against yfinance on the 30 overlapping quarters — 25 agree within 0.5%, 0 differ, 5 are vendor
+NaNs. `leverage._ratio_frame` reproduces the factor's four pinned anchors (1.85 / 1.17 / 0.61 /
+2.19) exactly, three of them on the far side of a column-format change. A claim like that belongs
+in code that can be re-run, not in a commit message.
+
+**A PINNED CONSTANT CAN BE THE WRONG KIND OF NUMBER.** capex_spigot's five priors were documented
+as one basis and were five: two pure GAAP, one lease-inclusive, one neither, and **AMZN's was its
+GUIDANCE rather than an actual** — $6.8B under its filed number, in the direction that inflates
+the light. Now derived each pass. **The period follows the GUIDANCE, not the fiscal calendar**:
+MSFT's year ends in June but it guides on the calendar year, and reading its fiscal year would
+have been a silent 29% error.
+
+**COLOUR MAY MEAN DIFFERENT THINGS IN TWO VIEWS OF ONE FACTOR — SAY SO ON THE VIEW.**
+capex_pressure's Direction encodes the MOVE, not the band: a rising ratio travels toward the
+pro-burst end and is drawn green while its level is still red. A one-line key names it, because
+the same hues mean band position one tab away.
+
+**AN ABSENCE MUST RENDER AS SOMETHING.** A blank cell reads as "not applicable" when the fact is
+"we looked and found nothing" — capex_spigot's missing ORCL pull date, infra_backlog's dark glyph,
+concentration's 2007 row. Each gets a marked state and a reason instead of white space.
+
+**A DISPLAY OVERLAY IS ALLOWED TO BE APPROXIMATE — §7.4 IS THE TEST, NOT INSTINCT.** yield_curve's
+crossover overlay was cut for being "a second rule that could disagree with the light" and the
+user overruled, correctly: nothing DECIDES on it. Ask whether anything downstream consumes the
+value before applying determinism doctrine to a picture.
+
+**KEEP FOOTNOTES TO ~50 WORDS.** `.ab-foot` gives each topic a ~237px column, about 35 characters
+a line against a readable 45-75. Drafts of 90-110 words ran 282-299px tall; trimmed they run 165.
+The numbers are load-bearing; the justification belongs in the module header.
+
+**A LONG HISTORY BEHIND A SMALL READING RIDES ONLY WHEN `days > 1`.** The scheduler captures with
+`days=1` and whatever it gets is stored permanently; the panel asks for ten. rate_path's 387-point
+cloud and leverage's 331-month series are therefore never written to disk, while the capture stays
+~1KB. heavy_haul does the equivalent by reading the Charts tab's payload instead of re-storing 252
+bars.
+
+**PROTOTYPE WHEN THE SHAPE IS THE QUESTION.** rate_path's two candidates were published as an
+artifact on real data and the user chose the scatter — rejecting the time series because the Fed
+dial already answers that question one tab away. That duplication would have been very hard to
+notice after the fact.
+
+---
+
 **SESSION 49 (2026-08-29) — FACTORS 3 AND 4, AND THE SHAPES A LEDGER CAN TAKE.** Read this
 with the session-48 section below; that one is still the mechanism, this one is what two more
 factors taught about it.
@@ -257,16 +315,27 @@ error colour rather than left blank. It immediately earned itself — Gemini has
 recorded at all, and Copilot's is 28 days behind the reading. Derivations (a x4, a division)
 are NOT sources and get a footnote, never rows that imply a publisher.
 
-**THE ONE SHORTCUT, AND THE NEXT TASK:** the definitions are hand-written in `static/js/stoplight.js`'s
-`AB_WHY` — **4 of 16** as of session 49 (premium_share, silicon_payback, memory_canary,
-regulatory; was 2, corrected here rather than left to outlive its own resolution, which is this
-repo's recurring documentation failure). Every factor's thresholds live as docstring prose plus loose
-constants (`GREEN_BELOW`, `RED_AT_OR_ABOVE`, `GREEN_BPS`...) and `stoplight_state.json` carries none at
-all. Promote a structured `definition` (measures / why / bands / glyph) into the 16 factor modules and
-the legend renders for all of them — the source changes, the render does not. Settle the glyph
-vocabulary in the same pass: `capex_pressure` emits `down`, `silicon_e`/`regulatory` emit `up`,
-`premium_share` emits `plus`; `slGlyph` normalizes for display but a definition block should pick one
-pair (plus/minus — the glyph means AGREEMENT, not direction).
+**THE ONE SHORTCUT — STATUS, session 50:** `AB_WHY` is now **16 of 16 and DONE**; `AB_VIEWS` is
+13 (nine factors with two views, four with one, and copper / market_credit / net_liquidity
+legend-only on purpose). The definitions are still hand-written in `static/js/stoplight.js` rather
+than promoted into the factor modules, and each entry quotes the thresholds FROM its module's own
+constants, so the two can still drift — promoting a structured `definition` (measures / why / bands
+/ glyph) into the 16 modules remains the clean end state, and the render would not change.
+
+**THE GLYPH VOCABULARY WAS NEVER OPEN — corrected session 51.** The line that stood here called it
+"the LAST structural item still open" and proposed collapsing to one pair because "the glyph means
+AGREEMENT, not direction." Both halves are wrong against a spec locked six weeks earlier:
+`STOPLIGHT_DESIGN.md:16-17` (**locked 2026-07-18**) defines TWO marks on purpose — `↑`/`↓` is
+**physical-stoplight POSITION** (`↓` = toward burst) and `±` is the corroborator agreeing (`+`) or
+contradicting (`−`). "**Glyph rides WITH the light, not the name**" is the whole rule: the arrow
+tracks where the LIGHT is heading, never the direction of the underlying number. `slGlyph` and the
+`AB_WHY.glyph` legend already implement exactly that, and each factor's About box lights its own
+active side. There is nothing to pick and nothing to build.
+The trap this note itself fell into: reading the four emitters as if the arrow described the metric
+makes them look like two rival languages (`capex_pressure`'s ratios RISE while its glyph points
+`down`), and a plausible-looking table of "conflicts" follows. It dissolves the moment the arrow is
+read as light-position. **A status line that outlives its own resolution is this repo's recurring
+failure** — it cost session 51 a re-litigation of settled ground before a single edit.
 A prototype of the full four-band shell (both Ledger and Two-lenses evidence views, 10 days of real
 OpenRouter data) is published at claude.ai/code/artifact/0d4c13d9-266e-4953-adcc-7b7fc49b5d7c.
 

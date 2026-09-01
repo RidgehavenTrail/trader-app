@@ -65,11 +65,27 @@ def ledger(days=10, top=10):
         trail = ex.get("trail_6mo") or []
         if not trail:
             continue
+        # THE TRAIL'S MONTHS, derived rather than stored. `trail_6mo` is a bare list of
+        # numbers, but `asof` IS the reference month of its last print and the series is
+        # monthly, so the whole axis follows by walking back one month per point. Doing
+        # it here rather than changing what compute() stores dates the HISTORICAL
+        # snapshots too, which a shape change could never reach back and do.
+        ref = day.get("asof") or day.get("date") or ""
+        months = []
+        try:
+            y, m = int(ref[:4]), int(ref[5:7])
+            for k in range(len(trail) - 1, -1, -1):
+                mm = m - k
+                months.append("%04d-%02d" % (y + (mm - 1) // 12, (mm - 1) % 12 + 1))
+        except (TypeError, ValueError):
+            months = []
+
         out.append({
             "date": day.get("asof") or day.get("date"),
             "light": day.get("light"), "state": day.get("state"),
             "yoy": day.get("value"),
             "trail": list(trail),
+            "trail_months": months,
             "green_above": GREEN_ABOVE, "red_at_or_below": RED_AT_OR_BELOW,
             # Distance to the line the factor is one tick from, stated rather than left
             # to be eyeballed off six numbers.

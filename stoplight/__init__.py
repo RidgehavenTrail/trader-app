@@ -378,6 +378,22 @@ def get_factor_ledger():
     for day in hit[1]:
         if day["date"] not in merged:       # never shadow a recorded day
             merged[day["date"]] = dict(day, basis="reconstructed")
+        else:
+            # A RECORDED DAY CAN STILL BE MISSING ITS BACKDROP (2026-09-01). The
+            # scheduler captures with days=1, and a factor whose picture needs a long
+            # series only emits one when days > 1 — net_liquidity's 348 weekly points,
+            # rate_path's cloud, leverage's frame — precisely so a poll does not write
+            # them to disk every time. So the stored row is the record of the READING
+            # and carries no series, and shadowing wholesale left the pane with a
+            # header and no chart the moment a factor was first captured.
+            # Fill ONLY keys the record does not have: every recorded value still
+            # wins, and the day keeps its `basis`. The backdrop is display bulk, not
+            # evidence the light was decided on, so re-deriving it changes nothing
+            # about what the day says.
+            rec = merged[day["date"]]
+            for k, v in day.items():
+                if k not in rec:
+                    rec[k] = v
     out = sorted(merged.values(), key=lambda d: d["date"], reverse=True)[:days]
     return jsonify({"factor": fid, "has_ledger": True, "days": out})
 

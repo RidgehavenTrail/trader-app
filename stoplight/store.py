@@ -91,6 +91,26 @@ def _connect():
            )"""
     )
     con.execute(
+        # A VENDOR WINDOW THAT ROLLS (2026-09-01). Some sources serve only a trailing
+        # slice and trim the far end as time passes, so the history gets SHORTER the
+        # longer you wait. Measured on the ICE BofA family: every one of five series
+        # (BAMLH0A0HYM2, BAMLC0A0CM, BAMLH0A3HYC, BAMLHE00EHYIOAS, BAMLEMCBPIOAS)
+        # starts on exactly the same day, 1095 days back -- a rolling three-year licence
+        # window, not a discontinued series with a successor. DGS2 comes back from 1976
+        # through the identical helper, so it is the vendor, not us.
+        #
+        # Keyed by SERIES so a second truncating source needs no migration. First write
+        # wins: a closed day's print is an observation, and a later pull of the same day
+        # is the same observation, not a new one.
+        """CREATE TABLE IF NOT EXISTS series_archive (
+               series_id   TEXT NOT NULL,
+               date        TEXT NOT NULL,   -- the observation's own date
+               value       REAL NOT NULL,   -- native units; the caller owns the scale
+               first_seen  TEXT NOT NULL,   -- when WE first stored it
+               PRIMARY KEY (series_id, date)
+           )"""
+    )
+    con.execute(
         # AS-REPORTED QUARTERLY FINANCIALS, from SEC XBRL (2026-08-30). A closed
         # quarter's operating cash flow and capex are IMMUTABLE facts; capex_pressure
         # used to re-ask yfinance for them on every poll and take whatever rolling
@@ -297,6 +317,41 @@ def has_ledger_day(factor_id, date):
     finally:
         con.close()
     return row[0] if row else None
+
+
+def archive_series(series_id, points):
+    """Accumulate a rolling-window series -> {'added', 'kept'}.
+
+    `points` is an iterable of (date_iso, value). Existing days are LEFT ALONE: the
+    vendor re-serving a day we already hold is the same observation, and the whole
+    point of the table is to outlive what the vendor will still show us. Nothing is
+    ever deleted here -- the archive only grows, which is the one property the source
+    does not have."""
+    con = _connect()
+    now = now_iso()
+    added = 0
+    try:
+        with con:
+            for d, v in points:
+                cur = con.execute(
+                    "INSERT INTO series_archive (series_id, date, value, first_seen) "
+                    "VALUES (?,?,?,?) ON CONFLICT(series_id, date) DO NOTHING",
+                    (series_id, d, float(v), now))
+                added += cur.rowcount or 0
+    finally:
+        con.close()
+    return {"added": added, "kept": added}
+
+
+def series_archive(series_id):
+    """The archived series, OLDEST FIRST -> [(date_iso, value)]."""
+    con = _connect()
+    try:
+        return [(d, v) for d, v in con.execute(
+            "SELECT date, value FROM series_archive WHERE series_id=? ORDER BY date",
+            (series_id,))]
+    finally:
+        con.close()
 
 
 def record_financials(rows):

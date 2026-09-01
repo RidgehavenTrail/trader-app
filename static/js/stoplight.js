@@ -75,7 +75,8 @@
                 `<span class="sl-gl">${slGlyph(f)}</span>` +
                 slDotHTML(f) +
                 `<span class="sl-nm${f.built ? '' : ' sl-dim'}">${esc(f.name)}</span>` +
-                `<span class="sl-mt">${metric}</span>${cat}${refine}${stale}</div>`;
+                `<span class="sl-mt">${metric}</span>` +
+                `${cat}${refine}${stale}</div>`;
         }).join('');
     }
 
@@ -872,6 +873,9 @@
             return;
         }
         const c = AB_LC[f.light] || 'y';
+        const vb = AB_VIEWS[f.id];
+        let badge = '';
+        try { badge = (vb && vb.badge) ? vb.badge(f) : ''; } catch (e) { badge = ''; }
         // The glyph is the row's own — slGlyph already normalizes up/down/plus/minus,
         // so the header cannot disagree with the sidebar about which way it points.
         const gl = slGlyph(f);
@@ -887,6 +891,11 @@
                 `<span class="abh-name">${esc(f.name)}</span>` +
                 `<span class="abh-dot abh-bg-${c}"></span>` +
                 `<span class="abh-val abh-${c}">${esc(f.metric || '--')}</span>` +
+                // An optional second reading, for a factor whose light is decided by
+                // something other than the number on the row. Vocabulary lives in
+                // AB_VIEWS with the rest of the per-factor language; a factor without
+                // a `badge` renders exactly as before.
+                (badge ? `<span class="abh-st">${badge}</span>` : '') +
                 `<span class="abh-st">${esc((f.state || '').replace(/_/g, ' '))}</span>` +
                 (gl ? `<span class="abh-gl">${gl}</span>` : '') +
               '</div>' +
@@ -2152,6 +2161,421 @@
                 : '.') + '</div>';
     }
 
+    // --- MARKET CREDIT (one view) -------------------------------------------------
+    // The spread across the only history this factor can see, the bands it is cut on,
+    // and the SUSTAIN CLAUSE made legible. That clause is half the green rule -- every
+    // one of the last ten prints above 500 -- and until now it was a bare boolean in
+    // extras with nothing on screen showing its state.
+    //
+    // The recalled levels (500 / 700 / 1100 / 2000) are deliberately NOT drawn on the
+    // axis. Plotting 2000bps would collapse the entire 259-461 range this window
+    // actually contains into a few pixels, and worse, would present numbers the factor
+    // cannot measure with the same authority as ones it can. They get a separate
+    // for-scale strip that says what they are.
+    function abMarketCreditHTML(day) {
+        const ser = day.series || [];
+        const band = ((AB_WHY.market_credit || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const head =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">${Math.round(day.bps)}` +
+              '<i>bps</i></span>' +
+              '<span class="k">high-yield OAS</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="s">${Math.round(day.to_green)} from green</span>` +
+            '</div>';
+        if (!ser.length) {
+            return head + '<div class="ab-tbd" style="padding:12px 13px">' +
+                'no archived history on this reading</div>';
+        }
+
+        const W = 680, H = 200, L = 34, R = 14, T = 10, B = 24;
+        const t0 = Date.parse(ser[0][0]), t1 = Date.parse(ser[ser.length - 1][0]);
+        const hi = Math.max(day.green_bps * 1.12,
+                            Math.max.apply(null, ser.map(p => p[1])) * 1.1);
+        const X = t => L + (Date.parse(t) - t0) / (t1 - t0 || 1) * (W - L - R);
+        const Y = v => T + (hi - v) / hi * (H - T - B);
+
+        // Bands under everything. Green is the TOP here: the board is inverted and
+        // credit stress firing is the pro-burst end.
+        let g = `<rect x="${L}" y="${T}" width="${W - L - R}" ` +
+                `height="${(Y(day.green_bps) - T).toFixed(1)}" class="lv-green"/>` +
+                `<rect x="${L}" y="${Y(day.green_bps).toFixed(1)}" width="${W - L - R}" ` +
+                `height="${(Y(day.yellow_bps) - Y(day.green_bps)).toFixed(1)}" ` +
+                'class="lv-yellow"/>';
+        for (let y = 2024; y <= new Date(t1).getUTCFullYear(); y++) {
+            const x = X(y + '-01-01');
+            if (x < L || x > W - R) continue;
+            g += `<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" ` +
+                 `y2="${H - B}" class="yc-gridmaj"/>` +
+                 `<text x="${x.toFixed(1)}" y="${H - B + 13}" class="rp-ax" ` +
+                 `text-anchor="middle">${y}</text>`;
+        }
+        for (let v = 100; v <= hi; v += 100) {
+            g += `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(v).toFixed(1)}" class="yc-grid"/>` +
+                 `<text x="${L - 5}" y="${(Y(v) + 3.5).toFixed(1)}" class="rp-ax" ` +
+                 `text-anchor="end">${v}</text>`;
+        }
+        [[day.green_bps, 'lv-lg'], [day.yellow_bps, 'lv-ly']].forEach(function (t) {
+            g += `<line x1="${L}" y1="${Y(t[0]).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(t[0]).toFixed(1)}" class="${t[1]}"/>`;
+        });
+
+        const line = 'M' + ser.map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' L');
+        // The window's own high, marked because it is the sustain clause's one worked
+        // example: 461bps reached the yellow band, never crossed 500, correctly did not
+        // fire. That is the whole argument for the clause, and it is in the data.
+        const wh = day.window_high || {};
+        const peak = wh.date
+            ? `<circle cx="${X(wh.date).toFixed(1)}" cy="${Y(wh.bps).toFixed(1)}" r="3.5" ` +
+              `class="lv-anch"><title>window high ${Math.round(wh.bps)}bps &middot; ` +
+              `${esc(wh.date)} &middot; reached yellow, never fired</title></circle>` +
+              `<text x="${X(wh.date).toFixed(1)}" y="${(Y(wh.bps) - 7).toFixed(1)}" ` +
+              `class="lv-al" text-anchor="middle">${Math.round(wh.bps)} &middot; ` +
+              'never fired</text>'
+            : '';
+        const now = `<circle cx="${X(ser[ser.length - 1][0]).toFixed(1)}" ` +
+            `cy="${Y(ser[ser.length - 1][1]).toFixed(1)}" r="4" class="mc-now"/>`;
+        const svg = '<div class="rp-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+            `aria-label="High-yield option-adjusted spread in basis points across the ` +
+            `archived window, with the 400 and 500 thresholds and the window high marked">` +
+            g + `<path d="${line}" fill="none" stroke="#f87171" stroke-width="1.6"/>` +
+            peak + now + '</svg></div>';
+
+        // TEN PIPS: the two-week hold, one pip a print, lit when that print cleared 500.
+        const strip = (day.sustain_strip || []).map(function (p) {
+            const on = p[1] > day.green_bps;
+            return `<i class="${on ? 'on' : ''}" title="${esc(p[0])} — ` +
+                   `${Math.round(p[1])}bps"></i>`;
+        }).join('');
+        const sustain =
+            '<div class="mc-sustain">' +
+              `<span class="k">the hold</span>${strip}` +
+              `<span class="mc-sv">${day.sustained_wide ? 'all ' + day.sustain_days +
+                  ' above 500' : '0 of ' + day.sustain_days + ' above 500'}</span>` +
+            '</div>';
+
+        // Recalled levels as TEXT, never as axis marks -- see the note above.
+        const scale = (day.recalled_levels || []).map(l =>
+            `<span><b>${l.bps}</b> ${esc(l.label)}</span>`).join('');
+        return head + svg + sustain +
+            `<div class="mc-scale"><span class="k">for scale &mdash; recalled, not ` +
+            `measured</span>${scale}</div>` +
+            `<div class="ab-overlapbar">Green needs <b>${day.sustain_days} consecutive</b> ` +
+            `prints above ${day.green_bps} &mdash; a two-week hold, so a one-day spike ` +
+            `reads yellow. In the <b>${day.archived_points}</b> archived prints since ` +
+            `${esc((day.archive_from || '').slice(0, 7))} that gate has fired ` +
+            `<b>${day.gate_fired_days}</b> times and the high is ` +
+            `<b>${Math.round((day.window_high || {}).bps || 0)}</b>, so the line has ` +
+            'never been crossed here. Read that as a fact about the WINDOW, not about ' +
+            'credit: the vendor serves a rolling three years, and the levels above are ' +
+            'from outside it. Red means no stress NOW, not safe &mdash; spreads sat at ' +
+            'record tights through early 2007.</div>';
+    }
+
+    // --- COPPER (one view) -------------------------------------------------------
+    // The price against its own 200-bar MA since 2020 -- the window the user picked
+    // because it starts before the AI melt-up the rest of this board is about.
+    // The picture IS the light: green is "any close below the 200", so every stretch
+    // under the white line is a stretch that would have fired it. Shading those runs
+    // rather than counting them in prose makes the rule's central claim -- copper has
+    // not closed below its 200 once in 2026 -- checkable at a glance instead of taken
+    // on faith, which is the whole reason the rule carries no persistence clause.
+    // KING COPPER. Just the crown -- its base band already reads as the metal, so the
+    // ingot under it was saying the same thing twice (user, 2026-08-31). Copper tones
+    // throughout and deliberately NOT gold: on this board yellow means the light, and a
+    // gold glyph beside a coloured reading reads as a signal rather than a mascot.
+    // Self-contained SVG with no CSS of its own, so the stylesheet cannot restyle it.
+    const AB_COPPER_KING =
+        '<svg viewBox="0 0 24 15" width="24" height="15" role="img" ' +
+            'aria-label="King Copper" style="align-self:center;flex:none">' +
+          '<title>King Copper</title>' +
+          '<path d="M3.5 11 L4.8 3.4 L8.4 7.8 L12 1.8 L15.6 7.8 L19.2 3.4 L20.5 11 Z" ' +
+            'fill="#e0955a" stroke="#7c4a1e" stroke-width="0.9" stroke-linejoin="round"/>' +
+          // The three points get their jewels; without them the silhouette reads as a
+          // sawtooth at this size.
+          '<circle cx="4.8" cy="3.4" r="1.15" fill="#f0b884" stroke="#7c4a1e" ' +
+            'stroke-width="0.7"/>' +
+          '<circle cx="12" cy="1.9" r="1.3" fill="#f0b884" stroke="#7c4a1e" ' +
+            'stroke-width="0.7"/>' +
+          '<circle cx="19.2" cy="3.4" r="1.15" fill="#f0b884" stroke="#7c4a1e" ' +
+            'stroke-width="0.7"/>' +
+          '<rect x="3.2" y="10.3" width="17.6" height="3" rx="0.8" ' +
+            'fill="#b87333" stroke="#7c4a1e" stroke-width="0.9"/>' +
+        '</svg>';
+
+    function abCopperHTML(day) {
+        const ser = day.series || [];
+        const band = ((AB_WHY.copper || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const head =
+            '<div class="yc-head">' + AB_COPPER_KING +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+                `${day.vs200 >= 0 ? '+' : ''}${day.vs200.toFixed(1)}<i>%</i></span>` +
+              '<span class="k">vs the 200-bar MA</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="s">$${day.price.toFixed(3)} against $${day.ma200.toFixed(3)}</span>` +
+            '</div>';
+        if (ser.length < 2) {
+            return head + '<div class="ab-tbd" style="padding:12px 13px">' +
+                'no series on this reading</div>';
+        }
+
+        const W = 680, H = 210, L = 34, R = 14, T = 10, B = 24;
+        const t0 = Date.parse(ser[0][0]), t1 = Date.parse(ser[ser.length - 1][0]);
+        let lo = Infinity, hi = -Infinity;
+        ser.forEach(p => { lo = Math.min(lo, p[1], p[2]); hi = Math.max(hi, p[1], p[2]); });
+        const pad = (hi - lo) * 0.08 || 0.1;
+        lo -= pad; hi += pad;
+        const X = t => L + (Date.parse(t) - t0) / (t1 - t0 || 1) * (W - L - R);
+        const Y = v => T + (hi - v) / (hi - lo || 1) * (H - T - B);
+
+        let g = '';
+        for (let y = new Date(t0).getUTCFullYear() + 1;
+                 y <= new Date(t1).getUTCFullYear(); y++) {
+            const x = X(y + '-01-01');
+            if (x < L || x > W - R) continue;
+            g += `<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" ` +
+                 `y2="${H - B}" class="yc-gridmaj"/>` +
+                 `<text x="${x.toFixed(1)}" y="${H - B + 13}" class="rp-ax" ` +
+                 `text-anchor="middle">${y}</text>`;
+        }
+        for (let v = Math.ceil(lo); v <= hi; v += 1) {
+            g += `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y(v).toFixed(1)}" class="yc-grid"/>` +
+                 `<text x="${L - 5}" y="${(Y(v) + 3.5).toFixed(1)}" class="rp-ax" ` +
+                 `text-anchor="end">${v.toFixed(0)}</text>`;
+        }
+
+        // Every CONTIGUOUS run of closes under the 200, filled between the two lines.
+        // Runs, not per-bar rects: 1,677 bars would be 1,677 nodes and the browser
+        // paints the same shape from a handful of polygons.
+        const runs = [];
+        let cur = null;
+        ser.forEach((p, i) => {
+            if (p[1] < p[2]) { if (cur) cur[1] = i; else cur = [i, i]; }
+            else if (cur) { runs.push(cur); cur = null; }
+        });
+        if (cur) runs.push(cur);
+        const shade = runs.map(r => {
+            const a = ser.slice(r[0], r[1] + 1);
+            const fwd = a.map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' L');
+            const back = a.slice().reverse()
+                .map(p => X(p[0]).toFixed(1) + ',' + Y(p[2]).toFixed(1)).join(' L');
+            return `<path d="M${fwd} L${back} Z" fill="rgba(74,222,128,.22)"/>`;
+        }).join('');
+
+        const path = k => 'M' + ser.map(p => X(p[0]).toFixed(1) + ',' +
+                                             Y(p[k]).toFixed(1)).join(' L');
+        // House colours, both already meaning something on this dashboard: the 200-bar
+        // MA is the white SMA-200 line the ticker charts use, the price is the house
+        // cyan. Neither is red/yellow/green, which on this board mean the light.
+        const lines =
+            `<path d="${path(2)}" fill="none" stroke="#f8fafc" stroke-width="1.4"/>` +
+            `<path d="${path(1)}" fill="none" stroke="#22d3ee" stroke-width="1.5"/>`;
+
+        const wh = day.window_high || {};
+        const peak = wh.date
+            ? `<circle cx="${X(wh.date).toFixed(1)}" cy="${Y(wh.price).toFixed(1)}" ` +
+              `r="3.5" class="lv-anch"><title>window high $${wh.price} &middot; ` +
+              `${esc(wh.date)}</title></circle>` +
+              `<text x="${X(wh.date).toFixed(1)}" y="${(Y(wh.price) - 7).toFixed(1)}" ` +
+              `class="lv-al" text-anchor="end">$${wh.price}</text>`
+            : '';
+        const last = ser[ser.length - 1];
+        const now = `<circle cx="${X(last[0]).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" ` +
+                    'r="4" class="mc-now"/>';
+
+        const svg = '<div class="rp-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" ' +
+            'role="img" aria-label="Copper front-month close against its 200-bar ' +
+            'moving average since 2020, with every stretch below the average shaded">' +
+            g + shade + lines + peak + now + '</svg></div>';
+
+        // The MA on the picture and the MA in the reading are the same mean over the
+        // same 200 bars computed two ways. Saying so only when they DISAGREE keeps the
+        // normal case quiet and makes the abnormal one impossible to miss.
+        const warn = day.ma_matches === false
+            ? '<div class="ab-overlapbar">The 200 drawn here does not match the one ' +
+              'this reading was decided on &mdash; treat the picture as indicative ' +
+              'until that is chased down.</div>'
+            : '';
+        const lb = day.last_below
+            ? `the last on <b>${esc(day.last_below)}</b>`
+            : '<b>never</b> in this window';
+        return head + svg + warn +
+            '<div class="ab-overlapbar">Green is <b>any</b> close below the white ' +
+            `line. In the <b>${day.n_bars}</b> bars since ` +
+            `${esc((day.chart_from || '').slice(0, 4))} that has happened ` +
+            `<b>${day.below_200_days}</b> times, ${lb} &mdash; so a green today would ` +
+            'break a streak you can see the length of, which is why the rule carries ' +
+            'no persistence clause and no absolute price line. The COMEX front month ' +
+            'holds a tariff premium: it distorts the level, not the trend.</div>';
+    }
+
+    // --- NET LIQUIDITY (one view) ------------------------------------------------
+    // TWO panels, because this factor reads one thing and shows another: the board row
+    // carries the LEVEL, the light is cut on the 13-WEEK CHANGE against a +/-0.2T band.
+    // A picture of the level alone would explain none of the colours on the row, and a
+    // picture of the change alone would not be the number the row displays. Stacked on
+    // one shared x-axis so a TGA rebuild in the tide lines up with the bump it puts in
+    // the change.
+    function abNetLiqHTML(day) {
+        const ser = day.series || [];
+        const band = ((AB_WHY.net_liquidity || {}).bands || [])
+            .find(b => b.light === day.light) || {};
+        const sign = v => (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2) + 'T';
+        // THE READING IS THE CHANGE (user, 2026-08-31). It takes the big slot and wears
+        // the light, because it is the only thing the light is cut on; the LEVEL the
+        // factor is named for is context and sits beside it in white. Same order as the
+        // board row, which now shows the delta and nothing else -- a header that led
+        // with the level would disagree with the row that opened it.
+        const head =
+            '<div class="yc-head">' +
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+                `${day.chg_3mo_T >= 0 ? '+' : '−'}$` +
+                `${Math.abs(day.chg_3mo_T).toFixed(2)}<i>T</i></span>` +
+              '<span class="k">13 wk change</span>' +
+              `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
+              `<span class="s">net liquidity <b>$${day.level_T.toFixed(2)}T</b></span>` +
+              `<span class="s">6mo <b>${sign(day.chg_6mo_T)}</b></span>` +
+            '</div>';
+        if (ser.length < 2) {
+            return head + '<div class="ab-tbd" style="padding:12px 13px">' +
+                'no series on this reading</div>';
+        }
+
+        const W = 680, L = 40, R = 14;
+        const T1 = 12, B1 = 120;            // the tide
+        const T2 = 154, B2 = 234;           // the change that decides the light
+        const H = 250;
+        const t0 = Date.parse(ser[0][0]), t1 = Date.parse(ser[ser.length - 1][0]);
+        const X = t => L + (Date.parse(t) - t0) / (t1 - t0 || 1) * (W - L - R);
+
+        let lo1 = Infinity, hi1 = -Infinity, ext = ser[0];
+        ser.forEach(p => {
+            lo1 = Math.min(lo1, p[1]); hi1 = Math.max(hi1, p[1]);
+            if (Math.abs(p[2]) > Math.abs(ext[2])) ext = p;
+        });
+        // FIXED lower-panel scale, for the same reason yield_curve pins its y-axis:
+        // autoscaled, 2020's COVID swing (a 13-week move of $2.09T) sets the range and
+        // the ±0.2T band that actually DECIDES the light collapses into a sliver.
+        // Pinned at ±0.75T the band is a fifth of the panel and every week since
+        // 2021 still fits; the 20 weeks between March 2020 and May 2021 that run past
+        // it are clamped to the edge and NAMED, never quietly flattened.
+        const mx = 0.75;
+        const pad = (hi1 - lo1) * 0.08 || 0.1;
+        lo1 -= pad; hi1 += pad;
+        const Y1 = v => T1 + (hi1 - v) / (hi1 - lo1) * (B1 - T1);
+        const Y2 = v => T2 + (mx - Math.max(-mx, Math.min(mx, v))) / (2 * mx) * (B2 - T2);
+
+        // Shared year rules, drawn through BOTH panels so the eye can carry a date
+        // from the tide down to the change.
+        let g = '';
+        for (let y = new Date(t0).getUTCFullYear() + 1;
+                 y <= new Date(t1).getUTCFullYear(); y++) {
+            const x = X(y + '-01-01');
+            if (x < L || x > W - R) continue;
+            g += `<line x1="${x.toFixed(1)}" y1="${T1}" x2="${x.toFixed(1)}" ` +
+                 `y2="${B1}" class="yc-gridmaj"/>` +
+                 `<line x1="${x.toFixed(1)}" y1="${T2}" x2="${x.toFixed(1)}" ` +
+                 `y2="${B2}" class="yc-gridmaj"/>` +
+                 `<text x="${x.toFixed(1)}" y="${B2 + 13}" class="rp-ax" ` +
+                 `text-anchor="middle">${y}</text>`;
+        }
+        for (let v = Math.ceil(lo1 * 2) / 2; v <= hi1; v += 0.5) {
+            g += `<line x1="${L}" y1="${Y1(v).toFixed(1)}" x2="${W - R}" ` +
+                 `y2="${Y1(v).toFixed(1)}" class="yc-grid"/>` +
+                 `<text x="${L - 5}" y="${(Y1(v) + 3.5).toFixed(1)}" class="rp-ax" ` +
+                 `text-anchor="end">${v.toFixed(1)}</text>`;
+        }
+
+        // The lower panel's three regions ARE the band table, drawn. Draining is
+        // NEGATIVE, so green sits at the BOTTOM here -- the one place on this board
+        // where the inversion reads naturally rather than needing a note.
+        const bT = day.band_T;
+        const bands =
+            `<rect x="${L}" y="${T2}" width="${W - L - R}" ` +
+              `height="${(Y2(bT) - T2).toFixed(1)}" fill="rgba(248,113,113,.10)"/>` +
+            `<rect x="${L}" y="${Y2(bT).toFixed(1)}" width="${W - L - R}" ` +
+              `height="${(Y2(-bT) - Y2(bT)).toFixed(1)}" class="lv-yellow"/>` +
+            `<rect x="${L}" y="${Y2(-bT).toFixed(1)}" width="${W - L - R}" ` +
+              `height="${(B2 - Y2(-bT)).toFixed(1)}" class="lv-green"/>` +
+            `<line x1="${L}" y1="${Y2(0).toFixed(1)}" x2="${W - R}" ` +
+              `y2="${Y2(0).toFixed(1)}" class="yc-zero"/>` +
+            [bT, -bT].map(t =>
+              `<line x1="${L}" y1="${Y2(t).toFixed(1)}" x2="${W - R}" ` +
+              `y2="${Y2(t).toFixed(1)}" stroke="#64748b" stroke-width="1" ` +
+              'stroke-dasharray="3 3" stroke-opacity=".55"/>').join('') +
+            `<text x="${L - 5}" y="${(Y2(bT) + 3.5).toFixed(1)}" class="rp-ax" ` +
+              `text-anchor="end">+${bT}</text>` +
+            `<text x="${L - 5}" y="${(Y2(-bT) + 3.5).toFixed(1)}" class="rp-ax" ` +
+              `text-anchor="end">−${bT}</text>`;
+
+        const path = (k, Y) => 'M' + ser.map(p => X(p[0]).toFixed(1) + ',' +
+                                                  Y(p[k]).toFixed(1)).join(' L');
+        const pk = day.peak || {};
+        const peak = pk.date
+            ? `<circle cx="${X(pk.date).toFixed(1)}" cy="${Y1(pk.level_T).toFixed(1)}" ` +
+              `r="3.5" class="lv-anch"><title>peak $${pk.level_T}T &middot; ` +
+              `${esc(pk.date)}</title></circle>` +
+              `<text x="${X(pk.date).toFixed(1)}" y="${(Y1(pk.level_T) - 7).toFixed(1)}" ` +
+              `class="lv-al" text-anchor="middle">$${pk.level_T}T</text>`
+            : '';
+        const last = ser[ser.length - 1];
+        const off = Math.abs(ext[2]) > mx
+            // Pinned to the panel's empty top-right rather than to the excursion
+            // itself: at the spike's own x it lands on the +0.2 axis label, and the
+            // clamped line is already running along the edge there anyway.
+            ? '<text x="' + (W - R - 4) + '" y="' + (T2 + 11) + '" class="lv-al" ' +
+              'text-anchor="end">' + (ext[2] > 0 ? '+' : '\u2212') + '$' +
+              Math.abs(ext[2]).toFixed(2) + 'T in ' + ext[0].slice(0, 4) +
+              ' \u00b7 off scale</text>'
+            : '';
+        const svg = '<div class="rp-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" ' +
+            'role="img" aria-label="Net liquidity since 2020 above, and its 13-week ' +
+            'change against the plus or minus 0.2 trillion band below">' +
+            g + bands +
+            `<text x="${L}" y="${T1 - 2}" class="rp-ax">$T</text>` +
+            `<text x="${L}" y="${T2 - 6}" class="rp-ax">13-week change, $T</text>` +
+            `<path d="${path(1, Y1)}" fill="none" stroke="#22d3ee" stroke-width="1.5"/>` +
+            peak +
+            `<circle cx="${X(last[0]).toFixed(1)}" cy="${Y1(last[1]).toFixed(1)}" ` +
+              'r="4" class="mc-now"/>' +
+            `<path d="${path(2, Y2)}" fill="none" stroke="#94a3b8" stroke-width="1.4"/>` +
+            `<circle cx="${X(last[0]).toFixed(1)}" cy="${Y2(last[2]).toFixed(1)}" ` +
+              'r="4" class="mc-now"/>' + off +
+            '</svg></div>';
+
+        // WHICH LEG MOVED. A balance-sheet runoff and a TGA rebuild are the same
+        // arithmetic in the total and mean opposite things, so the three components are
+        // named rather than left folded into one number.
+        const c = day.components || {};
+        const parts = c.walcl_T != null
+            ? '<div class="mc-scale"><span class="k">the three legs</span>' +
+              `<span><b>$${c.walcl_T.toFixed(2)}T</b> balance sheet</span>` +
+              `<span>− <b>$${c.tga_T.toFixed(2)}T</b> TGA</span>` +
+              `<span>− <b>$${c.rrp_T.toFixed(2)}T</b> reverse repo</span>` +
+              `<span>= <b>$${day.level_T.toFixed(2)}T</b></span></div>`
+            : '';
+
+        // The RRP caveat is only worth saying while the buffer is actually gone, so it
+        // is asked of the data rather than written in as a remembered fact.
+        const drained = c.rrp_T != null && c.rrp_T < 0.1
+            ? ' Reverse repo is down to <b>$' + (c.rrp_T * 1000).toFixed(0) +
+              'B</b> from ~$2.5T in 2022, so the cushion that used to absorb a drain ' +
+              'is gone: the same colour bites harder than it did.'
+            : '';
+        return head + svg + parts +
+            '<div class="ab-overlapbar">The light is cut on the LOWER panel, not the ' +
+            `tide above it: the 13-week move against a <b>±$${bT}T</b> band, which ` +
+            `is one sigma of its own noise. <b>${day.weeks_outside}</b> of ` +
+            `<b>${day.n_weeks}</b> weeks since ${esc((day.chart_from || '').slice(0, 4))} ` +
+            'cleared it, and a colour needs the 6-month trend to agree as well — ' +
+            'TGA swings of $200–400B a quarter dominate this series and would ' +
+            `otherwise flip it on one Treasury-account move.${drained}</div>`;
+    }
+
     // --- LEVERAGE (one view) -----------------------------------------------------
     // The ratio since 1999, against the two thresholds and the four peaks the 2.0 line
     // is set FROM. Drawing the anchors on the line rather than as free-floating levels
@@ -2536,27 +2960,56 @@
             `<text x="${PL - 4}" y="${(Y(v) + 3.5).toFixed(1)}" class="cc-ax">${label}</text>`;
         const path = t.map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ',' +
                            Y(v).toFixed(1)).join(' ');
+        // WHEN each print is FOR. The axis used to read oldest -> latest, which says
+        // nothing about the reporting window -- and core PCE lags 4-6 weeks, so the
+        // newest point is a month or two behind the day the light was read. The year
+        // rides only on the first label and wherever it changes, so a six-month axis
+        // does not repeat the same two digits six times.
+        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mons = day.trail_months || [];
+        const dated = mons.length === t.length;
+        const mLabel = (m, always) => {
+            const y = m.slice(0, 4), k = +m.slice(5, 7) - 1;
+            return MON[k] + (always ? ' ’' + y.slice(2) : '');
+        };
+        const tick = i => mLabel(mons[i], i === 0 ||
+                                mons[i - 1].slice(0, 4) !== mons[i].slice(0, 4));
         const dots = t.map((v, i) =>
             `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" ` +
             `r="${i === t.length - 1 ? 4.5 : 3}" fill="${i === t.length - 1
                 ? (AB_IB_BAND[day.light] || '#94a3b8') : '#64748b'}">` +
-            `<title>${v.toFixed(2)}%</title></circle>`).join('');
+            `<title>${dated ? tick(i) + ' · ' : ''}${v.toFixed(2)}%</title>` +
+            '</circle>').join('');
+        // The end labels are anchored INWARD; centred, the last one would overhang the
+        // viewBox by half its width.
+        const axis = dated
+            ? t.map((v, i) => `<text x="${X(i).toFixed(1)}" y="${H - 6}" class="cc-ax2" ` +
+                `text-anchor="${i === 0 ? 'start' : i === t.length - 1 ? 'end' : 'middle'}">` +
+                `${tick(i)}</text>`).join('')
+            : `<text x="${PL}" y="${H - 6}" class="cc-ax2">oldest</text>` +
+              `<text x="${W - PR}" y="${H - 6}" class="cc-ax2" text-anchor="end">latest` +
+              '</text>';
         const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
             `aria-label="The last ${t.length} core-PCE prints against the 2 and 3.5 ` +
             'percent lines">' +
             line(day.green_above, 'green', day.green_above.toFixed(1)) +
             line(day.red_at_or_below, 'red', day.red_at_or_below.toFixed(1)) +
             `<path d="${path}" fill="none" stroke="#94a3b8" stroke-width="1.5"/>` + dots +
-            `<text x="${PL}" y="${H - 6}" class="cc-ax2">oldest</text>` +
-            `<text x="${W - PR}" y="${H - 6}" class="cc-ax2" text-anchor="end">latest` +
-            '</text></svg>';
+            axis + '</svg>';
         const vals = t.map((v, i) =>
             `<span class="cc-pt${i === t.length - 1 ? ' now' : ''}">${v.toFixed(2)}</span>`)
             .join('<span class="cc-sep">›</span>');
         return '<div class="ab-pies">' + hero + svg + '</div>' +
             `<div class="cc-trail">${vals}</div>` +
-            `<div class="ab-overlapbar">Six monthly prints, ${day.climbing
+            '<div class="ab-overlapbar">' +
+            (dated ? `<b>${mLabel(mons[0], true)}</b> to <b>${mLabel(mons[mons.length - 1],
+                true)}</b> — six monthly prints, ` : 'Six monthly prints, ') +
+            `${day.climbing
                 ? 'each at or above the last' : 'not monotonic — it has come off its high'}. ` +
+            'The axis is the REFERENCE month, not the publication date: core PCE lands ' +
+            '4–6 weeks after the month it measures, so the newest point here is ' +
+            'always a month or two behind the day this light was read. ' +
             `This is core PCE, which runs <b>0.3–0.5pp below</b> CPI, so a CPI print read ` +
             'against these lines would sit a third of a band too high.</div>';
     }
@@ -3368,6 +3821,80 @@
                            ['vs 2000', d.ratio && (d.refs || {})['2000_peak']
                                ? (d.ratio / d.refs['2000_peak']).toFixed(1) + '\u00d7' : '\u2014']],
             render:  (key, day) => abLeverageHTML(day)
+        },
+        market_credit: {
+            views:   [{ key: 'window', label: 'The window' }],
+            value:   d => d.bps,
+            reading: d => Math.round(d.bps) + 'bps',
+            light:   d => d.light,
+            tol:     0.5,
+            reconLabel: 're-shaped from the day\u2019s own record',
+            count:   d => d.archived_points ? d.archived_points + ' prints' : 'no history',
+            figures: d => [['to green', Math.round(d.to_green) + 'bps'],
+                           ['the hold', d.sustained_wide ? 'held' : '0/' + d.sustain_days],
+                           ['window high', d.window_high ? Math.round(d.window_high.bps) + 'bps' : '\u2014'],
+                           ['1y low', d.min_1y_bps != null ? d.min_1y_bps + 'bps' : '\u2014']],
+            render:  (key, day) => abMarketCreditHTML(day)
+        },
+        copper: {
+            // ONE view. There is no per-item evidence here -- copper is a single
+            // instrument, not a basket or a book -- so the ledger's job is to carry
+            // the SERIES, and the series is the whole evidence.
+            views:   [{ key: 'trend', label: 'Since 2020' }],
+            value:   d => d.vs200,
+            reading: d => (d.vs200 >= 0 ? '+' : '') + d.vs200.toFixed(1) + '%',
+            light:   d => d.light,
+            tol:     0.05,
+            reconLabel: 're-shaped from the day’s own record',
+            count:   d => d.n_bars ? d.n_bars + ' bars' : 'no series',
+            // What a single reading cannot say: where the 200 actually IS, and how far
+            // the price has to fall to reach it. `to the 200` is the move that turns
+            // this light green, which is the only number on the row that is a trigger.
+            figures: d => [['price', '$' + d.price.toFixed(3)],
+                           ['the 200', '$' + d.ma200.toFixed(3)],
+                           ['to the 200', d.vs200 != null
+                               ? (-d.vs200).toFixed(1) + '%' : '—'],
+                           ['52wk high', abMD(d.high_date)]],
+            render:  (key, day) => abCopperHTML(day)
+        },
+        net_liquidity: {
+            views:   [{ key: 'tide', label: 'Since 2020' }],
+            // The board row shows the LEVEL, so the pane keys off the level too -- the
+            // 13-week change is what decides the light, but a Reading that disagreed
+            // with the row that opened it would read as a bug.
+            value:   d => d.level_T,
+            reading: d => '$' + d.level_T.toFixed(2) + 'T',
+            light:   d => d.light,
+            tol:     0.005,
+            reconLabel: 're-shaped from the day’s own record',
+            // The identity line shows the LEVEL, which is not what the light reads.
+            // Both changes ride beside it because they can disagree -- and when they
+            // do, that disagreement IS the yellow.
+            // The identity line's big reading is the 13-week delta, wearing the
+            // light. The LEVEL is context, so it rides beside it in white -- it is
+            // still the number the factor is named for, just not the one that decides
+            // the colour.
+            badge:   f => {
+                const e = f.extras || {};
+                const lv = f.value != null
+                    ? '<b class="abh-dl">$' + f.value.toFixed(2) + 'T</b> level' : '';
+                const six = e.chg_6mo_T != null
+                    ? ' · 6mo <b class="abh-dl">' + (e.chg_6mo_T >= 0 ? '+' : '−') +
+                      '$' + Math.abs(e.chg_6mo_T).toFixed(2) + 'T</b>' : '';
+                return lv + six;
+            },
+            count:   d => d.n_weeks ? d.n_weeks + ' weeks' : 'no series',
+            // `to green` is the only trigger on the row: how much FURTHER the 13-week
+            // move has to drain before it clears the band. Positive means not there.
+            figures: d => [['13wk', (d.chg_3mo_T >= 0 ? '+' : '−') + '$' +
+                                Math.abs(d.chg_3mo_T).toFixed(2) + 'T'],
+                           ['6mo', (d.chg_6mo_T >= 0 ? '+' : '−') + '$' +
+                                Math.abs(d.chg_6mo_T).toFixed(2) + 'T'],
+                           ['to green', '$' +
+                                Math.max(0, d.chg_3mo_T + d.band_T).toFixed(2) + 'T'],
+                           ['reverse repo', d.rrp_T != null
+                                ? '$' + (d.rrp_T * 1000).toFixed(0) + 'B' : '—']],
+            render:  (key, day) => abNetLiqHTML(day)
         }
     };
 

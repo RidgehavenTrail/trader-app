@@ -11,8 +11,14 @@ Conventions (locked in the session-31 specs):
 import yfinance as yf
 
 
-def daily_closes(symbol, period="2y"):
-    h = yf.Ticker(symbol).history(period=period)
+def daily_closes(symbol, period="2y", start=None):
+    """Daily closes for one symbol.
+
+    `start` (YYYY-MM-DD) fetches from an ABSOLUTE date instead of the rolling
+    `period`, for the same reason batched_closes takes one: a display window
+    anchored to a fixed year cannot ride a period that advances every day."""
+    kw = {"start": start} if start else {"period": period}
+    h = yf.Ticker(symbol).history(**kw)
     if h.empty:
         raise ValueError(f"yfinance {symbol}: empty history")
     return h["Close"].dropna()

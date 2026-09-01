@@ -78,6 +78,8 @@
                font-variant-numeric:tabular-nums; }
     .abh-st { font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.07em;
               text-transform:uppercase; color:#64748b; }
+    /* Same emphasis one level up: the label stays muted, the number does not. */
+    .abh-dl { color:#e2e8f0; font-weight:600; }
     .abh-gl { font-family:ui-monospace,monospace; font-size:14px; font-weight:700; }
     .abh-back { margin-left:auto; font-family:ui-monospace,monospace; font-size:9.5px;
                 letter-spacing:.05em; text-transform:uppercase; color:#64748b;
@@ -895,6 +897,10 @@
     .yc-head .k { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.14em;
         text-transform:uppercase; color:#64748b; }
     .yc-head .s { font-family:ui-monospace,monospace; font-size:9.5px; color:#94a3b8; }
+    /* A raw value carried in the subtitle row: label stays muted, number goes white.
+       Used where the big slot is spoken for by something else -- net_liquidity's
+       header leads with the 13-week change, so the level rides here. */
+    .yc-head .s b { color:#f1f5f9; font-weight:600; }
     /* Its own full-width row: 1391 points over twenty-six years needs the width, and
        unlike the other pictures here this one is an AXIS, not a badge. */
     .yc-chart { margin:0 13px 4px; min-width:0; }
@@ -915,6 +921,25 @@
     .yc-key i { width:11px; height:9px; border-radius:2px; flex:none; }
     .yc-i-rec { background:rgba(148,163,184,.35); }
     .yc-i-inv { background:rgba(248,113,113,.5); }
+    /* --- MARKET CREDIT single view ---------------------------------------------- */
+    .mc-now { fill:#f87171; stroke:#0f172a; stroke-width:1.5; }
+    /* Ten pips = the two-week hold. It was a bare boolean in extras until now. */
+    .mc-sustain { display:flex; align-items:center; gap:5px; padding:2px 13px 8px;
+        font-family:ui-monospace,monospace; font-size:10px; color:#94a3b8; }
+    .mc-sustain .k { font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+        color:#64748b; margin-right:4px; }
+    .mc-sustain i { width:12px; height:10px; border-radius:2px; flex:none;
+        background:rgba(148,163,184,.16); border:1px solid #334155; display:block; }
+    .mc-sustain i.on { background:#4ade80; border-color:#4ade80; }
+    .mc-sv { margin-left:6px; color:#64748b; }
+    /* Recalled levels are TEXT, never axis marks: plotting 2000bps would collapse the
+       259-461 range the window actually holds, and would give numbers this factor
+       cannot measure the same authority as ones it can. */
+    .mc-scale { display:flex; flex-wrap:wrap; gap:5px 14px; padding:0 13px 10px;
+        font-family:ui-monospace,monospace; font-size:10px; color:#64748b; }
+    .mc-scale .k { font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+        color:#fbbf24; }
+    .mc-scale b { color:#94a3b8; font-weight:400; }
     /* --- LEVERAGE single view --------------------------------------------------- */
     /* Green sits at the TOP of this scale: the board is inverted and leverage maxed is
        the pro-burst end, so the shading runs upward, not downward. */
@@ -1861,7 +1886,7 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/us-map.js?v=20260829a"></script>
-<script src="static/js/stoplight.js?v=20260831u"></script>
+<script src="static/js/stoplight.js?v=20260901g"></script>
 <script src="static/js/strategy.js?v=20260827h"></script>
 <script src="static/js/strategy-dive.js?v=20260827d"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>

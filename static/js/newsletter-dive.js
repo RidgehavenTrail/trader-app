@@ -121,15 +121,26 @@
             const note = tg.note ? ` ${esc(tg.note)}` : '';
             triggerNotes.push(`<div><span class="text-slate-500 capitalize">${lbl} —</span> <span class="font-mono text-slate-300">${lvl}</span>${note}</div>`);
         });
-        // Stop / invalidation. An options underlying-price stop (basis:"underlying") is
-        // omitted from the premium level row, so show its LEVEL here (plus any note) —
-        // otherwise KRE's 71.5–72, whose note doesn't restate the number, would vanish.
-        // Non-options stops (pairs ratio, note-only) keep the plain note line.
-        if (t.stop && t.stop.basis === 'underlying' && t.stop.level != null) {
-            const sn = t.stop.note ? ` <span class="text-slate-400">· ${esc(t.stop.note)}</span>` : '';
-            triggerNotes.push(`<div><span class="text-slate-500">Stop/Invalidation —</span> <span class="font-mono text-slate-300">${fmtLevel(t.stop)}</span> <span class="text-slate-500">(underlying)</span>${sn}</div>`);
-        } else if (t.stop && t.stop.note) {
-            triggerNotes.push(`<div><span class="text-slate-500">Stop/Invalidation —</span> ${esc(t.stop.note)}</div>`);
+        // Stop / invalidation. SHOW THE LEVEL WHENEVER THERE IS ONE (2026-09-01). This
+        // used to print the number only for an options `basis:"underlying"` stop and
+        // fall back to the note alone for everything else — on the reasoning that a
+        // pairs/ratio stop's note restates its own number. It does not: the 260803
+        // XLF/ITB stop is `0.575` with the note "Daily close below this ratio level",
+        // so the panel said that sentence and dropped the one figure the letter prints
+        // ("Hard stop | Daily close below 0.575"). It is the same failure the comment
+        // here already described for KRE's 71.5–72, just on the other branch.
+        // The basis tag now decides only whether the UNIT needs calling out: an options
+        // stop quoted on the underlying is a different unit from the premium level row.
+        if (t.stop && (t.stop.level != null || t.stop.note)) {
+            const unit = t.stop.basis === 'underlying'
+                ? ' <span class="text-slate-500">(underlying)</span>' : '';
+            const lvl = t.stop.level != null
+                ? ` <span class="font-mono text-slate-300">${fmtLevel(t.stop)}</span>${unit}` : '';
+            const sn = t.stop.note
+                ? (lvl ? ` <span class="text-slate-400">· ${esc(t.stop.note)}</span>`
+                       : ` ${esc(t.stop.note)}`)
+                : '';
+            triggerNotes.push(`<div><span class="text-slate-500">Stop/Invalidation —</span>${lvl}${sn}</div>`);
         }
         document.getElementById('nd-trigger-notes-section').classList.toggle('hidden', triggerNotes.length === 0);
         document.getElementById('nd-trigger-notes').innerHTML = triggerNotes.join('');
@@ -195,7 +206,11 @@
         viewState.nd.entity = {
             asset_class: t.asset_class,
             ticker: t.underlying,
-            basketLegs: t.basket ? t.basket.map(b => ({ ticker: b.ticker, side: b.side })) : null,
+            // `weight` and `ratioMethod` ride along because a weighted pair cannot be
+            // charted without them — dropping the weight here is what made the
+            // 260803 defensive composite plot at 0.34 against a stated 0.176.
+            basketLegs: t.basket ? t.basket.map(b => ({ ticker: b.ticker, side: b.side, weight: b.weight })) : null,
+            ratioMethod: t.ratio_method || 'sum',
             // A ratio-triggered outright (e.g. MAGS long on the SOXX/MAGS 50DMA break, §
             // derive_ratio_trigger) charts the RATIO instead of the single stock — the card
             // stays outright, only the detail chart/header change.
@@ -261,4 +276,4 @@
         document.getElementById('nd-tabs').style.display = 'none';
         resetToNarrativeTab('nd');
     }
-
+

@@ -167,9 +167,22 @@ PICK EXACTLY ONE CONTAINER — this is how Python derives the trade's structure:
   `entry_price` / `exit_price` (optional, per component) = that ticker's stated
   ENTRY or CLOSING mark when the issue prints per-name prices — e.g. a close reading
   "sold XLV at 159.92, XLP at 84.87, XLF at 53.55, covered IGV at 86.96" fills each
-  component's `exit_price`. Bare number, native price. `weight` is beta-neutral
-  SIZING only — never fold it into the price; the composite ratio is computed straight
-  up from the raw prices (Σ long prices / Σ short prices), so leave the marks raw.
+  component's `exit_price`. Bare number, native price. Leave the marks RAW — never
+  fold a weight into a price.
+  `ratio_method` (pairs only) = which construction the issue MONITORS. Two values:
+    "sum"      — DEFAULT, and correct unless the issue says otherwise. The ratio is
+                 the raw sum of long prices over the raw sum of short prices. Choose
+                 this even when `weight`s are present: a weight is normally EXECUTION
+                 sizing (beta-neutral, dollar-neutral, vol-adjusted — "approximately
+                 $1.00 of X against $0.50 of Y"), which sets position size and has
+                 nothing to do with the number being tracked. Also choose it when the
+                 issue calls the ratio "raw".
+    "weighted" — the issue defines the tracked ratio's own components as a BLEND, by
+                 allocating a fixed pot across one side ("for every $1,000 on the long
+                 side, buy $600 of A and $400 of B") and monitoring that blend against
+                 the other side. Only when the stated blend CONSTRUCTS the ratio.
+  The issue's own printed ratio is the check: whichever construction you pick must
+  reproduce the ratio value the issue quotes from the closes it quotes.
 - PLAIN SINGLE-NAME OUTRIGHT (one equity/ETF/future/forex, no options) -> put the
   one instrument in `underlying`; `basket` = null, `legs` = null.
 
@@ -815,6 +828,8 @@ def _spread_credit_or_debit(t):
 #                  corrected 2026-07-09.)
 #   direction    : long|short for outright; null otherwise (per-leg side encodes it)
 #   basket[]     : {ticker, side:long|short, weight, entry_price?, exit_price?, note?} — pairs
+#   ratio_method : sum|weighted — how the MONITORED ratio is built (pairs only);
+#                  'sum' unless the issue blends one side into a composite
 #                  (weight = beta-neutral sizing ONLY; the composite ratio is Σlong/Σshort
 #                   of the RAW per-name prices — display-computed, C.16)
 #   legs[]       : {strike, expiry, type:call|put, action:buy|sell, quantity, note?} — options
@@ -1094,6 +1109,51 @@ def derive_ratio_trigger(t):
         return
 
 
+RATIO_METHODS = ("sum", "weighted")
+
+
+def derive_ratio_method(t, structure):
+    """Enum-enforce `ratio_method`, and null it off pairs. Returns flags.
+
+    THE FIELD EXISTS BECAUSE THE NUMBERS CANNOT SETTLE IT (2026-09-01). Every basket
+    this store has ever held carries weights, and until the 260803 issue not one of
+    them fed the ratio: they were beta-neutral / vol-adjusted EXECUTION sizing, and
+    the tracked ratio was the raw sum over sum. Measured against the levels each issue
+    quotes -- defensive breadth 2.93 vs a stated 2.6, RKLB 4.74 vs a stated 5.38, both
+    of which weighting would move to 1.00 and 9.48 -- 'sum' is right for four of five
+    and 'weighted' for exactly one, the issue that spells the blend out ("$600 of XLV
+    and $400 of XLP per $1,000"). No function of the weights separates those cases,
+    which by the ownership rule (Python never parses prose) makes this a MODEL-owned
+    primitive rather than a derivation.
+
+    Defaults to 'sum', so every trade extracted before this field existed keeps the
+    construction it was charted with."""
+    flags = []
+    if structure != "pairs":
+        t["ratio_method"] = None
+        return flags
+    m = t.get("ratio_method")
+    if m is None:
+        t["ratio_method"] = "sum"
+        return flags
+    if m not in RATIO_METHODS:
+        flags.append(f"ratio_method '{m}' off-enum -> forced to sum")
+        t["ratio_method"] = "sum"
+        return flags
+    if m == "weighted":
+        # A weighted construction that has no weights to build from is the one
+        # incoherent combination, and it silently becomes a plain sum downstream.
+        sides = {}
+        for b in t.get("basket") or []:
+            sides.setdefault(b.get("side"), []).append(b.get("weight"))
+        for side, ws in sides.items():
+            if any(w is None for w in ws):
+                flags.append(f"ratio_method=weighted but {side} side has a component "
+                             f"with no weight")
+    t["ratio_method"] = m
+    return flags
+
+
 def derive_status_from_section(t):
     """§ Section-status taxonomy (2026-07-10) — the newsletter SECTION a trade is printed
     under (`source_section`, a document fact, far more stable than a fill judgment) drives
@@ -1300,6 +1360,7 @@ def normalize_derived(t):
     derive_stop_basis(t)           # tag an options underlying-price stop's unit (display routing)
     derive_target_basis(t)         # tag options underlying-price "targets" as guidance (display routing)
     derive_ratio_trigger(t)        # structure a pair-ratio entry trigger on an outright (display routing)
+    flags += derive_ratio_method(t, structure)   # how a pair's tracked ratio is built
     derive_status_from_section(t)       # § section-status — forces status only where obvious
     enforce_untriggered_conditional(t)  # backstop — untriggered conditional -> planned (any section)
     enforce_scaled_planned(t)           # scaled guard, carried-fill release (§ fill mechanics)
@@ -1717,8 +1778,16 @@ def compute_risk_pnl(t):
             return []
         return [f"closed options trade {t.get('id')!r} is not a clean 2-leg vertical — no pnl_pct"]
     closing = _closing_hist(t)
-    pnl = closing.get("pnl") if closing else None
+    pnl = closing.get("pnl") if isinstance(closing, dict) else None
     pnl_val = pnl.get("value") if isinstance(pnl, dict) else None
+    # THE UNIT IS LOAD-BEARING (§8c) and used to be read straight past. A stated pnl
+    # can be a PERCENT or a per-share dollar move, and 187.8 means completely different
+    # things in each: the SPY 755/765 debit spread closed with {value: 187.8,
+    # unit: "pct"} against a $1.80 debit and came out as 187.8/1.80*100 = 10,433%.
+    # Absent unit is treated as a per-share dollar amount, which is what every trade
+    # extracted before the enum existed meant.
+    pnl_unit = pnl.get("unit") if isinstance(pnl, dict) else None
+    pnl_is_pct = pnl_unit == "pct"
     exit_price = closing.get("exit_price") if closing else None
     if exit_price is None:                   # top-level exit_price (plumbing fix — the
         exit_price = t.get("exit_price")     # model files the close here on the new format)
@@ -1730,10 +1799,24 @@ def compute_risk_pnl(t):
     entry_cost = t.get("entry_price")
     if entry_cost is None:
         entry_cost = (t.get("entry") or {}).get("level")
-    if entry_cost is None and exit_price is not None and pnl_val is not None:
+    if (entry_cost is None and exit_price is not None and pnl_val is not None
+            and not pnl_is_pct and pnl_unit != "usd_total"):
+        # exit - pnl only works when both are the same per-share unit; a percent or a
+        # position-total dollar figure would silently produce a nonsense entry cost.
         entry_cost = round(exit_price - pnl_val, 4) if kind == "debit" \
             else round(exit_price + pnl_val, 4)
     if entry_cost is None:
+        # §8c step 3: a STATED percent needs no entry cost — it is already the answer.
+        # Bailing here dropped the realized P&L of any close the issue reported as a
+        # percentage without restating the debit (SPY 745/755: "+35.8%", exited the
+        # same week it was opened). `risk_capital` stays absent because we genuinely
+        # never learned the cost; the scoreboard still gets its number.
+        if pnl_is_pct and pnl_val is not None:
+            pct = round(pnl_val, 1)
+            t["pnl_pct"] = pct
+            if closing is not None:
+                closing["pnl_pct"] = pct
+            return []
         return [f"closed options trade {t.get('id')!r} — no entry cost and none inferable"]
     risk = round(width - entry_cost, 4) if kind == "credit" else round(entry_cost, 4)
     if risk <= 0:
@@ -1746,7 +1829,17 @@ def compute_risk_pnl(t):
             else round(exit_price - entry_cost, 4)
     if pnl_val is None:
         return [f"closed options trade {t.get('id')!r} — risk computed but no pnl value"]
-    pnl_pct = round(pnl_val / risk * 100, 1)
+    # §8c resolution order. A computed value from real levels wins (set just above from
+    # exit_price); a stated PERCENT is already the answer and is used as-is; a per-share
+    # dollar move is divided by the risk. A position-TOTAL dollar figure cannot be put
+    # over per-share risk without a contract count, so it is flagged rather than guessed.
+    if exit_price is not None or not pnl_is_pct:
+        if pnl_unit == "usd_total" and exit_price is None:
+            return [f"closed options trade {t.get('id')!r} — pnl stated in usd_total; "
+                    f"no contract count to put it over per-share risk {risk}"]
+        pnl_pct = round(pnl_val / risk * 100, 1)
+    else:
+        pnl_pct = round(pnl_val, 1)
     t["pnl_pct"] = pnl_pct
     if closing is not None:
         closing["pnl_pct"] = pnl_pct
@@ -1931,6 +2024,35 @@ def ingest_issue_recorded(text, store, extracted_dir, stem, filename, mode,
     t0 = _time.time()
     data, usage = run_extraction(text, store.get("live", []), model=model, effort=effort)
     raw_extract = _copy.deepcopy(data)
+
+    # RECEIPTS FOR A PAID CALL ARE WRITTEN FIRST (2026-09-01). Every artifact below
+    # used to be written AFTER merge_into_store, so a merge that raised discarded a
+    # response that had already been billed -- which is exactly what happened to the
+    # 260803 import (AttributeError in the merge; nothing whatsoever on disk, and the
+    # extract gone). The response text, the pristine pre-merge extract and the
+    # thinking trace are the three things that CANNOT be regenerated without paying
+    # again, so they land before anything that can fail.
+    #
+    # This does NOT make a failed run look imported: the completion signal is the
+    # per-issue marker in `extracted_dir`, still written last, and run_archive is
+    # telemetry that no caller reads to decide importedness.
+    effort_label = effort or "default(high)"
+    run_stamp = _time.strftime("%Y%m%d-%H%M%S")
+    base = f"{stem}__effort-{effort_label}__{run_stamp}"
+    run_archive_dir = os.path.join(extracted_dir, "run_archive")
+    os.makedirs(run_archive_dir, exist_ok=True)
+    with open(os.path.join(run_archive_dir, base + "__response.txt"), "w",
+              encoding="utf-8") as f:
+        f.write(usage.get("final_text") or "")
+    _atomic_write_json(os.path.join(run_archive_dir, base + "__raw_extract.json"),
+                       raw_extract)
+    thinking_log_dir = os.path.join(extracted_dir, "thinking_logs")
+    os.makedirs(thinking_log_dir, exist_ok=True)
+    thinking_log_path = os.path.join(
+        thinking_log_dir, f"{stem}__effort-{effort_label}__{run_stamp}.txt")
+    with open(thinking_log_path, "w", encoding="utf-8") as f:
+        f.write(usage.get("thinking_text") or "")
+
     store, counts, processed = merge_into_store(
         store, data.get("trade_updates", []), issue_date=data.get("issue_date"))
     data["trade_updates"] = processed  # marker/edition freezes the post-split shape
@@ -1950,27 +2072,10 @@ def ingest_issue_recorded(text, store, extracted_dir, stem, filename, mode,
     cost = (it * RATE_IN + cw * RATE_CACHE_WRITE + cr * RATE_CACHE_READ
             + ot * RATE_OUT) / 1_000_000
 
-    effort_label = effort or "default(high)"
-    run_stamp = _time.strftime("%Y%m%d-%H%M%S")
-
-    # Thinking trace (previously 100% discarded).
-    thinking_log_dir = os.path.join(extracted_dir, "thinking_logs")
-    os.makedirs(thinking_log_dir, exist_ok=True)
-    thinking_log_path = os.path.join(
-        thinking_log_dir, f"{stem}__effort-{effort_label}__{run_stamp}.txt")
-    with open(thinking_log_path, "w", encoding="utf-8") as f:
-        f.write(usage.get("thinking_text") or "")
-
-    # Reusable receipts: store snapshot + marker + PRISTINE pre-merge extract (free
-    # re-derive) + raw response text (the literal JSON we paid for).
-    run_archive_dir = os.path.join(extracted_dir, "run_archive")
-    os.makedirs(run_archive_dir, exist_ok=True)
-    base = f"{stem}__effort-{effort_label}__{run_stamp}"
+    # The two receipts that NEED the merge's output. The response, the pre-merge
+    # extract and the thinking trace are already on disk above.
     _atomic_write_json(os.path.join(run_archive_dir, base + "__store.json"), store)
     _atomic_write_json(os.path.join(run_archive_dir, base + "__marker.json"), data)
-    _atomic_write_json(os.path.join(run_archive_dir, base + "__raw_extract.json"), raw_extract)
-    with open(os.path.join(run_archive_dir, base + "__response.txt"), "w", encoding="utf-8") as f:
-        f.write(usage.get("final_text") or "")
 
     # One JSON-lines row per run — directly diffable across runs/effort levels.
     experiment_log_path = os.path.join(extracted_dir, "cost_experiment_log.jsonl")

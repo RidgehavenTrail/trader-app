@@ -140,8 +140,10 @@
                 // ARRAY POSITION, which for a 3-long/1-short basket silently
                 // compared two long legs and never touched the short leg at all.
                 const legs = entity.basketLegs || [];
-                const longs = legs.filter(l => l.side === 'long').map(l => l.ticker);
-                const shorts = legs.filter(l => l.side === 'short').map(l => l.ticker);
+                const longLegs = legs.filter(l => l.side === 'long');
+                const shortLegs = legs.filter(l => l.side === 'short');
+                const longs = longLegs.map(l => l.ticker);
+                const shorts = shortLegs.map(l => l.ticker);
                 if (!longs.length || !shorts.length) {
                     container.innerHTML = '<div class="chart-loading">This pair has no long/short split to chart.</div>';
                     return;
@@ -153,13 +155,30 @@
                 const closeMaps = hists.map(h => Object.fromEntries((h.candles || []).map(c => [c.time, c.close])));
                 const longMaps = closeMaps.slice(0, longs.length);
                 const shortMaps = closeMaps.slice(longs.length);
+                // WHICH RATIO THE ISSUE MONITORS is an extracted field, not a guess off
+                // the weights (see derive_ratio_method in newsletter_ingest.py). Every
+                // basket carries weights; almost always they are beta-neutral EXECUTION
+                // sizing and the tracked number is the raw sum over sum. One issue so far
+                // blends a side into a composite ("$600 of XLV and $400 of XLP per
+                // $1,000") and monitors THAT — charting it unweighted put it at 0.34
+                // against a stated 0.1761, nowhere near its own 0.172 stop.
+                // Weights are normalized WITHIN a side, so a blend keeps its proportions
+                // while cross-side sizing (1.0 vs 0.5) cannot rescale the ratio.
+                const weighted = entity.ratioMethod === 'weighted';
+                const norm = (ls) => {
+                    if (!weighted) return ls.map(() => 1);
+                    const ws = ls.map(l => (typeof l.weight === 'number' && l.weight > 0) ? l.weight : 0);
+                    const tot = ws.reduce((a, b) => a + b, 0);
+                    return tot > 0 ? ws.map(w => w / tot) : ls.map(() => 1);
+                };
+                const longW = norm(longLegs), shortW = norm(shortLegs);
                 // Only dates present in EVERY leg yield a valid ratio point.
                 const baseTimes = (hists[0].candles || []).map(c => c.time);
                 const fullRatio = [];
                 for (const time of baseTimes) {
                     let longSum = 0, shortSum = 0, ok = true;
-                    for (const m of longMaps) { if (m[time] == null) { ok = false; break; } longSum += m[time]; }
-                    if (ok) for (const m of shortMaps) { if (m[time] == null) { ok = false; break; } shortSum += m[time]; }
+                    longMaps.forEach((m, i) => { if (!ok) return; if (m[time] == null) { ok = false; return; } longSum += m[time] * longW[i]; });
+                    if (ok) shortMaps.forEach((m, i) => { if (!ok) return; if (m[time] == null) { ok = false; return; } shortSum += m[time] * shortW[i]; });
                     if (!ok || shortSum === 0) continue;
                     fullRatio.push({ time, value: longSum / shortSum });
                 }
@@ -259,13 +278,46 @@
     // belongs on the price scale. Correct alignment beats label placement — Lightweight
     // Charts stacks the last-value labels on a shared scale so they don't bury each other.
     // Cyan = 50, white = 200.
-    function addSMAOverlays(chart, sma50, sma200) {
+    // PRECISION FOLLOWS THE MAGNITUDE (user, 2026-09-01). Lightweight Charts defaults
+    // to `precision: 2`, which is right for a $56.94 quote and useless for a RATIO: the
+    // XLF/ITB pair trades around 0.6036 and rendered as "0.60", so its entry (0.588),
+    // its stop (0.575) and its first target (0.620) were three indistinguishable
+    // two-digit numbers on the axis and in the crosshair.
+    // Sub-1 series get FOUR decimals — the precision the letter itself quotes ratios to
+    // ("ratio 0.6036") — and anything at or above 1 keeps the two it already had.
+    // `minMove` must move with `precision` or the scale still snaps to 0.01.
+    function priceFormatFor(rows) {
+        let mx = 0;
+        (rows || []).forEach(r => {
+            ['value', 'close', 'open', 'high', 'low'].forEach(k => {
+                const v = Math.abs(r && r[k]);
+                if (isFinite(v) && v > mx) mx = v;
+            });
+        });
+        // SIGNIFICANT DIGITS, not a threshold. The first cut of this keyed off "is the
+        // max below 1", which broke on the case that needs it most: a pair ratio
+        // hovering around parity (0.98 / 1.02 / 0.94) has a max above 1 and collapsed
+        // straight back to two decimals. Targeting ~4 significant digits instead scales
+        // continuously, so nothing falls off a cliff at 1.0.
+        //   0.6036 -> 4    1.02 -> 3    56.94 -> 2    755 -> 2    6543 -> 2
+        // Floored at 2 so every equity keeps its cents, capped at 6 so a near-zero
+        // series cannot run the axis off the panel.
+        const precision = mx > 0
+            ? Math.min(6, Math.max(2, 3 - Math.floor(Math.log10(mx))))
+            : 2;
+        return { type: 'price', precision: precision, minMove: Math.pow(10, -precision) };
+    }
+
+    // The overlays share the price scale, so they take the SAME format — a 200-bar MA
+    // left on the default would put 2-decimal labels back on a 4-decimal axis.
+    function addSMAOverlays(chart, sma50, sma200, priceFormat) {
+        const fmt = priceFormat ? { priceFormat: priceFormat } : {};
         if (sma50 && sma50.length) {
-            const s50 = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+            const s50 = chart.addLineSeries(Object.assign({ color: '#22d3ee', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true }, fmt));
             s50.setData(sma50);
         }
         if (sma200 && sma200.length) {
-            const s200 = chart.addLineSeries({ color: '#ffffff', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+            const s200 = chart.addLineSeries(Object.assign({ color: '#ffffff', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true }, fmt));
             s200.setData(sma200);
         }
     }
@@ -282,13 +334,15 @@
             leftPriceScale: { visible: false },
             crosshair: { mode: 0 }
         });
+        const fmt = priceFormatFor(candles);
         const series = chart.addCandlestickSeries({
             upColor: '#34d399', downColor: '#f87171',
             borderUpColor: '#34d399', borderDownColor: '#f87171',
-            wickUpColor: '#34d399', wickDownColor: '#f87171'
+            wickUpColor: '#34d399', wickDownColor: '#f87171',
+            priceFormat: fmt
         });
         series.setData(candles);
-        addSMAOverlays(chart, sma50, sma200);
+        addSMAOverlays(chart, sma50, sma200, fmt);
         chart.timeScale().fitContent();
         viewState[view].chart = chart;
         viewState[view].series = series;
@@ -345,11 +399,19 @@
             grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
             timeScale: { borderColor: '#334155' },
             rightPriceScale: { borderColor: '#334155' },
-            leftPriceScale: { visible: false }
+            leftPriceScale: { visible: false },
+            // mode 0 = Normal, matching the candlestick chart. The library DEFAULTS to
+            // Magnet, which pins the dashed price line to the series value at the
+            // hovered time — so you cannot float it to read a support/resistance level
+            // off the axis. This line chart had been on the default all along; it only
+            // became visible when ratio charts went to 4 decimals, because at 2 the
+            // snapped price and a free one rounded to the same label (user, 2026-09-01).
+            crosshair: { mode: 0 }
         });
-        const series = chart.addLineSeries({ color: color, lineWidth: 2 });
+        const fmt = priceFormatFor(points);
+        const series = chart.addLineSeries({ color: color, lineWidth: 2, priceFormat: fmt });
         series.setData(points);
-        addSMAOverlays(chart, sma50, sma200);
+        addSMAOverlays(chart, sma50, sma200, fmt);
         chart.timeScale().fitContent();
         viewState[view].chart = chart;
         viewState[view].series = series;
@@ -485,4 +547,4 @@
     // Render a price + day% quote into `el`, colored by the day's move (green up,
     // red down, neutral gray/white when flat or unavailable — the instrument's own
     // raw move, not the position's directional P&L). Hides `el` when price is null.
-    // `label` overrides the price text (e.g. "3.30 ratio", "FIVN 24.50").
+    // `label` overrides the price text (e.g. "3.30 ratio", "FIVN 24.50").

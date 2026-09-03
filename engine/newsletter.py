@@ -136,7 +136,14 @@ def import_newsletter():
             text, store, NEWSLETTER_EXTRACTED_DIR, stem, filename, mode, effort=effort)
         data, counts, usage = result["data"], result["counts"], result["usage"]
     except Exception as e:
-        print(f"[NEWSLETTER IMPORT] {filename} failed: {type(e).__name__}: {e}")
+        # FULL TRACEBACK (2026-09-01). `type: str(e)` alone cost a session on the
+        # 260803 failure: "AttributeError: 'str' object has no attribute 'get'" named
+        # neither the field nor the line, and the guards it fires from are spread
+        # across the whole merge. The UI still gets a bare status — this is for the
+        # console, which is the only place the reason has ever gone.
+        import traceback
+        print(f"[NEWSLETTER IMPORT] {filename} failed: {type(e).__name__}: {e}\n"
+              + traceback.format_exc())
         return jsonify({"status": "error"})
     print(f"[NEWSLETTER IMPORT] {filename}: {data.get('issue_date')} effort={effort} "
           f"live={counts['live']} +{counts['archived_now']}archived "
@@ -306,26 +313,52 @@ def _quote_outright(t):
     return {"current_price": round(cur, 4), "day_change_pct": _pct(cur, prev)}
 
 
+def _side_weights(legs, weighted):
+    """Per-leg multipliers for one side of a basket, normalized WITHIN the side.
+
+    Normalizing within the side is what lets one rule serve both constructions: a
+    blend keeps its proportions (0.6/0.4 stays 0.6/0.4) while cross-side execution
+    sizing cannot rescale the ratio (1.0 long vs 0.5 short both normalize to 1.0, so
+    the quote stays the raw price ratio the issue calls "raw"). Falls back to equal
+    weights if the side has none — a `weighted` trade missing them is flagged at
+    extraction, and a quote must still answer."""
+    if not weighted:
+        return [1.0] * len(legs)
+    ws = [(b.get("weight") if isinstance(b.get("weight"), (int, float)) and b.get("weight") > 0 else 0.0)
+          for b in legs]
+    total = sum(ws)
+    return [w / total for w in ws] if total > 0 else [1.0] * len(legs)
+
+
 def _quote_pair(t):
-    """Pairs/basket: current ratio = sum(long closes) / sum(short closes) (raw
-    prices, no weighting — same construction as the chart, A.6), with day % of the
-    RATIO (today's ratio vs yesterday's), not each leg's individual day change."""
+    """Pairs/basket: the current ratio, built the way the ISSUE monitors it, with
+    day % of the RATIO (today's vs yesterday's), not each leg's own day change.
+
+    `ratio_method` decides the construction — same field and same normalization the
+    chart uses, so the header quote and the picture under it cannot disagree. Default
+    "sum" is the raw sum of long closes over short closes; "weighted" builds a side
+    into a dollar blend the issue defined. Before 2026-09-01 this was hardcoded to the
+    raw sum, which quoted the 260803 defensive composite at 0.34 against its own
+    stated 0.1761 and a 0.172 stop."""
     basket = t.get("basket") or []
-    longs = [b["ticker"] for b in basket if b.get("side") == "long"]
-    shorts = [b["ticker"] for b in basket if b.get("side") == "short"]
-    if not longs or not shorts:
+    long_legs = [b for b in basket if b.get("side") == "long"]
+    short_legs = [b for b in basket if b.get("side") == "short"]
+    if not long_legs or not short_legs:
         return {"unavailable": "no_split"}
+    weighted = t.get("ratio_method") == "weighted"
+    lw = _side_weights(long_legs, weighted)
+    sw = _side_weights(short_legs, weighted)
     prev_long = cur_long = prev_short = cur_short = 0.0
-    for tk in longs:
-        pair = _last_two_closes(tk)
+    for b, w in zip(long_legs, lw):
+        pair = _last_two_closes(b["ticker"])
         if not pair:
             return {"unavailable": "no_data"}
-        prev_long += pair[0]; cur_long += pair[1]
-    for tk in shorts:
-        pair = _last_two_closes(tk)
+        prev_long += pair[0] * w; cur_long += pair[1] * w
+    for b, w in zip(short_legs, sw):
+        pair = _last_two_closes(b["ticker"])
         if not pair:
             return {"unavailable": "no_data"}
-        prev_short += pair[0]; cur_short += pair[1]
+        prev_short += pair[0] * w; cur_short += pair[1] * w
     if not cur_short or not prev_short:
         return {"unavailable": "no_data"}
     cur_ratio, prev_ratio = cur_long / cur_short, prev_long / prev_short

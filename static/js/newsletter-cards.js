@@ -153,11 +153,19 @@
             if (t.structure === 'pairs' && t.basket && t.basket.length) {
                 const rows = t.basket.map(b => {
                     const sideColor = b.side === 'long' ? 'text-emerald-400' : 'text-red-400';
-                    const note = b.note ? `<span class="text-slate-500 text-xs truncate">${esc(b.note)}</span>` : '';
+                    // The note WRAPS rather than clipping (user, 2026-09-01): it was
+                    // `truncate`, so a basket component's reason got an ellipsis at the
+                    // pane's width and the half that explains the leg was unreadable.
+                    // `min-w-0` is what actually lets it wrap — a flex item's default
+                    // min-width:auto refuses to shrink below its content, so removing
+                    // `truncate` alone would push the row wide instead of breaking it.
+                    // Baseline alignment keeps the first line level with LONG/SHORT
+                    // while later lines run underneath.
+                    const note = b.note ? `<span class="text-slate-500 text-xs min-w-0 break-words">${esc(b.note)}</span>` : '';
                     const weight = b.weight != null ? `<span class="text-slate-500 text-xs ml-auto shrink-0">${b.weight}</span>` : '';
-                    return `<div class="flex items-center gap-2 text-sm font-mono">
+                    return `<div class="flex items-baseline gap-2 text-sm font-mono">
                                 <span class="${sideColor} font-bold w-12 shrink-0">${esc((b.side || '').toUpperCase())}</span>
-                                <span class="text-slate-100 font-bold">${esc(b.ticker)}</span>
+                                <span class="text-slate-100 font-bold shrink-0">${esc(b.ticker)}</span>
                                 ${note}${weight}
                             </div>`;
                 }).join('');
@@ -649,4 +657,4 @@
     })();
 
     // Per-view state: which entity is active, and the chart instance (so we
-    // don't recreate it on every tab click — only when the entity changes).
+    // don't recreate it on every tab click — only when the entity changes).

@@ -115,6 +115,9 @@
             renderSiliconE(board.module);
             if (!document.getElementById('ai-bubble-dive').classList.contains('hidden'))
                 renderBubbleOverview();     // keep an open detail panel live
+            // Board charts move at most once a day, so they ride this poll at 1-in-3
+            // rather than carrying a timer of their own.
+            if (++_chartsTick % SL_CHARTS_EVERY === 0) refreshBoardCharts();
         } catch (err) {
             console.error('Error fetching stoplight board:', err);
         }
@@ -919,7 +922,7 @@
         return parts.length > 1 ? parts[0].toUpperCase() + ' ' + parts.slice(1).join(' ')
                                 : parts[0].toUpperCase();
     }
-    function abMD(iso) { const p = iso.split('-'); return (+p[1]) + '/' + (+p[2]); }
+    function abMD(iso) { if (!iso) return '—'; const p = String(iso).split('-'); return (+p[1]) + '/' + (+p[2]); }
     // One-word factor refs: first token of each feed id, de-duped (capex_pressure +
     // capex_spigot -> just "capex"). Keeps the calendar column tight.
     function abFactorWords(feeds) {
@@ -1820,24 +1823,43 @@
     // arguably the more useful one: an exclusion that leaves no trace cannot be told
     // apart from an oversight, and two of these were COUNTED as states until the roster
     // was audited on 2026-08-29.
+    // THE ROLLING RECORD of what the factor looked at and did not count. It carries
+    // forward across sweeps (extractors/run.py `_merge_excluded`), so this table answers
+    // "why is the latest news not in the count" with a DATE against each answer — and a
+    // measure that has stopped recurring shows as an old date rather than disappearing.
+    //
+    // Two kinds, and the distinction is the point: an AUDITED exclusion fails one of the
+    // four tests in regulatory.py, while `unproven` only means the gate could not prove
+    // statewide scope from the evidence THIS pull returned. The second is a statement
+    // about the pull, so it wears a chip — an over-strict gate must not read as a
+    // considered judgment, because that error runs in the bubble-supportive direction.
+    // Entries from before the record carried dates (the 2026-08-29 row) render with an
+    // em-dash rather than breaking.
     function abExcludedHTML(day) {
         const rows = day.excluded || [];
         if (!rows.length) return '<div class="ab-tbd" style="padding:12px 13px">nothing recorded as excluded</div>';
+        const seen = e => (e.last_seen || e.first_seen) ? abMD(e.last_seen || e.first_seen) : '—';
         const body = rows.map(e =>
             '<tr>' +
               `<td class="l"><div class="mdl"><div class="nm2">${esc(e.state)}` +
-                `${e.was_counted ? '<span class="tier p" style="margin-left:7px">was counted</span>' : ''}` +
+                `${e.now_counted ? '<span class="tier c" style="margin-left:7px">now counted</span>'
+                 : e.was_counted ? '<span class="tier p" style="margin-left:7px">was counted</span>' : ''}` +
+                `${e.kind === 'unproven' ? '<span class="tier c" style="margin-left:7px">unproven</span>' : ''}` +
                 `</div><div class="sl">${esc(e.citation || '')}</div></div></td>` +
               `<td class="l"><span class="ab-why">${esc(e.reason || '')}</span></td>` +
+              `<td class="r"><span class="sl">${seen(e)}</span></td>` +
             '</tr>').join('');
         const wc = rows.filter(e => e.was_counted).length;
+        const up = rows.filter(e => e.kind === 'unproven' && !e.now_counted).length;
         return '<div class="ab-scroller"><table class="ab-ledger">' +
             '<thead><tr><th class="l">Measure</th><th class="l">Why it does not count</th>' +
-            '</tr></thead>' + `<tbody>${body}</tbody></table></div>` +
+            '<th class="r">Last seen</th></tr></thead>' + `<tbody>${body}</tbody></table></div>` +
             '<div class="ab-overlapbar">' +
             (wc ? `<b>${wc}</b> of these were counted as states until the roster was ` +
-                  'audited on 2026-08-29.'
-                : 'None of these has ever been counted.') +
+                  'audited on 2026-08-29. '
+                : 'None of these has ever been counted. ') +
+            (up ? `<b>${up}</b> await proof of state-wide scope, not a judgment that they fail it.`
+                : 'Every entry here fails one of the four tests outright.') +
             '</div>';
     }
 
@@ -4291,10 +4313,21 @@
 
     // --- Charts tab (3rd tab) -------------------------------------------------
     // Renders GET /get_board_charts with lightweight-charts, same house options as
-    // charts.js. The payload is fetched ONCE per page load and the charts built
-    // once — the engine rebuilds its cache daily, so there is nothing to poll.
+    // charts.js.
+    // THE PAYLOAD IS RE-FETCHED, not held for the life of the tab (2026-09-03). It used
+    // to be fetched once per page load, on the reasoning that "the engine rebuilds its
+    // cache daily, so there is nothing to poll" — which is backwards: a daily rebuild is
+    // exactly what an open dashboard has to go back and ask for. A page left up since
+    // Monday sat on Monday's Fed print into Thursday while the engine had had the new
+    // one since 09:37 that morning, and the only way to see it was a manual reload.
+    // Cheap and quiet: one small GET riding the stoplight's own poll, and a REDRAW ONLY
+    // when `generated_at` actually moves — so a tab nobody is touching stays untouched,
+    // and charts are never rebuilt under the cursor on a payload that did not change.
     let _chartData = null;      // cached payload
+    let _chartsGen = null;      // its `generated_at` — the redraw discriminator
     let _boardCharts = [];      // live chart instances (teardown handles)
+    let _chartsTick = 0;
+    const SL_CHARTS_EVERY = 3;  // the board polls every 5 min -> charts every 15
 
     async function renderBubbleCharts() {
         const body = document.getElementById('ab-charts-body');
@@ -4304,6 +4337,7 @@
             try {
                 const res = await fetch(`${API_BASE}/get_board_charts`);
                 _chartData = await res.json();
+                _chartsGen = _chartData.generated_at || null;
             } catch (e) {
                 console.error('rate charts fetch failed', e);
                 body.innerHTML = '<div class="ab-rt-err">chart data unavailable — is the engine running?</div>';
@@ -4311,6 +4345,25 @@
             }
         }
         drawBoardCharts(body, _chartData);
+    }
+
+    // Ask again, and act only on a genuinely new build. Also re-renders the detail
+    // panel, because its yield-curve and heavy-haul pictures read the same `_chartData`.
+    async function refreshBoardCharts() {
+        let j;
+        try {
+            const res = await fetch(`${API_BASE}/get_board_charts`);
+            j = await res.json();
+        } catch (e) {
+            return;                      // leave whatever is on screen; try again next tick
+        }
+        if (!j || (_chartsGen && j.generated_at === _chartsGen)) return;
+        _chartsGen = j.generated_at || null;
+        _chartData = j;
+        const body = document.getElementById('ab-charts-body');
+        if (body && _boardCharts.length) drawBoardCharts(body, _chartData);
+        const panel = document.getElementById('ai-bubble-dive');
+        if (panel && !panel.classList.contains('hidden')) renderBubbleOverview();
     }
 
     function drawBoardCharts(body, payload) {

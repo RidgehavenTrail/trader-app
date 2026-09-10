@@ -40,7 +40,8 @@ from engine.common import atomic_write_json
 from engine.live_config import cfg
 
 from . import store
-from .sources.fred import fred_series
+from .sources.fred import fred_series, lookback_change
+from .sources.rates import rate_series
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = os.path.join(_BASE_DIR, "board_charts.json")
@@ -263,13 +264,29 @@ def _build_line(spec):
 def _build_dial(spec):
     d = _dial()
     months = d["lookback_months"]
-    raw = fred_series(spec["series_id"])
+    # Same dispatcher the Rocket Strategy dial uses, so the two cannot end up on
+    # different sources any more than they can on different anchors.
+    raw = rate_series(spec["series_id"])
     true_last = raw.index[-1]
     # month-start label carrying the month's LAST print — the authored dial's own
     # convention. The current month is partial and firms up as it completes; that is
     # what makes the dial update daily.
     monthly = raw.resample("MS").last().dropna()
-    chg = monthly - monthly.shift(months)                # the change over the lookback
+    # THE CHANGE IS ANCHORED ON THE CALENDAR DATE, not on the monthly grid (user,
+    # 2026-09-10). `monthly.shift(months)` measured month-END to month-END, which read
+    # +0.19 against the Rocket Strategy sidebar's +0.22 for the same 2026-09-08 print —
+    # the two baselines were 2026-03-31 (3.61) and 2026-03-06 (3.58), and DTB3's +0.03
+    # drift across late March was the entire gap. The daily anchor is the literal
+    # six-month change and is what the dial LATCHES on, so the picture follows it.
+    #
+    # The plotted VALUES stay on the monthly grid — the line and its segments are
+    # monthly by design. Only the change is re-derived: computed daily, then read off
+    # at each month's LAST print, which is the observation that month-start label
+    # actually carries.
+    daily_chg = lookback_change(raw, months)
+    last_dates = pd.Series(raw.index, index=raw.index).resample("MS").last().dropna()
+    chg = pd.Series(daily_chg.reindex(pd.DatetimeIndex(last_dates)).to_numpy(),
+                    index=last_dates.index)
     # keep `years` of DISPLAY, but only after the change exists
     cutoff = pd.Timestamp(date.today()) - pd.DateOffset(years=spec["years"])
     rate = monthly[monthly.index >= cutoff]
@@ -285,8 +302,13 @@ def _build_dial(spec):
                    for s in segs],
         "legend": [{"label": REGIME_LABEL[k], "color": v} for k, v in REGIME_COLOR.items()],
         "latest": {"value": round(float(rate.iloc[-1]), 2),
+                   # THREE DECIMALS ON THE CHANGE (user, 2026-09-10). Two rounded
+                   # +0.248 to "+0.25" — the tightening threshold exactly — beside the
+                   # word "Hold", which reads as a misclassification and is not one.
+                   # Invisible while the dial ran on DTB3 at +0.22; on the live ^IRX it
+                   # sits near the edge, which is the whole point of watching it live.
                    "label": f"{float(rate.iloc[-1]):.2f}% · {REGIME_LABEL[regime]} "
-                            f"({last_chg:+.2f} {months}mo)",
+                            f"({last_chg:+.3f} {months}mo)",
                    "regime": regime},
         "asof": true_last.date().isoformat(),   # the real print date, not the month label
     }

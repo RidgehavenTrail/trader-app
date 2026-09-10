@@ -147,13 +147,18 @@ def _dial_frame():
     """
     # Imported lazily so this blueprint does not pull in the stoplight package at
     # engine import time. fred.py is a plain requests+pandas helper with retries.
-    from stoplight.sources.fred import fred_series
+    from stoplight.sources.fred import lookback_change
+    from stoplight.sources.rates import rate_series
 
     d = _dial()
-    s = fred_series(d["series_id"])
-    back = s.reindex(s.index - pd.DateOffset(months=d["lookback_months"]),
-                     method="ffill")
-    df = pd.DataFrame({"rate": s.to_numpy(), "chg": s.to_numpy() - back.to_numpy()},
+    # Dispatched on the configured symbol — `^IRX` (live, cached, DTB3-backed) or a
+    # plain FRED id. The config alone decides; this file learns no source vocabulary.
+    s = rate_series(d["series_id"])
+    # The anchor now lives in fred.lookback_change, shared with the Charts-tab dial so
+    # the two surfaces cannot state different 6-month changes for the same print.
+    # Behaviour here is unchanged — this IS the convention that moved.
+    chg = lookback_change(s, d["lookback_months"])
+    df = pd.DataFrame({"rate": s.to_numpy(), "chg": chg.to_numpy()},
                       index=s.index).dropna()
     if df.empty:
         raise ValueError(f"{d['series_id']}: no overlapping "

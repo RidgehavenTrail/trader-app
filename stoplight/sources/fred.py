@@ -16,6 +16,29 @@ import requests
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
 
 
+def lookback_change(series, months):
+    """Change over a trailing `months` window, anchored on the CALENDAR DATE.
+
+    THE ONE DEFINITION, shared by the Rocket Strategy dial and the Charts-tab dial so
+    the two cannot drift (2026-09-10). They used to compute this separately and
+    disagreed on screen — +0.22 in the sidebar against +0.19 on the chart for the same
+    2026-09-08 print of DTB3, because one measured back to the same calendar day six
+    months earlier (2026-03-06, 3.58) and the other to the last print of that MONTH
+    (2026-03-31, 3.61). DTB3 drifted +0.03 across late March and that drift was the
+    whole discrepancy. Two conventions, one label, and near a band edge they could
+    disagree about the REGIME rather than just the decimal.
+
+    Reindexing onto the index shifted back by `months` with method="ffill" takes the
+    last print ON OR BEFORE each target date, so holidays and gaps resolve BACKWARDS.
+    Never forwards — that would read a rate that had not printed yet.
+
+    Returns a Series on the SAME index as `series`, NaN before the window is seeded.
+    """
+    import pandas as pd
+    back = series.reindex(series.index - pd.DateOffset(months=months), method="ffill")
+    return pd.Series(series.to_numpy() - back.to_numpy(), index=series.index)
+
+
 def fred_series(sid, retries=3, timeout=30):
     """Return the series as a pandas Series indexed by date, NaNs dropped."""
     last_err = None

@@ -482,7 +482,7 @@
                              : `${d.nearest_pp.toFixed(2)}pp from the nearest threshold`)
                    // The lookback and the series' name come from the payload — they are
                    // strategy, and naming them here would put them back in the repo.
-                   + `\n${d.lookback_months}mo change ${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(2)}pp`
+                   + `\n${d.lookback_months}mo change ${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(3)}pp`
                    + ` · ${d.rate_label} ${d.rate.toFixed(2)}% as of ${d.asof}`
                    + (d.stale ? '\nSTALE — last good pull, FRED refresh failed' : '');
 
@@ -522,7 +522,10 @@
                 bits.push(`${esc(d.rate_label || 'rate')} ${d.rate.toFixed(2)}%`);
             }
             if (d.chg !== null && d.chg !== undefined) {
-                bits.push(`${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(2)}` +
+                bits.push(// 3dp to match the chart's label — at 2dp both round onto the band edge and
+                // the sidebar and the chart can print different-looking numbers for
+                // one reading, which is what started this.
+                `${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(3)}` +
                           `<span class="u"> ${d.lookback_months || ''}mo</span>`);
             }
             // THE OBSERVATION LAG, and it stays SILENT when there is nothing to say.

@@ -35,7 +35,7 @@ where noted below.
 | `newsletter-cards.js` | plays strip + all card/trade rendering | **`NEWSLETTER_TRADES`/`NEWSLETTER_ISSUE`/`newsletterEditions`** |
 | `charts.js` | tab control + chart tab + `updateContext` (ticker dive) | `viewState` |
 | `strategy.js` | Rocket Strategy sidebar section (Fed dial + selected holding) | `STR_POLL_MS`, `strSel`, `strLast`, `strFindHolding` |
-| `strategy-dive.js` | Rocket Strategy DETAIL panel — Strategy/Chart/Dial tabs, the chart's strategy levels | `_sdSeq` |
+| `strategy-dive.js` | Rocket Strategy DETAIL panel — Strategy/Chart/Dial tabs, the chart's strategy levels, and the Strategy tab. **THREE parts as of 2026-09-02:** a full-width NOTIONAL PHASE DIAGRAM on top, then the ruleset and the last-10 LEDGER (a table) side by side, with the whole tab scrolling as ONE container. **All five strategies serve it** — QQQ, XLE, GLD, MO, PM. `rules`, `phase_diagram` and `trades` are SERVED from `strategy_config` (they carry the parameters) and never authored in this repo; the renderer learns no strategy vocabulary, which is what lets one picture draw five systems (`opens`, `band_names`, `sleeve_names`, `silent_entry`, `dark_note`). THE LEDGER IS ONE BOOK, not one sleeve — QQQ merges the VIX flush, XLE the overlay RUNS, tobacco is built from RUNS because a tier handover is not a transaction. | `_sdSeq` |
 | `news-archive.js` | per-ticker news history inside the "Why" box | `_naEntries`, `_naSel` |
 | `newsletter-dive.js` | thesis deep-dive panel | `_ndDiveSeq` |
 | `newsletter-digest.js` | weekly digest + import + Past Editions | `digestOpen`, `openDropdownEl`, `viewingPastStem` |

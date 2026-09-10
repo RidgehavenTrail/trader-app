@@ -4401,6 +4401,20 @@
                 sec.appendChild(e);
                 return;
             }
+            // A CARRIED chart draws its real data and says so. The server keeps the last
+            // good build when a source is briefly unreachable (see charts.refresh), so
+            // the picture stands rather than blanking — but a chart quietly showing old
+            // numbers is worse than one that admits it, so the header carries a mark and
+            // the reason sits in its tooltip.
+            if (ch.stale) {
+                const w = document.createElement('div');
+                w.className = 'ab-rt-sub';
+                w.style.color = '#fbbf24';
+                w.textContent = 'last good build — the source was unreachable on the '
+                              + 'most recent attempt; retrying';
+                w.title = ch.stale_error || '';
+                sec.appendChild(w);
+            }
             if (ch.placeholder) {                          // reserved slot, content TBD
                 const box = document.createElement('div');
                 box.className = 'ab-rt-tbd';

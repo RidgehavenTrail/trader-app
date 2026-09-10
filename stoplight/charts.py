@@ -382,8 +382,42 @@ def build_charts():
 
 
 def refresh(force=False):
-    """Rebuild the cache file. Returns the payload."""
+    """Rebuild the cache file, KEEPING the last good build of any chart that failed.
+
+    A FAILED PULL MUST NOT ERASE A DRAWN CHART (user, 2026-09-08). `build_charts()`
+    replaces a chart it cannot build with an error card carrying `series: []`, and
+    writing that straight over the cache threw away data that was already on disk and
+    perfectly renderable: a transient FRED connect-timeout at 13:05 blanked the yield
+    curve, the Fed dial and heavy haul at once, and the daily rebuild timer meant they
+    stayed blank until 13:05 the NEXT day. The sources had recovered within minutes.
+
+    Same rule the dial and price-history caches already follow — never cache a failure;
+    if a fresh pull throws while a good payload exists, serve the good one FLAGGED
+    rather than blanking the panel. The flag matters: a chart silently showing old data
+    is worse than one that says it is old.
+
+    Carrying the old chart also restores the RETRY. `_charts_behind()` reads each
+    chart's `asof` and skips one that has none, so a wiped chart could never mark the
+    payload behind and the 30-minute catch-up never fired. A carried chart keeps its
+    real (now lagging) `asof`, so the catch-up sees it and re-tries within the half
+    hour instead of waiting out the day.
+    """
+    prev = load_cached() or {}
+    prev_ok = {c.get("id"): c for c in (prev.get("charts") or [])
+               if c.get("id") and not c.get("error") and not c.get("placeholder")}
+
     payload = build_charts()
+    carried = []
+    for i, c in enumerate(payload.get("charts") or []):
+        old_c = prev_ok.get(c.get("id"))
+        if c.get("error") and old_c:
+            payload["charts"][i] = {**old_c,
+                                    "stale": True,
+                                    "stale_error": c["error"],
+                                    "stale_since": payload["generated_at"]}
+            carried.append(c["id"])
+    if carried:
+        payload["carried"] = carried
     atomic_write_json(CACHE_FILE, payload)
     return payload
 

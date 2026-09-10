@@ -446,7 +446,11 @@ def _with_day_moves(payload):
     # lookup and a recovered strategy is picked up on the next poll. Alternates stay
     # state-free on purpose — their state is fetched ON SELECTION (2026-08-15);
     # resolving it eagerly here would walk 26 years per alternate per cold poll.
+    # The observation LAG rides here for the same reason the quotes do: computed inside
+    # compute_dial() it would be frozen for six hours and could report "caught up" after
+    # the day had rolled underneath it — wrong in the way that looks right.
     return dict(payload,
+                asof_lag_bdays=_asof_lag_bdays(payload),
                 holdings=[dict(_fill(h), state=_holding_state(h))
                           for h in payload["holdings"]],
                 alternates=[dict(a, holdings=[_fill(h) for h in (a.get("holdings") or [])])
@@ -477,6 +481,41 @@ def _dial_caught_up(payload, today=None):
     except ValueError:
         return False
     return seen >= _prev_business_day(today or datetime.now(ET).date())
+
+
+def _asof_lag_bdays(payload, today=None):
+    """How many BUSINESS days behind the newest observation that could exist.
+
+    0 = caught up (the T+1 series has printed everything it can); 1 = today's expected
+    print has not landed; 2+ = the release itself is late or a holiday moved it. Returns
+    None when `asof` is missing or unparseable — an unknown lag must not render as zero,
+    which would assert freshness we cannot prove.
+
+    A NUMBER, never a phrase: the frontend words it. Baking "1 day behind" into the
+    payload would freeze an English string into the dial cache and put display copy in a
+    module whose job is the regime.
+
+    WHY THIS EXISTS (2026-09-03). FRED went a full business day late on the whole H.15
+    set — DTB3, DGS3MO and DFF all stopped at the same date — while Monday and Tuesday
+    happened to print the SAME 3.78. The panel showed a correct, current reading that had
+    not visibly moved since Monday, and nothing on screen could tell "caught up" from
+    "the source is behind". `stale` does not answer it either: that flag means the PULL
+    failed, not that the observation is old. The module docstring has said "surface it
+    rather than implying the read is same-day" since the dial was built; this is that.
+    """
+    asof = (payload or {}).get("asof")
+    if not asof:
+        return None
+    try:
+        seen = date.fromisoformat(str(asof)[:10])
+    except ValueError:
+        return None
+    newest = _prev_business_day(today or datetime.now(ET).date())
+    lag = 0
+    while seen < newest:
+        newest = _prev_business_day(newest)
+        lag += 1
+    return lag
 
 
 def get_dial():

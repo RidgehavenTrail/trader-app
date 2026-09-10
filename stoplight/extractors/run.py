@@ -13,7 +13,7 @@ import sys
 from datetime import date
 
 from .. import llm
-from . import schemas, read_input, write_input
+from . import SEED, schemas, read_input, write_input
 
 def _today():
     """Today, evaluated PER CALL — never cached at import.
@@ -861,6 +861,81 @@ _DCW_QUERY = ("Data Center Watch number of data center projects blocked rejected
               "cancelled by local opposition count 2026")
 
 
+# --- The exclusion roster (CUMULATIVE — see the failure it exists for) -------------
+# A measure the factor looked at and did NOT count is evidence, and one that vanishes
+# at the next sweep cannot be told from one nobody ever examined. Two independent
+# faults erased exactly that on 2026-09-02, and this function answers both:
+#
+#   1. `write_input` REPLACES a factor's whole record, and this extractor rebuilt `rec`
+#      without an `excluded` key — so the first billed run after the 2026-08-29 audit
+#      dropped all eight audited exclusions (Dominion GS-5, AEP Ohio, CA SB 57, PA's
+#      voluntary framework among them). The stored ledger rows show it exactly: 8 on
+#      2026-08-29, 0 on 2026-09-02, on an otherwise identical reading.
+#   2. The run's OWN rejections went to `classify_rejected`, which nothing has ever
+#      read — written every sweep, displayed nowhere, overwritten by the next one.
+#
+# TWO KINDS, DELIBERATELY KEPT APART. `not_qualifying` is a judgment against the four
+# tests in regulatory.py: audited, and the machine may not overwrite it. `unproven` is
+# the gate refusing THIS RUN's evidence ("scope_quote says nothing about who the
+# instrument binds") — a statement about the pull, not about the measure. Folding them
+# into one list would let a gate that is too strict wear the appearance of a considered
+# exclusion, and that error runs in the bubble-supportive direction.
+def _excl_key(state, citation):
+    """(state, citation), case- and whitespace-normalised — the same key the roster
+    itself is reconciled on, so an entry cannot sit in both lists under two spellings."""
+    return ((state or "").strip().lower(),
+            " ".join((citation or "").split()).lower())
+
+
+def _merge_excluded(prev, rejected, actions, today):
+    """The prior roster, plus this run's rejections, minus nothing.
+
+    The base is the previous record's list; when the KEY IS ABSENT — never written, or
+    wiped by the fault above — it falls back to the audited SEED roster, which is the
+    only place those eight survive. Present-but-empty is left alone on purpose: that is
+    a human having emptied it, and this must not resurrect what someone removed."""
+    base = prev.get("excluded")
+    seeded = base is None
+    if seeded:
+        base = SEED["regulatory"].get("excluded") or []
+    seed_date = SEED["regulatory"].get("asof")
+
+    out = {}
+    for e in base:
+        e = dict(e)
+        e.setdefault("kind", "not_qualifying")
+        e.setdefault("first_seen", seed_date if seeded else None)
+        e.setdefault("last_seen", e.get("first_seen"))
+        out[_excl_key(e.get("state"), e.get("citation"))] = e
+
+    for r in rejected or []:
+        k = _excl_key(r.get("state"), r.get("citation"))
+        cur = out.get(k)
+        if cur is None:
+            out[k] = {"state": r.get("state"), "citation": r.get("citation"),
+                      "reason": r.get("why"), "kind": "unproven", "was_counted": False,
+                      "first_seen": today, "last_seen": today}
+        else:
+            cur["last_seen"] = today
+            # An audited reason outranks the gate's: the gate can only say it was not
+            # PROVEN this run, which is not a finding about the measure.
+            if cur.get("kind") != "not_qualifying":
+                cur["reason"] = r.get("why")
+
+    # An exclusion that later proves itself is MARKED, never deleted: a measure crossing
+    # from excluded to counted is the movement this factor exists to watch arriving.
+    counted = {_excl_key(a.get("state"), a.get("citation")) for a in actions or []}
+    for k, e in out.items():
+        now = k in counted
+        if now and not e.get("now_counted"):
+            e["last_seen"] = today
+        e["now_counted"] = now
+
+    rows = sorted(out.values(), key=lambda e: (e.get("state") or ""))
+    rows.sort(key=lambda e: (e.get("last_seen") or ""), reverse=True)   # newest first
+    return rows
+
+
 def run_regulatory_multi():
     """Per-source regulatory (HARDENED 2026-07-19): (1) enacted state-wide statute
     COUNT — the cheap sweep detects new candidates beyond the known set, the classify
@@ -985,6 +1060,12 @@ def run_regulatory_multi():
         # was built under so the two are never silently compared.
         "actions": actions,
         "basis": "any_branch_in_force_statewide",
+        # THE DURABLE RECORD of everything looked at and not counted, carried forward
+        # and merged every run (see _merge_excluded). `classify_rejected` below is the
+        # raw, unmerged output of THIS run only — kept because "what did this sweep
+        # refuse" is a different question from "what stands excluded", but it is not
+        # the record and nothing should display it as one.
+        "excluded": _merge_excluded(prev, rejected, actions, _today()),
         "classify_rejected": rejected,
         "dcw": dcw_obs,
         "dcw_prev": dcw_prev_obs,

@@ -85,7 +85,12 @@ FACTORS = [
     dict(id="capex_pressure",  name="Capex pressure",  rank=12, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_pressure", asof_keyed=True),
     dict(id="capex_spigot",    name="Capex spigot",    rank=13, cadence="quarterly", catalyst="earnings",     highlight="new-tag",      builder="capex_spigot", asof_keyed=True),
     dict(id="copper",          name="Copper",          rank=14, cadence="hourly",    catalyst="self-gate",    highlight="state-change", builder="copper"),
-    dict(id="inflation",       name="Inflation",       rank=15, cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="inflation"),
+    # asof_keyed 2026-09-03: the leverage case exactly, and missed when that one was
+    # done. BEA publishes core PCE MONTHLY and this factor polls daily, so a capture-
+    # keyed row was written every morning holding the same print: 47 rows carrying 3
+    # observations, 44 of them byte-identical re-captures. Keyed on the DATA date the
+    # rail shows one row per print, which is what the reading actually is.
+    dict(id="inflation",       name="Inflation",       rank=15, cadence="monthly",   catalyst="data-release", highlight="new-tag",      builder="inflation", asof_keyed=True),
     dict(id="net_liquidity",   name="Net liquidity",   rank=16, cadence="weekly",    catalyst="data-release", highlight="new-tag",      builder="net_liquidity"),
     # Silicon E — the earnings module, displayed below the ranked 16 as an odometer gauge.
     dict(id="silicon_e",       name="Silicon E",       rank=None, module=True,

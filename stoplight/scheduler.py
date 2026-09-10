@@ -217,8 +217,15 @@ def _charts_behind():
     while latest.weekday() >= 5:
         latest -= timedelta(days=1)
     for c in payload.get("charts") or []:
+        # A chart that FAILED to build is behind by definition — it holds no data at
+        # all. It also has no `asof`, so the skip below used to mean a cold-start
+        # failure was invisible to the catch-up and waited out the full daily timer.
+        # (A chart carried forward from a previous good build is handled by its own
+        # lagging `asof` on the next line, exactly like any other stale series.)
+        if c.get("error"):
+            return True
         a = c.get("asof")
-        if not a:
+        if not a or c.get("placeholder"):
             continue
         try:
             if date.fromisoformat(a) < latest:

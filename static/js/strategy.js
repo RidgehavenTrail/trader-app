@@ -525,7 +525,22 @@
                 bits.push(`${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(2)}` +
                           `<span class="u"> ${d.lookback_months || ''}mo</span>`);
             }
+            // THE OBSERVATION LAG, and it stays SILENT when there is nothing to say.
+            // A T+1 series being a day back is the healthy state, so annotating every
+            // normal day would train the eye to ignore the one marking that matters.
+            // It speaks only when the expected print has NOT landed — which is the case
+            // that made a correct dial look frozen (2026-09-03: FRED held the whole H.15
+            // set a day late while Mon and Tue both printed 3.78, so the panel showed a
+            // current reading that had not moved since Monday).
             if (d.asof) bits.push(`<span class="u">as of ${d.asof}</span>`);
+            const lag = d.asof_lag_bdays;
+            if (lag > 0) {
+                bits.push(`<span class="lag">${lag} day${lag > 1 ? 's' : ''} behind</span>`);
+            } else if (d.asof && (lag === null || lag === undefined)) {
+                // Null is UNKNOWN, never zero: an unreadable date must not render as
+                // proof of freshness.
+                bits.push('<span class="lag">age unknown</span>');
+            }
             _rate.innerHTML = bits.join(' · ');
         }
 
@@ -534,18 +549,21 @@
         const _lat = document.getElementById('str-dial-latched');
         _lat.textContent = (d.stale ? 'stale · ' : '')
             + (d.latched_on ? `latched ${d.latched_on}` : '');
-        _lat.title = [
-            d.asof ? `${d.rate_label || 'series'} last observation ${d.asof}`
-                     + ' - FRED publishes the prior session, so one day back is current' : '',
-            d.stale ? 'STALE - last good pull, FRED refresh failed' : ''
-        ].filter(Boolean).join(' · ');
         // The FRED series prints once a business day, so "as of" being yesterday is
         // normal and healthy — say so, rather than let a one-day lag read as a fault.
         // One line, ' - ' separated: a multi-line title is fine but the escapes are not
         // worth the fragility here, and the tooltip is three short facts.
+        // (There were TWO assignments to this title, identical but for the latch line;
+        // the first was dead the moment the second was written. Removed 2026-09-03.)
+        const _lag = d.asof_lag_bdays;
         _lat.title = [
             d.asof ? `${d.rate_label || 'series'} last observation ${d.asof}`
-                     + ' - FRED publishes the prior session, so one day back is current' : '',
+                     + (_lag === 0
+                        ? ' - current; FRED publishes the prior session'
+                        : _lag > 0
+                          ? ` - ${_lag} business day${_lag > 1 ? 's' : ''} behind: the`
+                            + ' expected print has not landed, re-checked every 15 min'
+                          : '') : '',
             d.latched_on ? `${d.label} latched ${d.latched_on}` : '',
             d.stale ? 'STALE - last good pull, FRED refresh failed' : ''
         ].filter(Boolean).join(' · ');

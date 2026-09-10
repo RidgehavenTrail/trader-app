@@ -482,12 +482,23 @@ def _cache_key(ticker_symbol, label_date):
 
 def get_cached_news(ticker_symbol, label_date=None):
     """Returns cached news_text for this ticker today, or None if not cached."""
+    entry = get_cached_news_entry(ticker_symbol, label_date)
+    return entry.get("news_text") if entry else None
+
+
+def get_cached_news_entry(ticker_symbol, label_date=None):
+    """The WHOLE cached entry — text, source label and pull meta — or None.
+
+    `get_cached_news` returns only the text, which is all the (now caller-less)
+    synthesis path ever needed. The live puller also wants the source label and the
+    pool meta, so a cache hit can name its feeds exactly as the original pull did
+    instead of falling back to a hardcoded 'Alpha Vantage'."""
     if label_date is None:
         label_date = datetime.today().date()
     with news_cache_lock:
         cache = _load_news_cache()
         entry = cache.get(_cache_key(ticker_symbol, label_date))
-        return entry.get("news_text") if entry else None
+        return dict(entry) if entry else None
 
 def set_cached_news(ticker_symbol, news_text, source, label_date=None, meta=None):
     """Stores news_text for this ticker/day so repeated triggers (e.g. across
@@ -650,24 +661,49 @@ def _actionable_file_is_from_today(today):
     except Exception:
         return False
 
+# A card that predates the multi-condition schema still carries what its trigger wrote:
+# a `status` line, and the options snapshot the 1-sigma path stamps. A card carrying NONE
+# of these was never written by a trigger at all, so it is not a legacy card and must not
+# be tagged as one — see _backfill_legacy_conditions.
+_TRIGGER_EVIDENCE = ("status", "trigger_pct", "expected_move", "atm_strike")
+
+
 def _backfill_legacy_conditions():
     """Stamp conditions:["1-sigma"] onto any preserved card that predates the
     multi-condition schema (the old engine had only the 1-sigma trigger, so every
     legacy card IS a 1-sigma card). Idempotent. Runs during startup BEFORE fetch_loop
     starts, so a preserved card reads as already-carded on the first pass — no
     re-card, no re-synthesis, no news fetch — keeping its existing why/price snapshot
-    exactly as a normally-created card would. Returns the number of cards upgraded."""
+    exactly as a normally-created card would.
+
+    THE TAG IS EVIDENCE-GATED (2026-09-02). "No conditions" was read as "legacy", which
+    is only true of a card a trigger wrote. ETH reached the board as three news fields
+    re-minted by a pull that raced the midnight clear, and this function promoted that
+    to a `1-sigma` card — a trigger tag with no expected move, no ATM strike and no
+    status behind it, sitting on the strip looking like a play. A card with no trigger
+    evidence is dropped instead: nothing rendered it, nothing can explain it, and the
+    price refresh would otherwise keep it looking live all day.
+
+    Returns (upgraded, dropped)."""
     with actionable_file_lock:
         current = get_actionable_moves_local()
-        upgraded = 0
-        for card in current.values():
-            if not card.get('conditions'):
+        upgraded, dropped = 0, []
+        for ticker, card in list(current.items()):
+            if card.get('conditions'):
+                continue
+            if any(card.get(k) is not None for k in _TRIGGER_EVIDENCE):
                 card['conditions'] = ["1-sigma"]
                 upgraded += 1
-        if upgraded:
+            else:
+                dropped.append(ticker)
+                del current[ticker]
+        if upgraded or dropped:
             with open(ACTIONABLE_FILE, 'w') as f:
                 json.dump(current, f)
-    return upgraded
+    for ticker in dropped:
+        print(f"[STARTUP] {ticker}: card carries no trigger evidence (no status, no "
+              f"expected move) — dropping it rather than tagging it 1-sigma")
+    return upgraded, len(dropped)
 
 def startup_actionable_reconcile():
     """Make actionable moves restart-tolerant. On engine start, PRESERVE today's live
@@ -679,9 +715,9 @@ def startup_actionable_reconcile():
     current = get_actionable_moves_local()
 
     if stamped == today:
-        upgraded = _backfill_legacy_conditions()
-        print(f"[STARTUP] Same-day restart — preserving {len(current)} live actionable move(s) for {today} "
-              f"({upgraded} legacy card(s) tagged 1-sigma).")
+        upgraded, dropped = _backfill_legacy_conditions()
+        print(f"[STARTUP] Same-day restart — preserving {len(current) - dropped} live actionable move(s) for {today} "
+              f"({upgraded} legacy card(s) tagged 1-sigma, {dropped} ghost card(s) dropped).")
         return
 
     if stamped is not None:
@@ -699,14 +735,14 @@ def startup_actionable_reconcile():
     # the multi-condition schema (so the first fetch pass won't re-synthesize them),
     # and stamp today so the very first restart onto this code is seamless.
     if current and _actionable_file_is_from_today(today):
-        upgraded = _backfill_legacy_conditions()
-        print(f"[STARTUP] No stamp yet; existing set was written today — adopting {len(current)} live move(s) "
-              f"for {today} ({upgraded} legacy card(s) tagged 1-sigma).")
+        upgraded, dropped = _backfill_legacy_conditions()
+        print(f"[STARTUP] No stamp yet; existing set was written today — adopting {len(current) - dropped} live move(s) "
+              f"for {today} ({upgraded} legacy card(s) tagged 1-sigma, {dropped} ghost card(s) dropped).")
         write_actionable_trading_date(today)
         return
     clear_actionable_moves(reason="startup: no trading-date stamp")
 
-def patch_actionable_move(ticker, updates):
+def patch_actionable_move(ticker, updates, only_if_exists=False):
     """Thread-safe read-modify-write for a single ticker's entry in ACTIONABLE_FILE.
 
     Most keys overwrite via dict.update(). The two multi-condition fields merge
@@ -714,9 +750,28 @@ def patch_actionable_move(ticker, updates):
     single card (one card per ticker — see turtle-volume-indicators.md):
       - `conditions`      — list of trigger-tag strings, unioned (order-preserving).
       - `condition_meta`  — per-condition data dict, shallow-merged.
+
+    `only_if_exists=True` makes the patch a pure UPDATE: if the ticker is gone, the
+    write is dropped instead of MINTING a new card from the patch. Every caller that
+    is amending a card it did not create wants this. Default stays False because the
+    trigger path legitimately relies on create-on-missing to post a new card.
+
+    WHY IT EXISTS (2026-09-02). ETH appeared on the board with `conditions:["1-sigma"]`
+    and no expected move, no ATM strike, no status, no name. It was never triggered:
+    yesterday's card left a 15:00 news retry outstanding, the retry finally ran at
+    00:00:17 ET, and the midnight rollover wiped the board in that same second. The
+    empty-news patch then re-created ETH out of its own three news fields. The hourly
+    price refresh (see the "existence check is load-bearing" note in fetch_loop) had
+    already learned this lesson; the news path had not. A user DISMISS is the same
+    race without the clock — dismiss a card with a pull in flight and the pull
+    resurrects it.
     """
     with actionable_file_lock:
         current = get_actionable_moves_local()
+        if only_if_exists and ticker not in current:
+            print(f"[CARD GONE] {ticker}: card no longer present — dropping patch "
+                  f"({', '.join(sorted(updates))})")
+            return False
         if ticker in current:
             card = current[ticker]
             if 'conditions' in updates:
@@ -734,6 +789,7 @@ def patch_actionable_move(ticker, updates):
             current[ticker] = updates
         with open(ACTIONABLE_FILE, 'w') as f:
             json.dump(current, f)
+    return True
 
 # --- News pull scheduling -----------------------------------------------------
 # A trigger no longer pulls news immediately. It schedules:
@@ -860,7 +916,7 @@ def av_calls_remaining():
     return max(0, AV_DAILY_LIMIT - av_calls_used())
 
 
-def _av_count_call():
+def _av_count_call(ticker=None):
     """Record one Alpha Vantage call and return the running total.
 
     Counted when the request is ISSUED, not when it succeeds — a timeout may still
@@ -872,6 +928,19 @@ def _av_count_call():
         d = _av_usage_today()
         d['calls'] = int(d.get('calls', 0)) + 1
         d['last_call_at'] = datetime.now(ET).isoformat(timespec='seconds')
+        # WHO SPENT IT. The counter alone cannot answer "why are we at 25 with ten
+        # cards", and `_av_mark_exhausted` overwrites it with the limit, so the tally
+        # is AV's verdict rather than our record. A ticker+timestamp per call makes the
+        # budget auditable from disk instead of from console scrollback, and makes the
+        # two interesting cases visible: the same ticker called twice, and a total that
+        # falls short of AV's own count (calls charged to this key from elsewhere).
+        # Capped so a runaway day cannot grow the file without bound.
+        log = d.get('call_log')
+        if not isinstance(log, list):
+            log = []
+        log.append({"ticker": ticker or "?",
+                    "at": datetime.now(ET).isoformat(timespec='seconds')})
+        d['call_log'] = log[-100:]
         atomic_write_json(AV_USAGE_FILE, d)
         return d['calls']
 
@@ -943,6 +1012,10 @@ def schedule_volume_news_pull(ticker):
         "news_state": "pending",
         "news_due_at": datetime.now(ET).timestamp(),
         "volume_news_pulled": True,
+        # Consumed by the pull that honours it (run_due_news_pulls). `volume_news_pulled`
+        # is the once-a-day GUARD and stays True; this is the one-shot instruction to
+        # skip the cache, so the spike gets the fresh look it is evidence for.
+        "news_force_fresh": True,
     })
     print(f"[NEWS SCHED] {ticker}: 2x-volume fire — re-arming a fresh pull now "
           f"(was '{prev}')")
@@ -955,6 +1028,40 @@ def _opt_from_card(card):
             "atm_strike": card.get('atm_strike'), "atm_put_price": card.get('atm_put_price'),
             "atm_expiration": card.get('atm_expiration'), "put_wall": card.get('put_wall'),
             "call_wall": card.get('call_wall'), "atm_iv": card.get('atm_iv')}
+
+
+def _news_target_is_live(ticker, started):
+    """True if `ticker`'s card is still the one this news attempt was scheduled for.
+
+    Two ways it stops being that, both of which must abort the attempt:
+      - the card is GONE (midnight rollover, or a user dismiss), or
+      - the board was cleared since `started`, so any card standing under this ticker
+        now is a NEW one minted after the clear — patching it would paste a narrative
+        about yesterday's move onto today's trigger.
+
+    The clear test mirrors the `last_clear_time > triggered_at` guard that
+    run_synthesis_in_background has always had; that path is unwired, so the live news
+    loop was running without it.
+    """
+    with actionable_file_lock:
+        present = ticker in get_actionable_moves_local()
+    with last_clear_lock:
+        cleared_since = last_clear_time > started
+    if not present:
+        print(f"[CARD GONE] {ticker}: card cleared or dismissed mid-pull — abandoning attempt")
+        return False
+    if cleared_since:
+        print(f"[CARD GONE] {ticker}: board cleared after this attempt started — abandoning attempt")
+        return False
+    return True
+
+
+def _clear_force_fresh(ticker):
+    """Spend the one-shot force-fresh instruction, whatever the attempt returned.
+
+    An attempt that found nothing still USED the spike's fresh look; leaving the flag
+    set would make every later pull for that ticker skip the cache."""
+    patch_actionable_move(ticker, {"news_force_fresh": False}, only_if_exists=True)
 
 
 def _advance_after_empty(ticker, now=None):
@@ -970,11 +1077,11 @@ def _advance_after_empty(ticker, now=None):
         # pull due at the sweep, so "Synthesis Pending" is TRUE -- clearing it would
         # replace an accurate status with a finished-looking one and hide that
         # something is still coming. Only the terminal branch below is stale.
-        patch_actionable_move(ticker, {
+        if patch_actionable_move(ticker, {
             "news_state": "retry", "news_due_at": sweep.timestamp(),
             "why": f"No news as of {now:%H:%M} ET — next pull @ {sweep:%H:%M} ET.",
-        })
-        print(f"[NEWS NONE] {ticker}: nothing fresh — retry at {sweep:%H:%M} ET")
+        }, only_if_exists=True):
+            print(f"[NEWS NONE] {ticker}: nothing fresh — retry at {sweep:%H:%M} ET")
     else:
         # Stable wording ON PURPOSE — this is the string to count when asking how
         # often a flagged move never got a story (user, 2026-08-11).
@@ -998,8 +1105,8 @@ def _advance_after_empty(ticker, now=None):
         card = (get_actionable_moves_local() or {}).get(ticker) or {}
         if (card.get('status') or '').strip() == "TRIGGERED - Synthesis Pending":
             done_patch["status"] = "TRIGGERED - 1-sigma Move"
-        patch_actionable_move(ticker, done_patch)
-        print(f"[NEWS NONE] {ticker}: no news surfaced today — closed out")
+        if patch_actionable_move(ticker, done_patch, only_if_exists=True):
+            print(f"[NEWS NONE] {ticker}: no news surfaced today — closed out")
 
 
 # --- Peer-earnings context (the FALLBACK tier) ----------------------------------
@@ -1609,17 +1716,49 @@ def run_due_news_pulls():
             continue
         if now.timestamp() < float(due):
             continue
+        # THE CACHE IS CONSULTED AGAIN (2026-09-03). `news_cache.json` was being
+        # WRITTEN by this loop and read by nobody: `get_cached_news`'s only caller was
+        # `run_synthesis_in_background`, which has had no caller since `e776b3b`. So a
+        # card coming due a second time — a retry, a re-mint after rolling off the
+        # board — spent a fresh AV call to fetch news already sitting on disk, against
+        # a 25/day budget with a measured median of 24.
+        #
+        # A 2x-volume fire must still pull FRESH: volume arrives with definitive news,
+        # and a spike is evidence something printed since the morning attempt (user,
+        # 2026-08-12). `volume_news_pulled` cannot express that — it stays True once
+        # set, so it would bypass the cache for the rest of the day. `news_force_fresh`
+        # is consumed by the pull that honours it.
+        force_fresh = bool(card.get('news_force_fresh'))
+        cached_entry = None if force_fresh else get_cached_news_entry(ticker)
+
         # Checked BEFORE the pacer: _av_pace() sleeps up to 30s, and doing that only
         # to discover there is no budget would stall this pass for every due card.
         # break, not continue -- if the budget is gone it is gone for all of them.
-        if av_calls_remaining() <= 0:
+        # AFTER the cache check, so an exhausted budget no longer strands a card whose
+        # news we already hold.
+        if cached_entry is None and av_calls_remaining() <= 0:
             print(f"[AV BUDGET] {AV_DAILY_LIMIT}/{AV_DAILY_LIMIT} spent — "
                   f"deferring due pulls (still waiting: {ticker})")
             break
+        # Timestamped BEFORE the work so the liveness checks below can tell "this card
+        # was cleared while I was working" from "this card was re-minted afterwards".
+        attempt_started = time.time()
+        # Re-checked here, not just at the top of the pass: `cards` is a snapshot, and a
+        # pass can spend minutes in _av_pace() + synthesis on EARLIER tickers, during
+        # which the midnight rollover can wipe the board out from under this one. Checked
+        # before the call so a dead card costs no AV budget either.
+        if not _news_target_is_live(ticker, attempt_started):
+            continue
         try:
-            _av_pace()
-            news_text, news_meta = fetch_latest_news(ticker)
-            if news_text is AV_UNAVAILABLE:
+            if cached_entry is not None:
+                news_text = cached_entry.get("news_text")
+                news_meta = cached_entry.get("meta") or {}
+                print(f"[NEWS CACHE HIT] {ticker}: today's pull is already cached — "
+                      f"no AV call.")
+            else:
+                _av_pace()
+                news_text, news_meta = fetch_latest_news(ticker)
+            if cached_entry is None and news_text is AV_UNAVAILABLE:
                 # Could not ask. The card keeps its STATE — advancing it toward "no news
                 # surfaced today" would assert something we never earned. But it must
                 # NOT stay due, or this becomes a spend loop: news_due_at is already in
@@ -1636,7 +1775,8 @@ def run_due_news_pulls():
                 # in the same place and spends another call. Stop immediately; there is
                 # nothing to wait for. Only a genuine wire failure earns the backoff.
                 if news_meta.get("retryable") is False:
-                    patch_actionable_move(ticker, {"news_due_at": None})
+                    patch_actionable_move(ticker, {"news_due_at": None},
+                                          only_if_exists=True)
                     print(f"[NEWS PULL] {ticker}: failure is not retryable (code fault "
                           f"after a good response) — stopping, card left in '{state}'")
                     continue
@@ -1646,16 +1786,24 @@ def run_due_news_pulls():
                     # Stop retrying today. due=None makes run_due_news_pulls skip it
                     # (`if ... or not due: continue`) while the state and text stand.
                     patch_actionable_move(ticker, {"news_due_at": None,
-                                                   "news_unavailable_tries": tries})
+                                                   "news_unavailable_tries": tries},
+                                          only_if_exists=True)
                     print(f"[NEWS PULL] {ticker}: Alpha Vantage unavailable {tries}x — "
                           f"giving up for today, card left in '{state}'")
                 else:
                     retry_at = now + timedelta(minutes=NEWS_UNAVAILABLE_BACKOFF_MIN)
                     patch_actionable_move(ticker, {"news_due_at": retry_at.timestamp(),
-                                                   "news_unavailable_tries": tries})
+                                                   "news_unavailable_tries": tries},
+                                          only_if_exists=True)
                     print(f"[NEWS PULL] {ticker}: Alpha Vantage unavailable "
                           f"({tries}/{NEWS_UNAVAILABLE_MAX_TRIES}) — backing off to "
                           f"{retry_at:%H:%M} ET, card left in '{state}'")
+                continue
+
+            # The pull itself can straddle the rollover — ETH's did, at 00:00:17 on
+            # 2026-09-02, and the empty-news patch re-minted the card the clear had just
+            # archived. Checked here so a dead card costs no synthesis tokens either.
+            if not _news_target_is_live(ticker, attempt_started):
                 continue
 
             if news_text is None:
@@ -1666,6 +1814,7 @@ def run_due_news_pulls():
                 # nothing published against it goes back to the 15:00 sweep for a
                 # second look at the wire rather than being closed out on a calendar
                 # entry.
+                _clear_force_fresh(ticker)
                 _advance_after_empty(ticker, now)
                 continue
 
@@ -1683,7 +1832,15 @@ def run_due_news_pulls():
                       f"more than one source")
             # meta carries `pool` + `chosen_sources` — cached alongside the text so a
             # later review can answer how thin the pool was without re-pulling.
-            set_cached_news(ticker, news_text, news_source, meta=news_meta)
+            if cached_entry is None:
+                set_cached_news(ticker, news_text, news_source, meta=news_meta)
+            else:
+                # Name the feeds the ORIGINAL pull used; re-deriving from meta would
+                # fall back to a hardcoded 'Alpha Vantage' on an entry that may have
+                # been carried entirely by RSS.
+                news_source = cached_entry.get("source") or news_source
+                # A cache hit consumes the force-fresh flag too — it is cleared below
+                # either way, so a volume re-arm can never fire twice off one spike.
             # POOL LINE. The source label alone said WHICH feeds contributed but never how
             # thin the pool was -- an AV corpus of 50 with 1 fresh article reads identically
             # to a healthy one. These counts are the difference between "ranked badly" and
@@ -1709,6 +1866,7 @@ def run_due_news_pulls():
                                        round(float(_trig or 0), 2))
             why = ai.get('why', '')
             if not why.strip():
+                _clear_force_fresh(ticker)
                 _advance_after_empty(ticker, now)
                 continue
             # CLEAR THE PENDING STATUS. "TRIGGERED - Synthesis Pending" is set when the
@@ -1721,10 +1879,19 @@ def run_due_news_pulls():
                 "news_source": news_source, "why": why,
                 "structure": ai.get('structure', ''), "impact": ai.get('impact', ''),
                 "news_state": "done", "news_due_at": None,
+                # CONSUMED HERE. A one-shot instruction that is never cleared is a
+                # permanent one: left set, this ticker would skip the cache on every
+                # later pull, which is the failure `volume_news_pulled` already has and
+                # the reason this is a separate field rather than a reuse of it.
+                "news_force_fresh": False,
             }
             if (card.get('status') or '').strip() == "TRIGGERED - Synthesis Pending":
                 done_patch["status"] = "TRIGGERED - 1-sigma Move"
-            patch_actionable_move(ticker, done_patch)
+            # generate_ai_synthesis is the longest wait in the pass — re-check rather
+            # than trust the pre-synthesis result.
+            if not _news_target_is_live(ticker, attempt_started):
+                continue
+            patch_actionable_move(ticker, done_patch, only_if_exists=True)
             print(f"[NEWS PULL] {ticker}: synthesis complete ({news_source})")
         except Exception as e:
             print(f"[NEWS PULL ERROR] {ticker}: {type(e).__name__}: {e}")
@@ -1979,7 +2146,7 @@ def fetch_latest_news(ticker_symbol):
             f"&limit={NEWS_FETCH_LIMIT}"
             f"&apikey={ALPHA_VANTAGE_KEY}"
         )
-        used = _av_count_call()
+        used = _av_count_call(ticker_symbol)
         print(f"[AV BUDGET] call {used}/{AV_DAILY_LIMIT} — {ticker_symbol} "
               f"({AV_DAILY_LIMIT - used} left today)")
         resp = requests.get(url, timeout=10)
@@ -3470,6 +3637,12 @@ app.register_blueprint(price_history_bp)
 #     starter too — start_macro_loop() is called from __main__ below. ---
 from engine.macro import bp as macro_bp, start_macro_loop
 app.register_blueprint(macro_bp)
+
+# --- Moonshot: the ten-slot momentum book with a bank, served as a BOOK rather than a
+#     position (engine/moonshot.py, 2026-09-09). Its own Blueprint because it has no
+#     ticker and does not fit the per-ticker registry; cached per start date. ---
+from engine.moonshot import bp as moonshot_bp
+app.register_blueprint(moonshot_bp)
 
 # --- Market data + ticker management: extracted to engine/market.py
 #     (Blueprint; 2026-07-22 split phase 4). Routes only, no thread —

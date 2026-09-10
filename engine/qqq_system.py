@@ -480,6 +480,164 @@ def _core_position(fs, spec, T):
     return out
 
 
+def _overlay_runs(fs, ov, spec):
+    """The dark-era overlay's positions, derived from its own `add` mask.
+
+    IT HAS NO TRADE RECORDS AND IT STILL HELD POSITIONS — those are different things, and
+    conflating them left XLE's ledger showing only the core while the overlay was long for
+    31.9% of the calendar (user, 2026-09-02). A run of consecutive `add` days IS a position:
+    it opens, it is held, it closes, and it has a return.
+
+    DATES AND PRICES FOLLOW THE MODULE'S OWN CONVENTION, which the adapter docstring below
+    spells out: the overlay earns a day's return ON the day it is on, so the price it would
+    have bought at is the PRIOR close. Entry is therefore dated to the bar before the run,
+    not to its first day — publishing the first `add` day's close as the entry would be off
+    by one bar in a field a reader compares against `pnl_pct`.
+
+    P&L comes from `ov.comb`, the overlay's own combined series, so this reads the number the
+    script computed rather than recomputing it from prices.
+    """
+    out, i, n = [], 1, fs.n
+    add = ov.add
+    while i < n:
+        if not bool(add[i]):
+            i += 1
+            continue
+        a = i
+        while i + 1 < n and bool(add[i + 1]):
+            i += 1
+        z = i                                   # run is [a .. z] inclusive
+        r = 1.0
+        for x in ov.comb[a:z + 1]:
+            r *= (1.0 + float(x))
+        e = max(0, a - 1)                       # bought at the prior close
+        # WHY IT ENDED, read off the day after rather than assumed: the era can turn, the
+        # core can take the slot, or a new 252-day low can push it to bills.
+        nxt = z + 1
+        if nxt >= n:
+            why = "OPEN"
+        elif bool(fs.golden[nxt]):
+            why = "golden cross"
+        else:
+            why = "52wk low"
+        out.append({
+            "e": e, "x": z, "ret": r - 1.0, "why": why,
+            "open": nxt >= n,
+        })
+        i += 1
+    return out
+
+
+def _recent_trades(fs, spec, T, flush=None, overlay=None, rows=None, count=10):
+    """The last `count` round trips, NEWEST FIRST — the Strategy tab's right column.
+
+    Shared across adapters for the same reason as `_era` and `_core_position`: nothing here
+    names a sleeve, it looks one up in `_sys(spec)["kind_state"]`.
+
+    PRICES ARE RAW, P&L IS ADJUSTED, and that is deliberate — it is the house convention
+    ("signals from unadjusted closes, P&L from adjusted") and it is what `_core_position`
+    already does, so the ledger and the facts strip agree on the trade they share. On a
+    dividend payer `exit_price / entry_price - 1` will therefore NOT equal `pnl_pct`; the
+    difference is the distribution. Do not "fix" that by adjusting the prices — it would
+    put numbers on screen that never printed on a chart.
+
+    A still-open position is included, flagged `open`, with null exit fields: the panel is
+    read to answer "what has this thing been doing", and silently dropping the live trade
+    is how a ledger stops matching the state shown directly above it.
+
+    ONE BOOK, BOTH SLEEVES (user, 2026-09-01). `T` is the CORE's list and the VIX flush
+    keeps its own, so this used to publish the core alone — and the 2025-04-07 flush went
+    missing from between two rows that were on screen, reading as an unbroken history with
+    a trade removed from the middle. The split is internal: the registry loads both modules
+    as one strategy, Era P&L is already compounded on the combined curve, and the state pill
+    already says "VIX Bounce". The ledger was the one place that disagreed.
+
+    The two records are shaped differently — the core carries bar INDICES and adjusted
+    fills, the flush carries DATES, a percent and its own raw levels — so each is
+    normalised here and the merged list is ordered by entry date. `count` therefore means
+    the last `count` of the whole book, which is what the column claims to show.
+    """
+    ks = _sys(spec).get("kind_state", {})
+    # The era each leg happened in — BOTH are published and both are rendered. A row whose
+    # two dates differ in colour is a trade that crossed an era boundary while held.
+    # On QQQ the variation is on the exit side (10 of 57 close dark, carried through the
+    # death cross by never-sell-below-the-200 or by the flush's own 200 exit) because this
+    # core enters only while golden. That is a fact about THIS strategy, not about the
+    # field: GLD's dark sleeve and XLE's prehalo both enter in dark eras, and this contract
+    # is the one every strategy's ledger is built from.
+    _era_at = lambda i: "golden" if bool(fs.golden[i]) else "dark"
+    _ix = {d.date(): i for i, d in enumerate(fs.dates)}
+    out = []
+    for t in T:
+        e, x = int(t["e"]), int(t["x"])
+        is_open = t["why"] == "OPEN"
+        out.append({
+            "sleeve": ks.get(t["kind"], t["kind"]),
+            "entry_date": fs.dates[e].date().isoformat(),
+            "entry_price": round(float(t["fill"] / fs.ratio[e]), 2),
+            "exit_date": None if is_open else fs.dates[x].date().isoformat(),
+            "exit_price": None if is_open else round(float(t["xf"] / fs.ratio[x]), 2),
+            "pnl_pct": None if is_open else round(float(t["ret"]) * 100, 2),
+            "held": int(x - e),
+            "why": str(t["why"]),
+            "entry_era": _era_at(e),
+            "exit_era": None if is_open else _era_at(x),
+            "open": is_open,
+        })
+    for f in (flush or []):
+        # NO PRICES ON A FLUSH ROW, deliberately. The overlay publishes dates, a hold and a
+        # return; its fills (`fa`/`xa`) are ADJUSTED and it does not emit the raw levels.
+        #
+        # I briefly added those fields TO `system_plus_flush.py` so this could show them.
+        # That was a foul: it is a blessed strategy module the engine LOADS, and those
+        # modules are isolated on purpose — they are the ground truth everything else is
+        # measured against, and they change when the user changes them, not when a panel
+        # wants a nicer column. Reverted 2026-09-02.
+        #
+        # The alternative, reconstructing the levels here from the frame, is worse in a
+        # quieter way: it would put a second copy of the overlay's fill rule in the
+        # dashboard, free to drift from the one that computes the P&L. So the row shows what
+        # the module actually publishes and leaves the price cells empty.
+        is_open = f["x"] == fs.dates[fs.n - 1].date()
+        out.append({
+            "sleeve": _sys(spec).get("kind_state", {}).get("flush", "VIX flush"),
+            "entry_date": f["e"].isoformat(),
+            "entry_price": None,
+            "exit_date": None if is_open else f["x"].isoformat(),
+            "exit_price": None,
+            "pnl_pct": None if is_open else round(float(f["ret"]), 2),
+            "held": int(f["hold"]),
+            "why": "OPEN" if is_open else "200 touch",
+            # The flush record carries DATES, not bar indices, so its era is looked up
+            # through the frame's own calendar rather than recomputed.
+            "entry_era": _era_at(_ix[f["e"]]) if f["e"] in _ix else None,
+            "exit_era": None if is_open or f["x"] not in _ix else _era_at(_ix[f["x"]]),
+            "open": is_open,
+        })
+    # Pre-shaped rows from an adapter whose book is not a list of core trades. Tobacco's is
+    # the merged RUN list, and the merge is the point: its two tiers share one slot and a
+    # handover between them is NOT a transaction, so building the ledger from the core sleeve
+    # list would invent trades the book never made.
+    out.extend(rows or [])
+    for o in (overlay or []):
+        is_open = bool(o["open"])
+        out.append({
+            "sleeve": _sys(spec).get("overlay_state", "overlay"),
+            "entry_date": fs.dates[o["e"]].date().isoformat(),
+            "entry_price": round(float(fs.c[o["e"]]), 2),
+            "exit_date": None if is_open else fs.dates[o["x"]].date().isoformat(),
+            "exit_price": None if is_open else round(float(fs.c[o["x"]]), 2),
+            "pnl_pct": None if is_open else round(float(o["ret"]) * 100, 2),
+            "held": int(o["x"] - o["e"]),
+            "why": "OPEN" if is_open else str(o["why"]),
+            "entry_era": _era_at(o["e"]),
+            "exit_era": None if is_open else _era_at(o["x"]),
+            "open": is_open,
+        })
+    out.sort(key=lambda r: r["entry_date"], reverse=True)
+    return out[:count]
+
+
 def _adapt_full_system(spec, refresh=False):
     """QQQ: the core system + the VIX-flush idle-cash overlay.
 
@@ -502,6 +660,10 @@ def _adapt_full_system(spec, refresh=False):
     # --- the VIX flush overlay sits on top and only trades while the system is flat
     if state == _sys(spec)["cash_state"] and pf.trades:
         ft = pf.trades[-1]
+        # Compares the exit date to the last bar. That cannot tell a still-running flush
+        # (exit CLAMPED to the final bar) from one that genuinely filled today — but the
+        # fix for that was a field added to a blessed strategy module, which is not this
+        # panel's to change. Four flush trades in 26 years; the ambiguity is theoretical.
         if ft["x"] == fs.dates[last_i].date():
             state = "VIX Bounce"
             entry_date = ft["e"].isoformat()
@@ -531,6 +693,15 @@ def _adapt_full_system(spec, refresh=False):
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
         "asof": fs.dates[last_i].date().isoformat(),
+        # The Strategy tab's two columns. `rules` is served from the config block and is
+        # NEVER written here — it carries the parameter values, and this repo has a public
+        # remote (see `_spec_env`'s note). A strategy with no `rules` yet serves [] and the
+        # renderer shows nothing, which is why this needs no per-strategy guard.
+        "rules": _sys(spec).get("rules") or [],
+        # The notional phase diagram's bar counts. Same rule as `rules`: served from the
+        # config block, never authored here.
+        "phase_diagram": _sys(spec).get("phase_diagram") or None,
+        "trades": _recent_trades(fs, spec, T, flush=pf.trades),
     }
 
 
@@ -597,6 +768,16 @@ def _adapt_xle_avoidlow(spec, refresh=False):
         "era": era,
         "era_days": int(last_i - era_start + 1),
         "era_pnl_pct": round((era_pnl - 1.0) * 100, 2),
+        # The Strategy tab, same contract as QQQ's and GLD's. Both served from the config
+        # block, never authored here.
+        #
+        # NO OVERLAY ROWS IN THE LEDGER, and that is not an omission: the avoid-post-low
+        # overlay is a DAY FILTER with no trade records to merge — unlike QQQ's flush, which
+        # is a discrete round trip and does get merged. What it does instead is say so on the
+        # diagram's dark band, via `dark_note`.
+        "rules": _sys(spec).get("rules") or [],
+        "phase_diagram": _sys(spec).get("phase_diagram") or None,
+        "trades": _recent_trades(core, spec, T, overlay=_overlay_runs(core, ov, spec)),
         "asof": core.dates[last_i].date().isoformat(),
     }
 
@@ -679,8 +860,88 @@ def _adapt_gld(spec, refresh=False):
         # `dark_gate` is the module's own terminal state; None while a position is open.
         "gate_level": (m.dark_gate or {}).get("level"),
         "gate_status": (m.dark_gate or {}).get("status"),
+        # The Strategy tab, same contract as QQQ's. Both are served from the config block and
+        # never authored here — they carry the parameter values and this repo has a public
+        # remote.
+        #
+        # This comment used to say GLD got NO diagram "deliberately", because QQQ's picture
+        # opens on a golden cross its halo buys and GLD takes no cross entry at all. That was
+        # true of QQQ's SPEC, not of the diagram: once the renderer took `opens` and its own
+        # path from the published block, GLD's bands became its own — a gate band that takes
+        # dips, and a dark band its dark sleeve trades. The spec was written and this line
+        # was not revised, so the panel served `phase_diagram: None` and the card stayed
+        # hidden with the config sitting right there.
+        "rules": _sys(spec).get("rules") or [],
+        "phase_diagram": _sys(spec).get("phase_diagram") or None,
+        "trades": _recent_trades(fs, spec, T),
         "asof": fs.dates[last_i].date().isoformat(),
     }
+
+
+class _TobaccoFrame:
+    """Attribute view over tobacco's Book, which names things its own way.
+
+    The shared helpers read `golden`, `c` and `ratio`; Book publishes `dark`, `C` and
+    `ratio`. Adapting the one shape to the other here beats teaching the helpers a second
+    vocabulary — same reasoning as `_FrameView` for gld_system.
+    """
+
+    def __init__(self, b):
+        self.dates, self.n, self.ratio = b.dates, b.n, b.ratio
+        self.c = b.C
+        self.golden = ~b.dark
+
+
+def _tobacco_rows(m, spec):
+    """The last round trips, built from RUNS — the MERGED book, not the core sleeve list.
+
+    ONE SLOT, TWO TIERS, AND A HANDOVER IS NOT A TRADE (the engine header says so outright).
+    `TRADES` holds core sleeve records only; `RUNS` holds what the book actually did, with
+    `win`/`wout` naming which tier opened and closed each one. A ledger built from TRADES
+    would omit every histate run and would split a histate->core handover into two trades
+    that never happened.
+
+    The core sleeve's own name is recovered by looking the run's boundary bars up in TRADES,
+    so a run opened by a dark bid says "Dark-era bid" rather than the generic "core".
+    """
+    ks = _sys(spec).get("kind_state", {})
+    by_in = {int(t["e"]): t for t in m.TRADES}
+    by_out = {int(t["x"]): t for t in m.TRADES}
+    fs = _TobaccoFrame(m.B)
+    era_at = lambda i: "golden" if bool(fs.golden[i]) else "dark"
+    rows = []
+    for r in m.RUNS:
+        a, z = int(r["a"]), int(r["z"])
+        is_open = bool(r.get("open"))
+        ct, xt = by_in.get(a), by_out.get(z)
+        if r.get("win") == "histate":
+            sleeve = ks.get("histate", "histate")
+        elif ct is not None:
+            sleeve = ks.get(ct["kind"], ct["kind"])
+        else:
+            sleeve = ks.get("histate", "histate")
+        if is_open:
+            why = "OPEN"
+        elif r.get("wout") == "histate":
+            why = "252d low"          # tier 1's own exit
+        elif xt is not None:
+            why = str(xt["why"])
+        else:
+            why = str(r.get("wout") or "")
+        rows.append({
+            "sleeve": sleeve,
+            "entry_date": fs.dates[a].date().isoformat(),
+            "entry_price": round(float(r["ef"] / fs.ratio[a]), 2),
+            "exit_date": None if is_open else fs.dates[z].date().isoformat(),
+            "exit_price": None if is_open else round(float(r["xf"] / fs.ratio[z]), 2),
+            "pnl_pct": None if is_open else round(float(r["ret"]), 2),
+            "held": int(z - a),
+            "why": why,
+            "entry_era": era_at(a),
+            "exit_era": None if is_open else era_at(z),
+            "open": is_open,
+        })
+    return rows
 
 
 def _adapt_tobacco(spec, refresh=False):
@@ -833,6 +1094,20 @@ def _adapt_tobacco(spec, refresh=False):
                             else None),
         "state_end_note": ("state ends here — the position still holds for the 200"
                            if st["sleeve"] == "histate" else None),
+        # The Strategy tab. `rules` from the config block; the ledger from the MERGED RUNS
+        # rather than the core sleeve list, because the two tiers share one slot and a
+        # handover between them is not a transaction.
+        #
+        # THE DIAGRAM IS THE SHARED ONE, RELABELLED. This said tobacco could not use it --
+        # gate, pre-B1, Breakout 1, post-B1 are not its phases -- which confused the WORDS
+        # for the SHAPE. The shape is the same on all four: a pullback bought, a 252-day high
+        # that changes who owns the slot, a 252-day low that ends it. `band_names` and
+        # `sleeve_names` rename it, and `silent_entry` drops the buy caret on the handover,
+        # which buys nothing.
+        "rules": _sys(spec).get("rules") or [],
+        "phase_diagram": _sys(spec).get("phase_diagram") or None,
+        "trades": _recent_trades(_TobaccoFrame(m.B), spec, [],
+                                 rows=_tobacco_rows(m, spec)),
         "asof": st["asof"],
     }
 

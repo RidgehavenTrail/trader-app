@@ -180,6 +180,11 @@
     .str-dial-rate { font-family:ui-monospace,monospace; font-size:10px; color:#cbd5e1;
                      font-variant-numeric:tabular-nums; margin:-1px 0 5px; }
     .str-dial-rate .u { color:#64748b; }
+    /* The lag marker is AMBER, not red: a source running a day late is a fact about the
+       feed, not a fault in the board, and red here would compete with the regime colours
+       the panel already spends on meaning. It appears only when the expected print has
+       not landed, so anything showing at all is worth a look. */
+    .str-dial-rate .lag { color:#e0b155; }
     .str-row { display:flex; align-items:baseline; font-size:11px; line-height:1.6; }
     /* Row labels carry the AI Bubble section's weight (.sl-nm / .sl-lbl are #e2e8f0
        at 500) — at #64748b they read as disabled rather than as labels
@@ -565,6 +570,183 @@
     .na-pending { font-size:11px; color:#fbbf24; background:rgba(251,191,36,0.07);
                   border-left:2px solid rgba(251,191,36,0.5); padding:5px 8px;
                   margin-bottom:8px; border-radius:2px; }
+
+    /* ===== MOONSHOT (2026-09-09) -- the strategy panel's Portfolio tab ===============
+       The rail REUSES .na-card / .na-d / .na-cur / .na-chg from the news archive above, so
+       it is that widget and not a lookalike; only the container differs, because the
+       books beside it are far taller than a 200px news body and a 200px rail next to them
+       would be a small scrolling box beside a tall table. */
+    .mo-ctl { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;
+              flex:0 0 auto; }
+    .mo-ctl label { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:#475569; }
+    /* THE RESET CONTROL, under the active book. A calendar entry (color-scheme:dark so the
+       native picker matches the board), a button that must be PRESSED -- changing the date
+       alone does nothing, a re-run is ~11s of engine and should not fire on a mis-click --
+       and a status that says so while it runs. */
+    .mo-ctl-run { margin:10px 0 0 2px; }
+    #mo-start { background:#0b1424; color:#e2e8f0; border:1px solid #334155; border-radius:5px;
+                padding:3px 8px; font-family:ui-monospace,monospace; font-size:11px;
+                color-scheme:dark; }
+    #mo-start:focus-visible { outline:2px solid #818cf8; outline-offset:1px; }
+    #mo-run { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+              color:#c7d2fe; background:rgba(129,140,248,.14); border:1px solid rgba(129,140,248,.42);
+              border-radius:5px; padding:4px 10px; cursor:pointer; font-family:ui-sans-serif,system-ui,sans-serif; }
+    #mo-run:hover:not(:disabled) { background:rgba(129,140,248,.24); color:#e0e7ff; }
+    #mo-run:disabled { opacity:.45; cursor:progress; }
+    #mo-run:focus-visible { outline:2px solid #818cf8; outline-offset:2px; }
+    .mo-status { font-family:ui-monospace,monospace; font-size:10.5px; color:#94a3b8;
+                 display:inline-flex; align-items:center; gap:7px; }
+    .mo-status.busy { color:#fbbf24; }
+    .mo-status.busy::before { content:''; width:7px; height:7px; border-radius:50%;
+                              background:#fbbf24; animation:moPulse 1.1s ease-in-out infinite; }
+    .mo-status.err { color:#f87171; }
+    .mo-status.ok { color:#64748b; }
+    @keyframes moPulse { 0%,100% { opacity:.25; transform:scale(.8); } 50% { opacity:1; transform:scale(1); } }
+    @media (prefers-reduced-motion:reduce) { .mo-status.busy::before { animation:none; } }
+    .mo-hint { font-size:10px; color:#475569; font-style:italic; }
+    .mo-split { display:flex; flex:1; min-height:0; border:1px solid #1e293b; border-radius:8px;
+                overflow:hidden; }
+    .mo-rail { flex:0 0 118px; background:#0b1424; border-right:1px solid #1e293b;
+               display:flex; flex-direction:column; gap:3px; padding:6px; overflow-y:auto; }
+    .mo-rail .na-card { flex:0 0 auto; }
+    .mo-detail { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
+    .mo-substrip { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;
+                   padding:7px 13px; border-bottom:1px solid #1e293b; flex:0 0 auto;
+                   font-family:ui-monospace,monospace; font-size:10.5px; color:#64748b; }
+    .mo-substrip b { color:#e2e8f0; font-weight:600; }
+    .mo-ev { white-space:nowrap; }
+    .mo-books { padding:11px 13px 14px; overflow-y:auto; flex:1; min-height:0; }
+    /* TWO HALVES side by side -- his standing default. Nine columns against four, so the
+       active headers are abbreviated to keep a true 50/50 rather than leaning the grid. */
+    /* THE ACTIVE BOOK GETS ITS NATURAL WIDTH (user, 2026-09-10: "expand the room for the
+       active book, shift the rank list and bank book to the right"). An equal split
+       clipped its nine columns while the bank sat in slack; max-content sizes the first
+       track to the table and the rest take what remains. */
+    .mo-halves { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:16px;
+                 align-items:start; }
+    /* With the RANK card: a thin content-width column between the two books. */
+    .mo-halves.with-rank { grid-template-columns:max-content auto minmax(0,1fr); }
+    .mo-halves > section { min-width:0; }
+    /* THE RANK LIST -- THIN (user, 2026-09-10). Not a card and not a table: a quiet
+       ~110px column of five rows. Rank, ticker, momentum, one mark. */
+    .mo-rank { padding-top:2px; }
+    /* Same card as the two books (user: "I didn't say no card"), just tighter inside,
+       and no centring -- it sits under its own heading. */
+    .mo-rank .mo-card.mo-fit { padding:5px 9px 3px; margin:0; }
+    .mo-rank-row:last-child { border-bottom:0; }
+    .mo-rank-h { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+                 color:#64748b; margin:0 0 5px; white-space:nowrap; display:flex; align-items:baseline; gap:6px; }
+    .mo-rank-h .d { font-family:ui-monospace,monospace; font-weight:400; letter-spacing:0; color:#475569; }
+    .mo-rank-h .v { color:#fbbf24; background:rgba(251,191,36,.10); border:1px solid rgba(251,191,36,.4);
+                    border-radius:3px; padding:0 4px; font-size:8.5px; letter-spacing:.08em; }
+    .mo-rank-row { display:grid; grid-template-columns:10px 40px 40px 12px; gap:5px; align-items:baseline;
+                   font-family:ui-monospace,monospace; font-size:10.5px; color:#94a3b8; padding:2px 0;
+                   border-bottom:1px solid rgba(30,41,59,.5); cursor:default; }
+    .mo-rank-row .n { color:#475569; font-size:9.5px; }
+    .mo-rank-row .tk { color:#e2e8f0; font-weight:600; }
+    /* A gated ticker wears the VETO badge's amber; its ✕ stays RED (user, 2026-09-10:
+       "stick with the red X marks -- that's more meaningful"). The colour says which
+       state, the mark says what it costs. */
+    .mo-rank-row.gated .tk { color:#fbbf24; }
+    .mo-rank-row .m { text-align:right; font-variant-numeric:tabular-nums; }
+    .mo-rank-row .mk { text-align:center; font-weight:700; }
+    .mo-rank-row .mk.x { color:#f87171; }
+    .mo-rank-row .mk.ok { color:#34d399; }
+    /* The moon under the rank list: stacked, centred in the thin column. */
+    /* Stacked: moon first, its caption, then the key at the bottom (user, 2026-09-10).
+       column-reverse keeps the key first in the DOM, where the side-by-side layout
+       wants it, and puts it last on screen here. */
+    .mo-rank .mo-pie { flex-direction:column-reverse; align-items:center; gap:8px; margin:14px 0 0; }
+    .mo-rank .mo-pie-key { align-items:flex-start; }
+    /* Stack only when the panel is genuinely too narrow for two cards. 1100 was too eager:
+       a 1100px viewport stacked the books and put the bank -- and its pie -- below the
+       fold. Each card scrolls sideways inside itself before the grid gives up a column. */
+    @media (max-width:980px) { .mo-halves { grid-template-columns:1fr; } }
+    /* EACH BOOK IN ITS OWN CARD (user, 2026-09-09) -- the Trade Data card's exact
+       treatment on the dd panel: rounded-lg, slate-700 border, slate-800/30 fill, with
+       the heading OUTSIDE the box. Two independent objects, not two halves of one. */
+    .mo-card { border:1px solid #334155; border-radius:8px; background:rgba(30,41,59,.3);
+               padding:8px 12px 6px; }
+    /* P&L WITH SOME FLAIR (user): the return cell is a band, not just a tinted number --
+       bold, with a faint fill in its own colour so the column reads at a glance. */
+    .mo-tbl td.mo-pl { font-weight:600; }
+    .mo-tbl td.mo-pl.str-up { background:rgba(52,211,153,.10); color:#34d399; }
+    .mo-tbl td.mo-pl.str-dn { background:rgba(248,113,113,.10); color:#f87171; }
+    /* PICK draws the eye (user): sky blue, a hue nothing else in the table uses, bold,
+       and its BRIGHTNESS is set inline per row by sessions-since-pick relative to the
+       book's largest -- so the brightest cell IS the next one out. */
+    .mo-tbl td.mo-pick { font-weight:700; }
+    .mo-tbl th.mo-pick-h { color:#38bdf8; }
+    /* COMPACT bank table (user, 2026-09-09): "tight" means the ROWS, not the type -- same
+       11px as the active book, less air between lines. Shrinking the text was a misread
+       and was reverted the same day. */
+    /* AND THE COLUMNS PACK. At width:100% four columns spread across the card and the
+       slack became gaps between them -- the opposite of tight. Content width, like the
+       Trade Data card, and the card hugs the table, centred under the pie. */
+    .mo-tbl.mo-compact { width:auto; }
+    .mo-tbl.mo-compact td { padding:2px 10px; }
+    .mo-tbl.mo-compact th { padding:0 10px 4px; }
+    .mo-card.mo-fit { width:fit-content; margin:0 auto; }
+    /* THE SPLIT, DRAWN: one pie above the bank book, bank share solid in the bank's violet,
+       active share hatched -- the AI bubble's pie idiom (abPie in stoplight.js), same 2px
+       surface gap, same inside labels, same caption pair. The hatch pattern is declared in
+       this SVG's own defs so the pie does not depend on the AI bubble having rendered. */
+    /* CENTRED over the bank book (user): the key and the pie are one object -- a chart and
+       its legend -- so they sit together over the table they describe rather than pinned
+       to opposite edges. Key first, pie second, as read. */
+    .mo-pie { display:flex; align-items:center; justify-content:center; gap:18px;
+              margin:0 0 10px; }
+    .mo-pie svg { flex:0 0 auto; }
+    .mo-pie-key { display:flex; flex-direction:column; gap:6px; font-family:ui-monospace,monospace;
+                  font-size:10.5px; color:#94a3b8; }
+    .mo-pie-key .sw { display:inline-block; width:10px; height:10px; border-radius:2px;
+                      vertical-align:-1px; margin-right:6px; border:1px solid #1e293b; }
+    .mo-pie-key b { color:#e2e8f0; font-weight:600; }
+    .mo-h3 { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+             color:#64748b; margin:0 0 7px; display:flex; align-items:baseline; gap:8px;
+             white-space:nowrap; }   /* a wrapped heading drops its card below the others' */
+    .mo-h3 .cnt { color:#475569; font-family:ui-monospace,monospace; letter-spacing:0; font-weight:400; }
+    /* With the moon moved under the rank list (2026-09-10) the bank is heading + card like
+       the other two columns, so it lines up with them at the top-left of its column. */
+    .mo-h3.bank { color:#a78bfa; }
+    .mo-halves > section:last-child .mo-card.mo-fit { margin:0; }
+    .mo-tblwrap { overflow-x:auto; }
+    .mo-tbl { width:100%; border-collapse:collapse; font-family:ui-monospace,monospace;
+              font-size:11px; font-variant-numeric:tabular-nums; }
+    .mo-tbl th { text-align:right; font-weight:600; color:#475569; font-size:9.5px;
+                 text-transform:uppercase; letter-spacing:.05em; padding:0 5px 5px;
+                 border-bottom:1px solid #1e293b; white-space:nowrap; }
+    .mo-tbl th:first-child, .mo-tbl td:first-child { text-align:left; padding-left:2px; }
+    .mo-tbl td { text-align:right; padding:4px 5px; border-bottom:1px solid rgba(30,41,59,.55);
+                 color:#94a3b8; white-space:nowrap; }
+    .mo-tbl tbody tr { cursor:pointer; }
+    .mo-tbl tbody tr:hover td { background:rgba(148,163,184,.05); color:#e2e8f0; }
+    .mo-tbl tbody tr[aria-current="true"] td { background:#1a2942; color:#e2e8f0; }
+    .mo-tbl td.sym { color:#e2e8f0; font-weight:600; }
+    .mo-muted { color:#475569; }
+    .mo-warn { color:#fbbf24; }
+    .mo-bar { display:inline-block; height:3px; border-radius:2px; background:#818cf8;
+              vertical-align:middle; margin-left:6px; }
+    .mo-bar.b { background:#a78bfa; }
+    /* NEXT OUT -- the holding with the largest sessions-since-pick, which is what the exit
+       rule selects. Its FATE is a separate fact: at +50% or better the rule retires it to
+       the bank rather than selling, so the mark is violet for a promotion and red for a
+       sale. The table stays in P&L order (user); the row is marked, not moved. */
+    .mo-tbl tbody tr.next td { background:rgba(148,163,184,.07); box-shadow:inset 2px 0 0 0 #a78bfa; }
+    .mo-tbl tbody tr.next.cut td { box-shadow:inset 2px 0 0 0 #f87171; }
+    .mo-badge { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+                border-radius:3px; padding:1px 5px; margin-left:6px; white-space:nowrap;
+                border:1px solid; }
+    .mo-badge.bank { color:#c4b5fd; border-color:rgba(167,139,250,.5); background:rgba(167,139,250,.12); }
+    .mo-badge.cut { color:#fca5a5; border-color:rgba(248,113,113,.5); background:rgba(248,113,113,.12); }
+    .mo-todo { border:1px dashed #334155; border-radius:8px; padding:16px; color:#64748b;
+               font-size:12px; max-width:72ch; line-height:1.5; }
+    .mo-todo p { margin:0 0 10px; }
+    .mo-todo b { color:#94a3b8; }
+    .mo-todo code { font-family:ui-monospace,monospace; font-size:11px; color:#fbbf24;
+                    background:rgba(251,191,36,.08); padding:1px 4px; border-radius:3px; }
+    .mo-sep { color:#475569; font-weight:400; margin:0 4px; }
+    .mo-empty { font-size:12px; color:#64748b; font-style:italic; padding:12px; }
 
     #actionable-container {
         display: flex;
@@ -1554,6 +1736,16 @@
             <div class="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse"></div>
             <span class="text-sm font-semibold tracking-tight">Watchtower</span>
             <span class="text-slate-500 text-xs font-normal">v0.1</span>
+            <!-- MOONSHOT. A BUTTON, in the user's vocabulary: it pops open the strategy
+                 detail panel directly (2026-09-09). It lives here rather than on a card
+                 because the strategy holds a rotating book of names and is not any one
+                 ticker, so it has no card to hang off; and there is no summary view by
+                 the user's choice -- the panel is dense enough. `ml-auto` puts it in the
+                 header's unused right-hand room. -->
+            <button onclick="showMoonshotDive()" title="Moonshot — the momentum book"
+                    class="ml-auto text-[10px] font-bold uppercase tracking-widest text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2.5 py-0.5 hover:bg-indigo-500/20 hover:text-indigo-200 transition-colors">
+                🚀 Moonshot
+            </button>
         </div>
 
         <div class="p-3 border-b border-slate-700 shrink-0">
@@ -2053,10 +2245,19 @@
                 <!-- Same tab grammar as every other panel (dd/nd/ab). switchTab('sd', …)
                      reads its pane names off these buttons' data-view, so this strip is the
                      only place the panel's tabs are declared. -->
+                <!-- TABS ARE PER STRATEGY KIND (2026-09-09). `data-for` says which kind of
+                     strategy shows a tab: a single-ticker sleeve (MO, GLD, XLE, the QQQ dip
+                     system) keeps Strategy / Chart / Dial exactly as before; Moonshot, a
+                     rotating BOOK with no one price series to chart, shows Strategy /
+                     Portfolio / Custom. setTabsForStrategy() in strategy-dive.js toggles
+                     them -- the same idiom as setTabsForAssetClass on the dd panel. The
+                     other five strategies' panels do not change. -->
                 <div class="view-tabs shrink-0 mb-3" id="sd-tabs">
-                    <button class="view-tab active" data-view="strategy" onclick="switchTab('sd','strategy'); sdDrawDiagram();">Strategy</button>
-                    <button class="view-tab" data-view="chart" onclick="switchTab('sd','chart')">Chart</button>
-                    <button class="view-tab" data-view="dial" onclick="switchTab('sd','dial')">Dial</button>
+                    <button class="view-tab active" data-view="strategy" data-for="ticker moonshot" onclick="switchTab('sd','strategy'); sdDrawDiagram();">Strategy</button>
+                    <button class="view-tab" data-view="chart" data-for="ticker" onclick="switchTab('sd','chart')">Chart</button>
+                    <button class="view-tab" data-view="dial" data-for="ticker" onclick="switchTab('sd','dial')">Dial</button>
+                    <button class="view-tab" data-view="portfolio" data-for="moonshot" onclick="switchTab('sd','portfolio')">Portfolio</button>
+                    <button class="view-tab" data-view="custom" data-for="moonshot" onclick="switchTab('sd','custom')">Custom</button>
                 </div>
                 <div class="flex-1 flex flex-col min-h-0">
                     <!-- THREE PARTS, same idiom as #dd-why in Actionable Moves: each
@@ -2117,6 +2318,38 @@
                     <div id="sd-pane-dial" class="view-pane hidden flex-1 overflow-y-auto pr-1">
                         <div id="sd-dial"></div>
                     </div>
+                    <!-- MOONSHOT: PORTFOLIO. The book as it stood on a date. Left, the
+                         news-archive rail (.na-card chips, the compact one the user chose
+                         over the AI bubble's) listing month-ends, CURRENT on top; right,
+                         the two books SIDE BY SIDE -- his standing default for a detail
+                         panel -- active (detailed) over bank (sizing and gains). Rendered
+                         by moRenderPortfolio() in strategy-dive.js off /get_moonshot. -->
+                    <div id="sd-pane-portfolio" class="view-pane hidden flex-1 flex flex-col min-h-0">
+                        <!-- The start-date control lives BELOW the active book (user, 2026-09-09):
+                             a calendar entry plus a button that must be pressed to re-run, with a
+                             status while the engine walks. Rendered by moRenderBooks(). -->
+                        <div class="mo-split">
+                            <div class="mo-rail" id="mo-rail" role="listbox" aria-label="Book date"></div>
+                            <div class="mo-detail">
+                                <div class="mo-substrip" id="mo-substrip"></div>
+                                <div class="mo-books" id="mo-books"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- MOONSHOT: CUSTOM. Last of the three to be built, deliberately the
+                         simplest (user, 2026-09-09). Placeholder until then. -->
+                    <div id="sd-pane-custom" class="view-pane hidden flex-1 overflow-y-auto pr-1">
+                        <div class="mo-todo">
+                            <p><b>Build a book by hand and read it against Moonshot's statistics.</b>
+                            Nothing is executed here &mdash; no slots, no cuts, no banking. The tab
+                            will populate the same columns the active book shows, so the rules
+                            inform a decision rather than make one.</p>
+                            <p>A ticker outside the index carries <code>rank 999</code> to mark that it
+                            did not come from the screen, with its 52-week drought as the second
+                            statistic alongside it.</p>
+                            <p class="mo-hint">Not built yet &mdash; last of the three by design.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2158,9 +2391,9 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/us-map.js?v=20260829a"></script>
-<script src="static/js/stoplight.js?v=20260903a"></script>
-<script src="static/js/strategy.js?v=20260827h"></script>
-<script src="static/js/strategy-dive.js?v=20260903i"></script>
+<script src="static/js/stoplight.js?v=20260908a"></script>
+<script src="static/js/strategy.js?v=20260903a"></script>
+<script src="static/js/strategy-dive.js?v=20260910g"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
 <script src="static/js/newsletter-cards.js?v=20260901a"></script>
 <script src="static/js/charts.js?v=20260901c"></script>

@@ -16,6 +16,29 @@ import requests
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
 
 
+# THE CHANGE IS COMPARED AS IT IS QUOTED (user, 2026-09-11): three decimals. Yahoo prices
+# are float32 underneath, so a change sitting exactly on a threshold at the quote's
+# precision can land in the double a hair either side of it, and a strict comparison
+# would then call the regime on rounding noise. Rounding once, here, means the regime, the near-threshold ring,
+# the chart's coloured segments and the number on screen all read the same value. The
+# RATE is not rounded -- it keeps full precision, and the panels still show two decimals.
+CHANGE_DECIMALS = 3
+
+
+def lookback_base(series, months):
+    """The print ON OR BEFORE `months` back, for every bar -- the fixed baseline a change
+    is measured from. Kept EXACT so a live reading is measured against it and rounded
+    once, instead of being rebuilt from values that were each rounded for display."""
+    import pandas as pd
+    back = series.reindex(series.index - pd.DateOffset(months=months), method="ffill")
+    return pd.Series(back.to_numpy(), index=series.index)
+
+
+def change_from(rate, base):
+    """One reading against its baseline, rounded exactly as lookback_change rounds."""
+    return round(float(rate) - float(base), CHANGE_DECIMALS)
+
+
 def lookback_change(series, months):
     """Change over a trailing `months` window, anchored on the CALENDAR DATE.
 
@@ -35,8 +58,10 @@ def lookback_change(series, months):
     Returns a Series on the SAME index as `series`, NaN before the window is seeded.
     """
     import pandas as pd
-    back = series.reindex(series.index - pd.DateOffset(months=months), method="ffill")
-    return pd.Series(series.to_numpy() - back.to_numpy(), index=series.index)
+    base = lookback_base(series, months)
+    # Rounded to CHANGE_DECIMALS -- see the constant above.
+    return pd.Series(series.to_numpy() - base.to_numpy(),
+                     index=series.index).round(CHANGE_DECIMALS)
 
 
 def fred_series(sid, retries=3, timeout=30):

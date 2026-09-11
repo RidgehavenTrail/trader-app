@@ -482,8 +482,8 @@
                              : `${d.nearest_pp.toFixed(2)}pp from the nearest threshold`)
                    // The lookback and the series' name come from the payload — they are
                    // strategy, and naming them here would put them back in the repo.
-                   + `\n${d.lookback_months}mo change ${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(3)}pp`
-                   + ` · ${d.rate_label} ${d.rate.toFixed(2)}% as of ${d.asof}`
+                   + `\n${d.lookback_months}mo change ${(d.chg_live ?? d.chg) >= 0 ? '+' : '−'}${Math.abs(d.chg_live ?? d.chg).toFixed(3)}pp`
+                   + ` · ${d.rate_label} ${(d.rate_live ?? d.rate).toFixed(2)}%${d.live_at ? ' (live)' : ' as of ' + d.asof}`
                    + (d.stale ? '\nSTALE — last good pull, FRED refresh failed' : '');
 
         // Second pill carries the live holdings, so a collapsed section still answers
@@ -515,17 +515,28 @@
         // panel to contradict it.
         // TWO DECIMALS (user). `asof` sits with the numbers it dates rather than on the
         // header line, which keeps that line to the latch date it always carried.
+        // THE DELTA SHOWN IS THE CURRENT ONE (user, 2026-09-10). On a live series
+        // today's row keeps moving until the close, so the payload's `chg` is only
+        // whatever the quote read when the dial last rebuilt -- an arbitrary earlier
+        // sample of the same number, not a firmer one. `chg_live`/`rate_live` ride the
+        // server's 60s quote cache; they are absent for a source with no intraday tip
+        // (a FRED id), and the cached pair is then the whole truth.
+        // The STATE WORD is not touched here -- the strategy arbitrates when a regime
+        // latches, off consecutive daily closes.
+        const _dRate = (d.rate_live !== null && d.rate_live !== undefined) ? d.rate_live : d.rate;
+        const _dChg  = (d.chg_live  !== null && d.chg_live  !== undefined) ? d.chg_live  : d.chg;
+
         const _rate = document.getElementById('str-dial-rate');
         if (_rate) {
             const bits = [];
-            if (d.rate !== null && d.rate !== undefined) {
-                bits.push(`${esc(d.rate_label || 'rate')} ${d.rate.toFixed(2)}%`);
+            if (_dRate !== null && _dRate !== undefined) {
+                bits.push(`${esc(d.rate_label || 'rate')} ${_dRate.toFixed(2)}%`);
             }
-            if (d.chg !== null && d.chg !== undefined) {
+            if (_dChg !== null && _dChg !== undefined) {
                 bits.push(// 3dp to match the chart's label — at 2dp both round onto the band edge and
                 // the sidebar and the chart can print different-looking numbers for
                 // one reading, which is what started this.
-                `${d.chg >= 0 ? '+' : '−'}${Math.abs(d.chg).toFixed(3)}` +
+                `${_dChg >= 0 ? '+' : '−'}${Math.abs(_dChg).toFixed(3)}` +
                           `<span class="u"> ${d.lookback_months || ''}mo</span>`);
             }
             // THE OBSERVATION LAG, and it stays SILENT when there is nothing to say.

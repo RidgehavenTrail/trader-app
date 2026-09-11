@@ -40,7 +40,7 @@ from engine.common import atomic_write_json
 from engine.live_config import cfg
 
 from . import store
-from .sources.fred import fred_series, lookback_change
+from .sources.fred import change_from, fred_series, lookback_base, lookback_change
 from .sources.rates import rate_series
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -297,6 +297,9 @@ def _build_dial(spec):
     segs = _dial_segments(rate, chg, d)
     last_chg = float(chg.dropna().iloc[-1])
     regime = _regime(last_chg, d)
+    # The exact baseline behind that change, so the live header measures against it
+    # instead of against a value and a change that were each rounded for display.
+    last_base = float(lookback_base(raw, months).iloc[-1])
     return {
         "series": [{"name": REGIME_LABEL[s["regime"]], "color": s["color"], "data": s["data"]}
                    for s in segs],
@@ -309,6 +312,12 @@ def _build_dial(spec):
                    # sits near the edge, which is the whole point of watching it live.
                    "label": f"{float(rate.iloc[-1]):.2f}% · {REGIME_LABEL[regime]} "
                             f"({last_chg:+.3f} {months}mo)",
+                   # The numeric change travels beside the rendered label so the live
+                   # tip (with_live_tip, below) can measure the live quote without
+                   # re-pulling, against `base` -- the exact six-month baseline.
+                   "chg": round(last_chg, 3),
+                   "base": last_base,
+                   "months": months,
                    "regime": regime},
         "asof": true_last.date().isoformat(),   # the real print date, not the month label
     }
@@ -442,6 +451,69 @@ def refresh(force=False):
         payload["carried"] = carried
     atomic_write_json(CACHE_FILE, payload)
     return payload
+
+
+def with_live_tip(payload):
+    """Overlay the dial chart's HEADING with a live quote. The PICTURE is untouched.
+
+    The user's split, 2026-09-10: "the chart can just be rebuilt daily — I just want
+    the latest data above the chart". So the plotted series, its regime segments and
+    its colouring stay exactly as the daily build left them, and only the reading in
+    the header — the rate, its six-month change and the as-of date — is refreshed.
+
+    Costs no pull of its own: it reuses the dial's own 60-second live-quote cache in
+    engine.strategy, so the sidebar and this header cannot show different numbers for
+    the same instant. Returns the payload unchanged for a non-live source (a FRED id
+    has no intraday tip), on any failure, and for every chart that is not the dial.
+    """
+    try:
+        from engine.strategy import _dial, _dial_live_rate
+        d = _dial()
+        v = _dial_live_rate(d.get("series_id"))
+        if v is None:
+            return payload
+    except Exception:
+        return payload                      # a live extra must never break the tab
+
+    out = dict(payload)
+    charts_out = []
+    for c in out.get("charts") or []:
+        lat = c.get("latest") or {}
+        if c.get("id") != "fed_dial" or lat.get("chg") is None or c.get("error"):
+            charts_out.append(c)
+            continue
+        base = lat.get("base")               # exact -- `value - chg` is two rounded numbers
+        if base is None:
+            # A cache built before `base` existed (board_charts.json is rebuilt daily, not
+            # on restart). Borrow the sidebar dial's exact baseline -- same series, same
+            # anchor -- but only for the same observation date and lookback, so a header
+            # never measures today's quote against a different day's baseline.
+            try:
+                from engine.strategy import get_dial
+                dp = get_dial() or {}
+                if (dp.get("asof") == c.get("asof")
+                        and dp.get("lookback_months") == lat.get("months")):
+                    base = dp.get("chg_base")
+            except Exception:
+                base = None
+        if base is None:
+            charts_out.append(c)             # no exact baseline: keep the daily header
+            continue
+        chg = change_from(v, base)
+        months = lat.get("months") or d.get("lookback_months")
+        # The REGIME is not recomputed here — see _with_live_rate in engine/strategy.py.
+        # A flip needs consecutive daily prints; repainting the header's word off an
+        # intraday wiggle would assert a state change the latch has not made.
+        c = dict(c, latest=dict(lat,
+                                value=round(v, 3),
+                                chg=chg,
+                                live=True,
+                                label=f"{v:.2f}% · {REGIME_LABEL[lat['regime']]} "
+                                      f"({chg:+.3f} {months}mo)"),
+                 asof=store.now_et().date().isoformat())
+        charts_out.append(c)
+    out["charts"] = charts_out
+    return out
 
 
 def load_cached():

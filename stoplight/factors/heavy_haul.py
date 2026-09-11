@@ -38,6 +38,27 @@ TICKERS = ["ODFL", "SAIA", "XPO", "ARCB",                    # LTL
            "CTOS"]                                           # utility equipment
 GATE_BARS = 63
 
+# THE CARRY LIMIT (user, 2026-09-11). A constituent with no close on a bar is held at its
+# LAST KNOWN close for up to this many sessions, then treated as genuinely missing and
+# ALERTED -- never allowed to stop the reading or the panel from building.
+#
+# Why carry at all: a partial session bar routinely lacks a few prints early in the
+# morning (XPO, CVLG and LSTR at 09:34 on 2026-09-11), and yfinance can NaN a completed
+# close outright. `build_index` already treated a missing return as flat, so the light
+# was decided as if the name sat at its last price -- while the ledger emitted a bare
+# NaN, which is invalid JSON, so the browser dropped the WHOLE ledger and the panel went
+# blank. And on pandas 3 pct_change() does not pad, so a missing close zeroed BOTH its
+# own return and the next bar's, erasing the move across the gap from the index for good
+# (measured: 100 -> 110 -> NaN -> 121 finished at 110). Carrying the close fixes both.
+#
+# Why a limit: "last known" is right for a bar that is late and wrong for a name that is
+# halted, delisted or dropped for days -- it would sit in the index and the breadth count
+# at a stale price with nothing saying so. Past the limit the name is left out of the
+# breadth counts, contributes a flat return to the index until it prints again, and the
+# board row carries an alert. The move across a gap LONGER than the limit is still lost
+# from the index; the alert is what says so.
+CARRY_LIMIT_BARS = 5
+
 # --- CONSTITUENT METADATA (display name + sub-sector) --------------------------
 # The GROUPING is a fact about the basket and lives here beside the tickers; the
 # COLOURS are display and live in the frontend. Four groups, and the fourth is a
@@ -165,6 +186,11 @@ def build_index(df, base_date=BASE_DATE):
         df = df[df.index >= base_ts]
     if df.empty:
         raise ValueError("heavy_haul: no data at or after the base date")
+    # Carry a missing close for up to CARRY_LIMIT_BARS sessions BEFORE taking returns --
+    # see the constant. Without this a single missing close deletes the name's move
+    # across the gap from the index permanently; with it, the move lands on the bar the
+    # name prints again.
+    df = df.ffill(limit=CARRY_LIMIT_BARS)
     rebals = _rebalance_dates(df.index)
     rets = df.pct_change()
     n = df.shape[1]
@@ -183,9 +209,39 @@ def build_index(df, base_date=BASE_DATE):
     return pd.Series(levels).dropna()
 
 
+def _carry(df, limit=CARRY_LIMIT_BARS):
+    """Carry missing closes forward -> (filled, runs).
+
+    `runs` is, per name and bar, how many consecutive closes have been missing up to and
+    including that bar (0 = it printed). It is taken from the RAW frame, so it counts the
+    real gap even where the carry has filled it."""
+    na = df.isna()
+    runs = na.apply(lambda col: col.groupby((~col).cumsum()).cumsum()).astype(int)
+    return df.ffill(limit=limit), runs
+
+
+def _gap_report(runs, limit=CARRY_LIMIT_BARS):
+    """On the NEWEST bar -> ({carried: sessions}, {unpriced: sessions})."""
+    last = runs.iloc[-1]
+    carried = {sym: int(n) for sym, n in last.items() if 0 < n <= limit}
+    unpriced = {sym: int(n) for sym, n in last.items() if n > limit}
+    return carried, unpriced
+
+
+def _alert_text(unpriced, limit=CARRY_LIMIT_BARS):
+    """The board row's alert, or None. ASCII only (see factors/__init__.py)."""
+    if not unpriced:
+        return None
+    names = ", ".join(f"{sym} ({n} sessions)" for sym, n in sorted(unpriced.items()))
+    return (f"No price for {names} - past the {limit}-session carry limit. Left out of "
+            f"the breadth counts and held flat in the index until it prints again.")
+
+
 def compute():
     df = batched_closes(TICKERS, start=FETCH_START)
-    idx = build_index(df)
+    _filled, runs = _carry(df)
+    carried, unpriced = _gap_report(runs)
+    idx = build_index(df)          # applies the same carry internally
 
     last = float(idx.iloc[-1])
     ma200 = float(idx.tail(200).mean())
@@ -219,6 +275,12 @@ def compute():
             "base_date": BASE_DATE,
             "rebalance": "quarterly (3rd Friday Mar/Jun/Sep/Dec, XTN schedule)",
             "source": "yfinance equal-weight 16-name index, quarterly rebalance",
+            # Constituents on a carried close (within the limit) and past it. The alert
+            # is promoted to the board row by the blueprint; the reading stands either way.
+            "carry_limit": CARRY_LIMIT_BARS,
+            "carried": carried,
+            "unpriced": unpriced,
+            "data_alert": _alert_text(unpriced),
         },
     }
 
@@ -249,12 +311,18 @@ def ledger(days=10):
         this module's own `build_index` — so the picture and the light cannot
         disagree, and 252 bars are not re-stored once a day forever."""
     df = batched_closes(TICKERS, start=FETCH_START)
-    idx = build_index(df)
+    filled, runs = _carry(df)
+    idx = build_index(df)          # applies the same carry internally
 
     # ROLLING, not tail() — the generalisation of compute()'s `idx.tail(200).mean()`
     # to a past bar. At the last bar the two are the same number by construction.
     i50, i200 = idx.rolling(50).mean(), idx.rolling(200).mean()
-    n50, n200 = df.rolling(50).mean(), df.rolling(200).mean()
+    # Per-name MAs on the CARRIED closes. min_periods=1 so a gap longer than the carry
+    # limit is skipped inside the window -- the way `tail(n).mean()` skips it -- instead
+    # of blanking that name's MA for the next 50 or 200 sessions after it prints again.
+    # With no gap in the window the result is identical to the default.
+    n50 = filled.rolling(50, min_periods=1).mean()
+    n200 = filled.rolling(200, min_periods=1).mean()
 
     caps = {}
     try:
@@ -273,13 +341,25 @@ def ledger(days=10):
 
         names = []
         for sym in TICKERS:
-            px = float(df[sym].iloc[pos])
-            m50, m200 = float(n50[sym].iloc[pos]), float(n200[sym].iloc[pos])
             nm, grp = NAMES[sym]
-            row = {"key": sym, "name": nm, "group": grp, "last": round(px, 2),
-                   "vs50": round((px / m50 - 1) * 100, 1),
-                   "vs200": round((px / m200 - 1) * 100, 1),
-                   "below50": px < m50, "below200": px < m200}
+            run = int(runs[sym].iloc[pos])
+            px, m50, m200 = filled[sym].iloc[pos], n50[sym].iloc[pos], n200[sym].iloc[pos]
+            row = {"key": sym, "name": nm, "group": grp,
+                   # sessions this close has been CARRIED (within the limit) or MISSING
+                   # (past it) as of this bar; 0 on a bar the name printed
+                   "carried_bars": run if 0 < run <= CARRY_LIMIT_BARS else 0,
+                   "missing_bars": run if run > CARRY_LIMIT_BARS else 0}
+            if pd.notna(px) and pd.notna(m50) and pd.notna(m200):
+                px, m50, m200 = float(px), float(m50), float(m200)
+                row.update({"last": round(px, 2),
+                            "vs50": round((px / m50 - 1) * 100, 1),
+                            "vs200": round((px / m200 - 1) * 100, 1),
+                            "below50": px < m50, "below200": px < m200})
+            else:
+                # NULL, NEVER NaN. A bare NaN is invalid JSON: the browser rejects the
+                # whole response and every day of the ledger disappears with it.
+                row.update({"last": None, "vs50": None, "vs200": None,
+                            "below50": None, "below200": None})
             if k == 0:                       # newest day only — see the docstring
                 row["cap"] = caps.get(sym)
             names.append(row)
@@ -296,9 +376,17 @@ def ledger(days=10):
             # The BREADTH counts — the number this factor is equal-weighted in order
             # to see, and the hero of the Constituents view. Cap weight reads the
             # basket through three rails and cannot report it (see the header).
+            # An unpriced name (None) counts in NEITHER -- a raw `nan < ma` is False, which
+            # is how 2026-09-11 briefly read 13/16 below the 50 on three names that had
+            # simply not traded yet. `priced_n` is the denominator these are out of.
             "below50_n": sum(1 for r in names if r["below50"]),
             "below200_n": sum(1 for r in names if r["below200"]),
             "n_names": len(names),
+            "priced_n": sum(1 for r in names if r["last"] is not None),
+            "carried_n": sum(1 for r in names if r["carried_bars"]),
+            "unpriced": [{"key": r["key"], "bars": r["missing_bars"]}
+                         for r in names if r["missing_bars"]],
+            "carry_limit": CARRY_LIMIT_BARS,
             "names": names,
             **lad,
         })

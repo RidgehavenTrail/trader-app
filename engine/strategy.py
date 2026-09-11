@@ -119,6 +119,21 @@ REGIME_ORDER = ["easing", "hold", "tightening"]
 DIAL_RECHECK_SECONDS = 900        # 15 min — floor while a print has not landed
 DIAL_MAX_AGE_SECONDS = 24 * 3600  # backstop, so nothing can live forever on any path
 QUOTE_TTL_SECONDS = 60            # intraday % change
+# THE DIAL'S LIVE TIP (user, 2026-09-10: "the chart can be built daily — I just want the
+# intraday updates for situational awareness"). Same split `_with_day_moves` already
+# makes and for the same stated reason: compute_dial()'s result is cached long because
+# everything in it moves at most daily (the history, the regime, the latch), so a live
+# number must NOT ride that cache or it renders a stale reading as "now".
+#
+# Switching the source to ^IRX removed the two-day lag but did not make the panel move:
+# `_dial_caught_up` returns True the moment `asof` reaches today, which pins the payload
+# for DIAL_MAX_AGE_SECONDS — its docstring's "nothing newer can print today" was true of
+# a T+1 FRED series and is false of a live quote. And irx_local's cache counts a tail
+# within four days as current, so re-polling it would return the same pickle all day.
+# Hence a separate, deliberately tiny fetch for the tip alone.
+DIAL_LIVE_TTL_SECONDS = 60
+_dial_live_lock = threading.Lock()
+_dial_live = {"symbol": None, "rate": None, "at": 0.0}
 _cache_lock = threading.Lock()
 _cache = {"payload": None, "at": 0.0}
 _quote_lock = threading.Lock()
@@ -147,7 +162,7 @@ def _dial_frame():
     """
     # Imported lazily so this blueprint does not pull in the stoplight package at
     # engine import time. fred.py is a plain requests+pandas helper with retries.
-    from stoplight.sources.fred import lookback_change
+    from stoplight.sources.fred import lookback_base, lookback_change
     from stoplight.sources.rates import rate_series
 
     d = _dial()
@@ -157,8 +172,9 @@ def _dial_frame():
     # The anchor now lives in fred.lookback_change, shared with the Charts-tab dial so
     # the two surfaces cannot state different 6-month changes for the same print.
     # Behaviour here is unchanged — this IS the convention that moved.
-    chg = lookback_change(s, d["lookback_months"])
-    df = pd.DataFrame({"rate": s.to_numpy(), "chg": chg.to_numpy()},
+    chg = lookback_change(s, d["lookback_months"])     # rounded to the quote's 3 decimals
+    base = lookback_base(s, d["lookback_months"])      # exact -- the live change reads it
+    df = pd.DataFrame({"rate": s.to_numpy(), "chg": chg.to_numpy(), "base": base.to_numpy()},
                       index=s.index).dropna()
     if df.empty:
         raise ValueError(f"{d['series_id']}: no overlapping "
@@ -295,6 +311,71 @@ def _tech(symbols):
     return out
 
 
+def _dial_live_rate(symbol):
+    """Latest quote for an intraday dial symbol, or None when it has no live tip.
+
+    Only a `^` symbol has one — a FRED id publishes once a day and its cached payload
+    is already the whole truth. Never raises: the dial must render on the daily figure
+    if the quote is unreachable, which is the same rule the rest of this file follows.
+    """
+    if not str(symbol or "").startswith("^"):
+        return None
+    now = time.time()
+    with _dial_live_lock:
+        if (_dial_live["symbol"] == symbol and _dial_live["rate"] is not None
+                and now - _dial_live["at"] < DIAL_LIVE_TTL_SECONDS):
+            return _dial_live["rate"]
+    try:
+        import yfinance as yf
+        h = yf.Ticker(symbol).history(period="5d")["Close"].dropna()
+        v = float(h.iloc[-1]) if len(h) else None
+    except Exception as e:
+        print(f"[STRATEGY] dial live quote failed: {type(e).__name__}: {e}")
+        v = None
+    if v is None:
+        with _dial_live_lock:
+            return _dial_live["rate"]          # last good; never a blank on one bad pull
+    with _dial_live_lock:
+        _dial_live.update(symbol=symbol, rate=v, at=now)
+    return v
+
+
+def _with_live_rate(payload):
+    """Attach the live rate and the change it implies, WITHOUT moving the regime.
+
+    THE LATCH DOES NOT MOVE INTRADAY, and that is a deliberate choice rather than a
+    limitation: a flip needs `latch_days` consecutive PRINTS, which is a daily concept,
+    and letting an intraday wiggle repaint the board would be exactly the whipsaw the
+    latch exists to prevent. So `label`, `state` and `days_in_state` stay on the settled
+    daily figures; `rate_live` / `chg_live` are situational awareness beside them.
+
+    The six-month baseline is fixed for the day, so the live change needs no second
+    pull: the live quote is measured against the exact baseline the daily frame carries
+    (`chg_base`) and rounded once, exactly as the daily change is.
+    """
+    if not payload.get("ok"):
+        return payload
+    d = _dial()
+    v = _dial_live_rate(d.get("series_id"))
+    if v is None:
+        return payload
+    # THE BASELINE IS EXACT, NOT RECONSTRUCTED (2026-09-11). This was `rate - chg` off the
+    # payload -- but the payload's rate is rounded to 2 decimals for display, which put up
+    # to +/-0.005 of error into the live change: coarser than the three decimals the
+    # regime is decided on, and enough to show a reading on the wrong side of the line.
+    # A payload cached before the exact baseline existed gets no live figures rather than
+    # approximate ones.
+    base = payload.get("chg_base")
+    if base is None:
+        return payload
+    from stoplight.sources.fred import change_from
+    out = dict(payload)
+    out["rate_live"] = round(v, 3)
+    out["chg_live"] = change_from(v, base)
+    out["live_at"] = datetime.now(ET).isoformat(timespec="seconds")
+    return out
+
+
 def _holding_state(h):
     """The per-holding strategy state — the strategy INSIDE the regime.
 
@@ -391,6 +472,9 @@ def compute_dial():
         "color": REGIME_COLOR[state],
         "rate": round(float(last["rate"]), 2),
         "chg": round(chg, 3),
+        # The exact six-month baseline behind `chg`. The live tip measures the live quote
+        # against THIS, never against `rate - chg`: `rate` above is rounded for display.
+        "chg_base": float(last["base"]),
         "to_tighten": round(d["tighten"] - chg, 3),   # how far chg must RISE
         "to_ease": round(d["ease"] - chg, 3),         # how far chg must FALL (negative)
         "nearest_pp": round(nearest, 3),
@@ -535,15 +619,15 @@ def get_dial():
         fresh = bool(p) and age < (DIAL_MAX_AGE_SECONDS if _dial_caught_up(p)
                                    else DIAL_RECHECK_SECONDS)
         if fresh:
-            return _with_day_moves(_cache["payload"])
+            return _with_live_rate(_with_day_moves(_cache["payload"]))
         try:
             payload = compute_dial()
             _cache["payload"], _cache["at"] = payload, time.time()
-            return _with_day_moves(payload)
+            return _with_live_rate(_with_day_moves(payload))
         except Exception as e:
             print(f"[STRATEGY] dial pull failed: {type(e).__name__}: {e}")
             if _cache["payload"]:
-                return _with_day_moves(dict(_cache["payload"], stale=True))
+                return _with_live_rate(_with_day_moves(dict(_cache["payload"], stale=True)))
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 

@@ -71,6 +71,11 @@ def _row(spec, entry, now, today):
         row[k] = entry.get(k)
     row["is_new"] = bool((entry.get("new_at") or "").startswith(today))
     row["flipped_today"] = bool((entry.get("flipped_at") or "").startswith(today))
+    # A DATA ALERT a factor raises about its own INPUTS (heavy_haul: a constituent with
+    # no price past its carry limit). The reading still stands and the panel still
+    # builds; this only says one of the numbers underneath is not live. Promoted to the
+    # row here because display flags are this blueprint's job, not the renderer's.
+    row["data_alert"] = (entry.get("extras") or {}).get("data_alert") or None
     row["stale_days"] = 0
     if entry.get("updated_at"):
         try:
@@ -408,4 +413,7 @@ def get_board_charts():
     if payload is None:
         with _charts_lock:
             payload = charts.load_cached() or charts.refresh()   # re-check inside the lock
-    return jsonify(payload)
+    # The dial's HEADER reading is refreshed from its live quote here; the plotted
+    # series stays the daily build. Applied at request time for the same reason
+    # _with_day_moves is: a number cached for a day must not be rendered as "now".
+    return jsonify(charts.with_live_tip(payload))

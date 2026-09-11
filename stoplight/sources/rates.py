@@ -35,8 +35,53 @@ from .fred import fred_series
 _BACKTESTS = os.path.dirname(BACKTEST_DIR)
 
 
+def _today_et():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _recent_irx():
+    """The last month of ^IRX closes, fresh from Yahoo, or None. Never raises."""
+    import pandas as pd
+    try:
+        import yfinance as yf
+        h = yf.Ticker("^IRX").history(period="1mo")["Close"].dropna()
+    except Exception as e:
+        print(f"[RATES] ^IRX tail refresh failed, using the cached series: "
+              f"{type(e).__name__}: {e}")
+        return None
+    if not len(h):
+        return None
+    h.index = pd.to_datetime([t.date() for t in h.index])
+    return h
+
+
 def _load_irx():
-    """^IRX via the strategy repo's cached loader. Raises if it cannot be reached."""
+    """^IRX: the strategy repo's cached history plus a FRESH tail. Raises if unreachable.
+
+    THE CACHE IS HISTORY, NOT THE LATEST CLOSE (2026-09-11). irx_local counts its pickle
+    as current whenever its last day is within four days of the ask -- the right trade
+    for backtests, which re-read decades and do not care about last Tuesday -- so the
+    dial's daily series froze at whatever day the pickle was last written. On 2026-09-11
+    it still ended 2026-09-10, and that row was a MID-SESSION value (pickle written at
+    13:40: 3.843 against a 3.845 close). The regime latch walks this series, so for up to
+    four days it could not see a new close while the live delta crossed the tightening
+    line.
+
+    So irx_local supplies the long, stub-safe history and one small fresh pull supplies
+    the recent month, which WINS where the two overlap: a newer read of a day is the
+    close, the cached one may be an intraday snapshot. The pickle is never written from
+    here -- the backtests own it.
+
+    COMPLETED SESSIONS ONLY. A bar dated today (ET) is dropped: the latch arbitrates on
+    consecutive daily CLOSES, and today's row is a live quote until the session ends.
+    Today's reading reaches the panel through the separate live tip in engine.strategy.
+
+    A labelled DTB3 fallback (irx_local serves FRED when cache and Yahoo together cannot
+    cover the window) is returned as it is -- an ^IRX tail is never grafted onto a FRED
+    history, which is the "sources don't mix silently" rule that module is built on.
+    """
     if _BACKTESTS not in sys.path:
         sys.path.insert(0, _BACKTESTS)
     from irx_local import load_irx          # noqa: E402  (path set above)
@@ -46,10 +91,18 @@ def _load_irx():
     # before that. The cache makes a wide ask free after the first fill.
     start, end = "1990-01-01", (pd.Timestamp.today() + pd.Timedelta(days=1)).date()
     s = load_irx(start, str(end)).dropna()
+    # irx_local's FRED fallback returns the CSV's own column, which FRED names after the
+    # series id; its ^IRX path never produces that name.
+    from_fred = str(getattr(s, "name", "") or "").upper() == "DTB3"
     # Normalise to date-only, matching what fred_series returns, so every downstream
     # date comparison (the 6-month reindex, the monthly resample) behaves identically.
     s.index = pd.to_datetime([t.date() for t in s.index])
-    return s.sort_index()
+    s = s.sort_index()
+    if not from_fred:
+        tail = _recent_irx()
+        if tail is not None:
+            s = tail.combine_first(s).sort_index()
+    return s[s.index < pd.Timestamp(_today_et())]
 
 
 def rate_series(series_id):

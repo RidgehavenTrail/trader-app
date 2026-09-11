@@ -50,6 +50,11 @@
             // wrench badge; hover explains it's on the board but being reworked.
             const refine = f.refine
                 ? '<span class="sl-badge-refine" title="Live, flagged for refinement">⚒</span>' : '';
+            // A factor flagging its OWN inputs (heavy_haul: a constituent with no price past
+            // the carry limit). Server-computed like stale_days; the light still stands, so
+            // this is an amber note beside it, not an error state on the row.
+            const alert = f.data_alert
+                ? `<span class="sl-badge-stale" title="${esc(f.data_alert)}">gap</span>` : '';
             const metric = f.built ? esc(f.metric || '--') : '—';
             // Right rail: 'D' for a daily poller, else the next-catalyst date
             // (e.g. 7/22). Title spells it out on hover.
@@ -76,7 +81,7 @@
                 slDotHTML(f) +
                 `<span class="sl-nm${f.built ? '' : ' sl-dim'}">${esc(f.name)}</span>` +
                 `<span class="sl-mt">${metric}</span>` +
-                `${cat}${refine}${stale}</div>`;
+                `${cat}${refine}${stale}${alert}</div>`;
         }).join('');
     }
 
@@ -115,8 +120,8 @@
             renderSiliconE(board.module);
             if (!document.getElementById('ai-bubble-dive').classList.contains('hidden'))
                 renderBubbleOverview();     // keep an open detail panel live
-            // Board charts move at most once a day, so they ride this poll at 1-in-3
-            // rather than carrying a timer of their own.
+            // Board charts ride this poll rather than carrying a timer of their own. The
+            // pictures move at most once a day; the Fed dial's header moves every poll.
             if (++_chartsTick % SL_CHARTS_EVERY === 0) refreshBoardCharts();
         } catch (err) {
             console.error('Error fetching stoplight board:', err);
@@ -3443,13 +3448,22 @@
     // its 50 is bearish for freight and therefore pro-burst for the factor, so painting
     // it red would say the opposite of what red means one row above it.
     function abHaulNamesHTML(day) {
-        const names = (day.names || []).slice().sort((a, b) => b.vs50 - a.vs50);
+        // Priced names by distance from their 50; an UNPRICED name (null — no close past
+        // the carry limit) sorts to the bottom instead of poisoning the comparator.
+        const names = (day.names || []).slice().sort((a, b) =>
+            ((a.vs50 == null) - (b.vs50 == null)) || (b.vs50 - a.vs50));
+        // The counts are out of the names that HAVE a price. With nothing missing this is
+        // n_names and the panel reads exactly as it always did.
+        const of = (day.priced_n != null && day.priced_n < day.n_names) ? day.priced_n : day.n_names;
+        const unp = day.unpriced || [];
         if (!names.length) return '<div class="ab-tbd" style="padding:12px 13px">no ledger for this day</div>';
         const hero =
             '<div class="ab-hero">' +
               '<span class="k">below their own 50</span>' +
-              `<span class="v">${day.below50_n}<span class="hh-of">/${day.n_names}</span></span>` +
-              `<span class="s">${day.below200_n} of ${day.n_names} below the 200</span>` +
+              `<span class="v">${day.below50_n}<span class="hh-of">/${of}</span></span>` +
+              `<span class="s">${day.below200_n} of ${of} below the 200</span>` +
+              (unp.length ? `<span class="s" style="color:#fbbf24">${unp.length} unpriced · ` +
+                            `${unp.map(u => esc(u.key)).join(', ')}</span>` : '') +
               `<span class="r">index ${day.vs50 >= 0 ? '+' : ''}${day.vs50.toFixed(1)}% vs its 50</span>` +
             '</div>';
         const ch = abHaulChart();
@@ -3459,8 +3473,11 @@
 
         // One scale for both columns, taken from the day's own widest deviation, so the
         // two bars on a row are comparable and nothing is clipped at a fixed ceiling.
-        const span = Math.max.apply(null, names.map(n => Math.abs(n.vs50))
-                                    .concat(names.map(n => Math.abs(n.vs200)))) || 1;
+        const span = Math.max.apply(null, names.filter(n => n.vs50 != null)
+                                    .map(n => Math.abs(n.vs50))
+                                    .concat(names.filter(n => n.vs200 != null)
+                                                 .map(n => Math.abs(n.vs200)))
+                                    .concat([0])) || 1;
         const dev = v => {
             const w = Math.abs(v) / span * 40;
             return '<svg class="hh-dev" viewBox="0 0 88 12" width="88" height="12">' +
@@ -3473,20 +3490,28 @@
         // "everything below this line is under its own trend". Drawn only when there is
         // something on BOTH sides of it: a rule above row one separates the table from
         // nothing and reads as a stray border.
-        let ruled = names[0].vs50 < 0;
+        let ruled = names[0].vs50 != null && names[0].vs50 < 0;
         const cell = v => `<td class="l hh-c2"><span class="hh-cell">${dev(v)}` +
                           `<b>${num(v)}</b></span></td>`;
         const body = names.map(n => {
             let cross = false;
-            if (!ruled && n.vs50 < 0) { cross = true; ruled = true; }
+            if (!ruled && n.vs50 != null && n.vs50 < 0) { cross = true; ruled = true; }
             return `<tr${cross ? ' class="hh-cross"' : ''}>` +
               '<td class="l"><span class="nm2">' +
                 `<span class="ab-sw" style="background:${AB_HAUL_HUES[n.group] || '#8b98a8'}"></span>` +
                 `${esc(n.name)}` +
-                `<span class="hh-tk">${esc(n.key)} · ${esc(AB_HAUL_LBL[n.group] || n.group)}</span>` +
+                `<span class="hh-tk">${esc(n.key)} · ${esc(AB_HAUL_LBL[n.group] || n.group)}` +
+                  // CARRIED within the limit reads as a note; PAST it reads as an alert.
+                  (n.carried_bars ? ` · <span style="color:#94a3b8">last known, ` +
+                      `${n.carried_bars} session${n.carried_bars > 1 ? 's' : ''} back</span>` : '') +
+                  (n.missing_bars ? ` · <span style="color:#fbbf24">no price for ` +
+                      `${n.missing_bars} sessions</span>` : '') +
+                `</span>` +
               '</span></td>' +
-              `<td class="hh-c1">${n.last.toFixed(2)}</td>` +
-              cell(n.vs50) + cell(n.vs200) +
+              (n.last == null
+                  ? '<td class="hh-c1" style="color:#fbbf24">—</td>' +
+                    '<td class="l hh-c2">—</td><td class="l hh-c2">—</td>'
+                  : `<td class="hh-c1">${n.last.toFixed(2)}</td>` + cell(n.vs50) + cell(n.vs200)) +
             '</tr>';
         }).join('');
         const gate = day.cond_no_high
@@ -3500,9 +3525,16 @@
             '<th class="l hh-c2">vs its 50</th>' +
             '<th class="l hh-c2">vs its 200</th></tr></thead>' +
             `<tbody>${body}</tbody></table></div>` +
-            `<div class="ab-overlapbar"><b>${day.below50_n}</b> of ${day.n_names} names sit below ` +
+            `<div class="ab-overlapbar"><b>${day.below50_n}</b> of ${of} names sit below ` +
             `their own 50-bar MA while the index is <b>${num(day.vs200)}</b> against its 200 — ` +
-            `${gate}.</div>`;
+            `${gate}.` +
+            (unp.length
+                ? ` <b style="color:#fbbf24">${unp.map(u => esc(u.key) + ' has had no price for ' +
+                      u.bars + ' sessions').join('; ')}</b> — past the ${day.carry_limit}-session ` +
+                  `carry limit, so ${unp.length > 1 ? 'they are' : 'it is'} left out of the counts ` +
+                  'and held flat in the index until it prints again.'
+                : '') +
+            '</div>';
     }
 
     // COMPOSITION — what the basket is MADE of, which is the case for weighting it flat.
@@ -3683,7 +3715,7 @@
             // The LADDER's own inputs, so the two conditions behind the light are on screen
             // without spending a view on them: how many names are under their 50, where the
             // index sits against its own 50, and how far the self-executing gate has left.
-            figures: d => [['below 50', d.below50_n + '/' + d.n_names],
+            figures: d => [['below 50', d.below50_n + '/' + (d.priced_n ?? d.n_names)],
                            ['vs 50MA', (d.vs50 >= 0 ? '+' : '') + d.vs50.toFixed(1) + '%'],
                            ['gate', d.cond_no_high ? 'open' : d.gate_bars_remaining + ' bars'],
                            ['52wk high', abMD(d.high_date)]],
@@ -4327,7 +4359,9 @@
     let _chartsGen = null;      // its `generated_at` — the redraw discriminator
     let _boardCharts = [];      // live chart instances (teardown handles)
     let _chartsTick = 0;
-    const SL_CHARTS_EVERY = 3;  // the board polls every 5 min -> charts every 15
+    // Every board poll (5 min), so the Fed dial's live header keeps pace with the Rocket
+    // Strategy sidebar (user, 2026-09-11). Same build -> header text only, no redraw.
+    const SL_CHARTS_EVERY = 1;
 
     async function renderBubbleCharts() {
         const body = document.getElementById('ab-charts-body');
@@ -4357,13 +4391,40 @@
         } catch (e) {
             return;                      // leave whatever is on screen; try again next tick
         }
-        if (!j || (_chartsGen && j.generated_at === _chartsGen)) return;
+        if (!j) return;
+        if (_chartsGen && j.generated_at === _chartsGen) {
+            // SAME BUILD: only a header can have moved. The Fed dial's header reads a
+            // live quote server-side (charts.with_live_tip) while its picture stays the
+            // daily build, so rewrite the header text in place every poll (user,
+            // 2026-09-11) -- and never redraw charts under the cursor for series that
+            // did not change.
+            _chartData = j;
+            updateBoardChartHeaders(j);
+            return;
+        }
         _chartsGen = j.generated_at || null;
         _chartData = j;
         const body = document.getElementById('ab-charts-body');
         if (body && _boardCharts.length) drawBoardCharts(body, _chartData);
         const panel = document.getElementById('ai-bubble-dive');
         if (panel && !panel.classList.contains('hidden')) renderBubbleOverview();
+    }
+
+    // Header text only -- the value label and its as-of date -- matched by chart id.
+    // A tab that has not been drawn yet has nothing to update; it draws from
+    // `_chartData` (already the fresh payload) when it opens.
+    function updateBoardChartHeaders(payload) {
+        const body = document.getElementById('ab-charts-body');
+        if (!body) return;
+        (payload.charts || []).forEach(ch => {
+            if (!ch.id) return;
+            const sec = body.querySelector(`.ab-rt[data-chart-id="${CSS.escape(ch.id)}"]`);
+            if (!sec) return;
+            const val = sec.querySelector('.ab-rt-val');
+            if (val) val.textContent = (ch.latest && ch.latest.label) || '';
+            const asof = sec.querySelector('.ab-rt-asof');
+            if (asof && ch.asof) asof.textContent = ch.asof;
+        });
     }
 
     function drawBoardCharts(body, payload) {
@@ -4377,6 +4438,7 @@
         (payload.charts || []).forEach(ch => {
             const sec = document.createElement('div');
             sec.className = 'ab-rt';
+            sec.dataset.chartId = ch.id || '';           // updateBoardChartHeaders finds it
             sec.innerHTML =
                 `<div class="ab-rt-hd"><span class="ab-rt-ttl">${esc(ch.title)}</span>` +
                 // ASOF beside the value (user, 2026-08-27). Every builder already

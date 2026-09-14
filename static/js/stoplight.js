@@ -2787,7 +2787,7 @@
             `<text x="${(X(day.pivot) + 10).toFixed(1)}" ` +
             `y="${(Y(day.delta_6mo) + 4).toFixed(1)}" class="rp-ax" fill="#e2e8f0">today</text>`;
         const axes = `<text x="${W / 2}" y="${H - 3}" class="rp-ax" ` +
-            'text-anchor="middle">pivot &mdash; 2yr minus fed funds</text>' +
+            'text-anchor="middle">pivot: 2yr minus fed funds</text>' +
             `<text x="12" y="${T + 2}" class="rp-ax" text-anchor="end" ` +
             `transform="rotate(-90 12 ${T + 2})">6-month change (floored)</text>`;
 
@@ -3220,10 +3220,16 @@
         const hero =
             '<div class="ab-hero">' +
               '<span class="k">reading</span>' +
-              `<span class="v abh-${AB_LC[day.light] || 'y'}">${day.through}` +
+              // THE NUMBER AND THE WORD DESCRIBE THE SAME COMPANIES (user, 2026-09-12).
+              // This showed the count through the 100% gate under the LIGHT's caption,
+              // so a red board read "2/5 self-funding" while the three self-funders sat
+              // in the other band. Both now come from the band the light landed on.
+              `<span class="v abh-${AB_LC[day.light] || 'y'}">` +
+              `${day.driving != null ? day.driving : day.through}` +
               `<span class="cp-of">/${day.n_names}</span></span>` +
               `${band.mean ? `<span class="s">${esc(band.mean)}</span>` : ''}` +
-              '<span class="r">through the ' + day.green_above + '% gate</span>' +
+              `<span class="r">${band.range ? esc(band.range) + ' of cash flow'
+                                            : 'through the ' + day.green_above + '% gate'}</span>` +
             '</div>';
         const ns = (day.names || []).slice().sort((a, b) => b.pct - a.pct);
         const rows = ns.map(n =>
@@ -3754,7 +3760,10 @@
             views:   [{ key: 'names',     label: 'The five' },
                       { key: 'direction', label: 'Direction' }],
             value:   d => d.through,
-            reading: d => d.through + '/' + d.n_names + ' thru',
+            // Says the COLOUR, matching the rail -- the words the bands mean live in the
+            // hero and the legend beside it, which have room to explain them.
+            reading: d => (d.driving != null ? d.driving : d.through) + '/' + d.n_names
+                          + ' ' + (d.light || ''),
             light:   d => d.light,
             // The reading is an INTEGER count of names through the gate, so half a step
             // is a whole band away from being a rounding difference — and this ledger

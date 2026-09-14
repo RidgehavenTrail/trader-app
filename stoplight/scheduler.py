@@ -147,6 +147,17 @@ def run_factor(spec, state):
     store.record_snapshot(fid, entry.get("value"), payload=reading,
                           day=asof, keep_first=bool(asof))
     _record_ledger_day(mod, fid, reading)
+    # A factor that projects a gate date owns that date, so the calendar row moves with
+    # it (user, 2026-09-11) instead of waiting out the weekly calendar pass. Only copper
+    # and heavy_haul publish `gate_date`, so this fires twice a poll at most, writes only
+    # on a change, and costs no pull -- the projection is in the reading just computed.
+    if (reading.get("extras") or {}).get("gate_date"):
+        try:
+            moved = events.refresh_self_gates({fid: entry}, fids=[fid])["changed"]
+            for m in moved:
+                print(f"[STOPLIGHT] {m['event_id']} gate {m['from']} -> {m['to']} ({fid})")
+        except Exception as e:      # a calendar date must never fail a good reading
+            print(f"[STOPLIGHT] {fid} self-gate refresh failed: {type(e).__name__}: {e}")
 
 
 def _record_ledger_day(mod, fid, reading):

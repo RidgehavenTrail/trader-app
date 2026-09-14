@@ -61,6 +61,18 @@ BASKET = ["MSFT", "GOOGL", "AMZN", "META", "ORCL"]
 YELLOW_AT = 75       # capex/OCF %: at or above this, burning too much
 GREEN_ABOVE = 100    # ...and above this, funding the bet off the balance sheet
 
+# THE READING COUNTS THE NAMES DRIVING THE COLOUR, AND NAMES THE COLOUR (user, 2026-09-12).
+# It used to count the names through the 100% gate -- a real number, but one that could
+# not explain the light beside it: on 3 red / 0 yellow / 2 green the rail read "2/5 thru"
+# under a RED dot, and the panel captioned that 2 with red's own label, "self-funding",
+# which describes the OTHER three. The count now follows the majority band.
+#
+# The word is the COLOUR, not this factor's own vocabulary: "3/5 red" says what is going
+# on under the hood at a glance, while "thru" (and any coinage like it) lands only for a
+# reader who already knows the factor's gates. The rail is the wrong place to learn them
+# -- the detail panel carries the meaning, where there is room to say "self-funding,
+# under 75% of cash flow".
+
 
 def _name_light(pct):
     if pct > GREEN_ABOVE:
@@ -204,18 +216,26 @@ def compute():
             "up" if n_down < len(deteriorating) / 2 else None)
 
     through = [s for s, v in per_name.items() if v["light"] == "green"]
+    driving = [s for s, v in per_name.items() if v["light"] == light]
     counts = f"{lights.count('green')}g/{lights.count('yellow')}y/{lights.count('red')}r"
     return {
         "id": "capex_pressure",
         "light": light,
+        # VALUE STAYS THE GATE COUNT. It is the recorded series -- every stored day
+        # since this factor shipped means "names through 100%" by it -- and re-pointing
+        # it at the majority would leave one column holding two meanings. The reading on
+        # screen comes from `metric`; the gate count keeps its own name in extras.
         "value": len(through),                # the queue: names through the 100% gate
         # ASCII-only: Windows console logs choke on glyph arrows (cp1252); the
         # frontend renders the arrow from extras["arrow"].
-        "metric": f"{len(through)}/5 thru",
+        "metric": f"{len(driving)}/5 {light}",
         "state": counts,
         "asof": newest,                       # newest quarter-end in the basket
         "extras": {
             "per_name": per_name, "arrow": arrow,
+            # What the reading counts, named rather than left to be re-derived: the
+            # companies in the band the light landed on.
+            "driving": driving, "through": through,
             # Diagnostics ride only when they have something to say. An empty list
             # renders as a "none" row in the generic grid, which is a line of chrome
             # asserting nothing -- and both of these are silent in the normal case.
@@ -293,6 +313,9 @@ def ledger(days=10, top=10):
             "date": day.get("asof") or day.get("date"),
             "light": day.get("light"), "state": day.get("state"),
             "through": len(through), "through_names": through,
+            # The panel's reading counts the band the light landed on -- same rule the
+            # rail uses, computed here so the two cannot drift apart.
+            "driving": counts.get(day.get("light")) or 0,
             "n_names": len(names), "counts": counts,
             "tie_break": _tie_break(counts),
             "arrow": ex.get("arrow"),

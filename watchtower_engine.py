@@ -3389,6 +3389,92 @@ def flush_chain_gaps():
         _chain_gaps_dirty = False
 
 
+# WHEN EACH EXPIRATION WAS FIRST LISTED -- the 1-sigma contract must be one that was
+# already listed when the look-ahead would have seen it (user, 2026-09-14).
+#
+# The look-ahead banks a mark for the contract that takes over at the roll by watching
+# expirations more than MIN_DTE + LOOKAHEAD days out. A series the exchange lists AFTER
+# that point -- inside the window -- was never looked at, and the user does not want the
+# threshold resting on it: "it will be thin and not heavily traded". Measured 2026-09-14:
+# a Wednesday 09-23 series appeared over the weekend for seven Wednesday-series names,
+# nine days out, became the nearest contract past the floor, had no mark, and suppressed
+# 1-sigma pre-market while 09-25 -- banked on 09-11 -- sat one expiry further out. At the
+# open the old selection then picked the new series and banked it.
+#
+# Why a listing DATE and not "we hold a mark for it": the first live pass banks whatever
+# it picks, so by 10:00 that day the new 09-23 carried a mark exactly like the vetted
+# 09-25. Only when a contract was first seen separates the two.
+#
+# GRANDFATHERED marks an expiration that was already listed the first time a ticker was
+# seen -- its listing date is unknown, and treating it as new would bench every contract
+# on a newly added name. A ticker entry carrying "_grandfather_pending" (written by the
+# one-time seed) grandfathers whatever else it lists on the next pass, then drops the flag.
+OPTION_LISTINGS_FILE = 'option_listings.json'
+VETTED_LISTING_DAYS = MIN_DTE_CALENDAR_DAYS + ATM_MARK_LOOKAHEAD_DAYS
+GRANDFATHERED = ""
+option_listings_lock = threading.Lock()
+_option_listings = None
+_option_listings_dirty = False
+
+
+def _load_option_listings():
+    """Caller must hold option_listings_lock. Shape: {ticker: {expiration: first_seen}}."""
+    global _option_listings
+    if _option_listings is None:
+        try:
+            with open(OPTION_LISTINGS_FILE, 'r') as f:
+                _option_listings = json.load(f) or {}
+        except (FileNotFoundError, ValueError):
+            _option_listings = {}
+    return _option_listings
+
+
+def note_listings(ticker, expirations):
+    """Record the first day each listed expiration was seen; return {exp: first_seen}."""
+    global _option_listings_dirty
+    today = datetime.now(ET).date().isoformat()
+    with option_listings_lock:
+        store = _load_option_listings()
+        seen = store.get(ticker)
+        first_sighting = seen is None or bool(seen.get("_grandfather_pending"))
+        if seen is None:
+            seen = store[ticker] = {}
+        for e in expirations:
+            if e not in seen:
+                seen[e] = GRANDFATHERED if first_sighting else today
+                _option_listings_dirty = True
+        if seen.pop("_grandfather_pending", None) is not None:
+            _option_listings_dirty = True
+        for e in [e for e in seen if e < today]:        # expired: dead weight
+            del seen[e]
+            _option_listings_dirty = True
+        return dict(seen)
+
+
+def flush_option_listings():
+    """One write per fetch_loop pass, alongside the marks."""
+    global _option_listings_dirty
+    with option_listings_lock:
+        if not _option_listings_dirty:
+            return
+        with open(OPTION_LISTINGS_FILE, 'w') as f:
+            json.dump(_option_listings, f, indent=2)
+        _option_listings_dirty = False
+
+
+def _vetted_expirations(valid_exps, first_seen):
+    """The expirations listed at least VETTED_LISTING_DAYS before they expire -- already
+    there when the look-ahead watched that far out -- nearest first."""
+    out = []
+    for e in valid_exps:
+        fs = first_seen.get(e, GRANDFATHERED)
+        if fs == GRANDFATHERED or (
+                datetime.strptime(fs, '%Y-%m-%d')
+                <= datetime.strptime(e, '%Y-%m-%d') - timedelta(days=VETTED_LISTING_DAYS)):
+            out.append(e)
+    return out
+
+
 def _first_put_chain(stock, candidates, current_price, ticker_symbol=""):
     """The first expiration in `candidates` that actually carries an ATM put.
 
@@ -3455,11 +3541,27 @@ def analyze_options_structure(ticker_symbol, current_price):
         # same "forward to the next month" rule the floor already applies, just
         # continued until it lands somewhere real. For every normal name the first
         # candidate has puts and nothing changes.
+        #
+        # VETTED CONTRACTS ONLY -- one already listed when the look-ahead watched that far
+        # out (see OPTION_LISTINGS_FILE). A series listed inside the window is stepped
+        # over for good; the next expiry out carries more premium, so the threshold errs
+        # HIGH, the safe direction. If nothing past the floor is vetted -- which should not
+        # happen, monthlies are listed months ahead -- the nearest listed is used and said.
+        first_seen = note_listings(ticker_symbol, list(expirations))
+        vetted = _vetted_expirations(valid_exps, first_seen)
+        candidates = vetted or valid_exps
+        if not vetted:
+            print(f"[OPTIONS] {ticker_symbol}: no expiration past the floor was listed "
+                  f"{VETTED_LISTING_DAYS}+ days ahead - using the nearest ({valid_exps[0]}).")
+        elif vetted[0] != valid_exps[0]:
+            _skipped = [e for e in valid_exps if e < vetted[0]]
+            print(f"[OPTIONS] {ticker_symbol}: stepping over newly listed {_skipped} - "
+                  f"using {vetted[0]}.")
         nearest_exp, puts, calls, atm_put = _first_put_chain(
-            stock, valid_exps, current_price, ticker_symbol)
+            stock, candidates, current_price, ticker_symbol)
         if atm_put is None:
             print(f"[OPTIONS] {ticker_symbol}: no put chain on any of "
-                  f"{valid_exps[:MAX_EXPIRY_PROBES]} - 1-sigma suppressed this pass.")
+                  f"{candidates[:MAX_EXPIRY_PROBES]} - 1-sigma suppressed this pass.")
             return None
 
         bid = float(atm_put['bid'].values[0]) if 'bid' in atm_put.columns else 0
@@ -3544,11 +3646,26 @@ def analyze_options_structure(ticker_symbol, current_price):
         else:
             # No book. Carry the prior session's mark or suppress; lastPrice is not
             # a third option (see the ATM-mark block above).
-            carried = get_atm_mark(ticker_symbol, nearest_exp)
+            #
+            # USE WHATEVER IS AVAILABLE (user, 2026-09-14): the chosen contract's mark if it
+            # is usable, else the next vetted contract's further out. A longer tenor carries
+            # more premium, so a stand-in errs the threshold HIGH rather than to nothing.
+            _walk = [nearest_exp] + [c for c in candidates if c > nearest_exp]
+            carried, carried_exp = None, None
+            for _e in _walk:
+                carried = get_atm_mark(ticker_symbol, _e)
+                if carried:
+                    carried_exp = _e
+                    break
             if not carried:
-                print(f"[OPTIONS] {ticker_symbol}: no live book and no carried mark "
-                      f"for {nearest_exp} - 1-sigma suppressed this pass.")
+                print(f"[OPTIONS] {ticker_symbol}: no live book and no usable carried mark "
+                      f"on {_walk[:MAX_EXPIRY_PROBES]} - 1-sigma suppressed this pass.")
                 return None
+            if carried_exp != nearest_exp:
+                print(f"[OPTIONS] {ticker_symbol}: no usable mark for {nearest_exp} - "
+                      f"carrying {carried_exp}'s instead.")
+                nearest_exp = carried_exp
+                atm_strike = carried.get("strike", atm_strike)
             atm_put_price = carried["mid"]
             # IV off a quoteless chain is a solver artifact, not a volatility -- every
             # card on the board read 3.13% or 6.25% on 2026-08-18. Carry the one that
@@ -4170,6 +4287,7 @@ def fetch_loop(test_mode=False):
         # file when the loop stops at 16:00 is the last live book of the day, which
         # is exactly what the next pre-market carries.
         flush_atm_marks()
+        flush_option_listings()
         flush_chain_gaps()
 
         # Mark this :15/:45 window done so the volume sweep fires once per window.

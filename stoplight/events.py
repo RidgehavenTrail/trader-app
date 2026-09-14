@@ -431,7 +431,51 @@ def refresh_calendar(today=None):
     return summary
 
 
-def _refresh_self_gate(ev, today, summary):
+def refresh_self_gates(factors=None, fids=None, today=None):
+    """Re-point self-gate rows at the dates their factors currently project.
+
+    A SELF-GATE ROW FOLLOWS ITS FACTOR, NOT THE WEEKLY PASS (user, 2026-09-11). The
+    date resets the moment a new 52-week high prints, and the factor recomputes it on
+    every poll -- but until now only refresh_calendar() copied it across, so a high
+    printed just after a weekly run left the row advertising a transition that was
+    already weeks off. Measured 2026-09-11: copper made a high on 09-09, the factor
+    projected 12-07, and the row still read 11-20 with the next pass five days out;
+    heavy_haul's row sat on a date already in the past.
+
+    The projection is FREE here -- the factor has already computed it and `factors`
+    carries the reading the caller just folded into state, so this costs no pull, and
+    the file is written ONLY when a date actually changes. `fids` scopes the pass to
+    the factor that just ran, so one factor's poll cannot log another's missing
+    projection. Never raises.
+    """
+    today = today or store.now_et().date()
+    summary = {"refreshed_at": store.now_iso(), "changed": [], "errors": []}
+    if factors is None:
+        factors = (store.load_state() or {}).get("factors") or {}
+    try:
+        reg = load_registry()
+    except Exception as e:  # defensive; load_registry already swallows the usual
+        return {**summary, "errors": [f"load: {type(e).__name__}: {e}"]}
+
+    for ev in reg.get("events", []):
+        if ev.get("type") != "self_gate":
+            continue
+        if fids is not None and not (set(ev.get("feeds") or []) & set(fids)):
+            continue
+        try:
+            _refresh_self_gate(ev, today, summary, factors=factors)
+        except Exception as e:
+            summary["errors"].append(f"{ev.get('event_id')}: {type(e).__name__}: {e}")
+
+    if summary["changed"]:
+        try:
+            save_registry(reg)
+        except Exception as e:
+            summary["errors"].append(f"save: {type(e).__name__}: {e}")
+    return summary
+
+
+def _refresh_self_gate(ev, today, summary, factors=None):
     """Point a self-gate row at the date its feeding factor currently projects.
 
     A self-gate fires on ELAPSED TIME -- "no new 52-week high for 63 trading bars" --
@@ -450,7 +494,10 @@ def _refresh_self_gate(ev, today, summary):
     its gate rule (copper 63 bars on HG=F, heavy_haul 63 bars on its custom index) and
     a second implementation would be free to disagree with it.
     """
-    factors = (store.load_state() or {}).get("factors") or {}
+    # The caller may already hold the readings (refresh_self_gates, off a factor poll);
+    # the weekly pass reads them from disk.
+    if factors is None:
+        factors = (store.load_state() or {}).get("factors") or {}
     for fid in ev.get("feeds") or []:
         gate = ((factors.get(fid) or {}).get("extras") or {}).get("gate_date")
         if not gate:

@@ -3462,6 +3462,23 @@ def flush_option_listings():
         _option_listings_dirty = False
 
 
+# A decision that repeats every pass is news ONCE (user, 2026-09-14). The loop runs about
+# once a minute, so a skipped series printed on each pass is thousands of identical lines
+# before it expires. Keyed on the whole message, so a DIFFERENT decision -- another series
+# skipped, another contract chosen -- still prints the same day.
+_logged_today = {}
+
+
+def _log_once_daily(msg):
+    today = datetime.now(ET).date().isoformat()
+    if _logged_today.get(msg) == today:
+        return
+    for k in [k for k, d in _logged_today.items() if d != today]:
+        del _logged_today[k]
+    _logged_today[msg] = today
+    print(msg)
+
+
 def _vetted_expirations(valid_exps, first_seen):
     """The expirations listed at least VETTED_LISTING_DAYS before they expire -- already
     there when the look-ahead watched that far out -- nearest first."""
@@ -3555,8 +3572,8 @@ def analyze_options_structure(ticker_symbol, current_price):
                   f"{VETTED_LISTING_DAYS}+ days ahead - using the nearest ({valid_exps[0]}).")
         elif vetted[0] != valid_exps[0]:
             _skipped = [e for e in valid_exps if e < vetted[0]]
-            print(f"[OPTIONS] {ticker_symbol}: stepping over newly listed {_skipped} - "
-                  f"using {vetted[0]}.")
+            _log_once_daily(f"[OPTIONS] {ticker_symbol}: stepping over newly listed "
+                            f"{_skipped} - using {vetted[0]}.")
         nearest_exp, puts, calls, atm_put = _first_put_chain(
             stock, candidates, current_price, ticker_symbol)
         if atm_put is None:
@@ -3662,8 +3679,8 @@ def analyze_options_structure(ticker_symbol, current_price):
                       f"on {_walk[:MAX_EXPIRY_PROBES]} - 1-sigma suppressed this pass.")
                 return None
             if carried_exp != nearest_exp:
-                print(f"[OPTIONS] {ticker_symbol}: no usable mark for {nearest_exp} - "
-                      f"carrying {carried_exp}'s instead.")
+                _log_once_daily(f"[OPTIONS] {ticker_symbol}: no usable mark for {nearest_exp} "
+                                f"- carrying {carried_exp}'s instead.")
                 nearest_exp = carried_exp
                 atm_strike = carried.get("strike", atm_strike)
             atm_put_price = carried["mid"]

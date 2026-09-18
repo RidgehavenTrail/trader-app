@@ -35,6 +35,29 @@ from .fred import fred_series
 _BACKTESTS = os.path.dirname(BACKTEST_DIR)
 
 
+# A SESSION COUNTS ONCE IT HAS ENDED, NOT ONCE THE DATE ROLLS (user, 2026-09-17). The
+# daily series used to drop any bar dated today, so a close printed at 16:00 stayed out
+# of the latch until midnight: on 2026-09-17 the close that completed the latch was
+# in by 16:00 and the dial still read Hold at 21:31. From 16:30 ET on a weekday, today's
+# bar is a completed session and counts. The half hour is settle time for the close.
+SESSION_COUNTS_AFTER = (16, 30)     # ET, (hour, minute)
+
+
+def last_completed_session(now=None):
+    """The date of the newest session whose close is final: today from 16:30 ET on a
+    weekday, else the weekday before. Weekends only -- a holiday has no bar to admit."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    d = now.date()
+    if d.weekday() < 5 and (now.hour, now.minute) >= SESSION_COUNTS_AFTER:
+        return d
+    d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
 def _today_et():
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -74,8 +97,9 @@ def _load_irx():
     close, the cached one may be an intraday snapshot. The pickle is never written from
     here -- the backtests own it.
 
-    COMPLETED SESSIONS ONLY. A bar dated today (ET) is dropped: the latch arbitrates on
-    consecutive daily CLOSES, and today's row is a live quote until the session ends.
+    COMPLETED SESSIONS ONLY. The latch arbitrates on consecutive daily CLOSES, so today's
+    row -- a live quote while the market is open -- is admitted only once the session has
+    ended (last_completed_session: 16:30 ET on a weekday).
     Today's reading reaches the panel through the separate live tip in engine.strategy.
 
     A labelled DTB3 fallback (irx_local serves FRED when cache and Yahoo together cannot
@@ -102,7 +126,7 @@ def _load_irx():
         tail = _recent_irx()
         if tail is not None:
             s = tail.combine_first(s).sort_index()
-    return s[s.index < pd.Timestamp(_today_et())]
+    return s[s.index <= pd.Timestamp(last_completed_session())]
 
 
 def rate_series(series_id):

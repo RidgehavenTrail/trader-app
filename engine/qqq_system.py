@@ -236,6 +236,13 @@ def _assert_blessed():
     if untracked:
         print("[QQQ] note: untracked file(s) in the live strategy dir -- "
               f"{', '.join(untracked)}")
+    # Same carve-out as live_config.assert_blessed, from the same list, so the two checks
+    # cannot disagree about what counts as data rather than a strategy change.
+    from engine.live_config import split_unblessed_data
+    dirty, data = split_unblessed_data(dirty)
+    if data:
+        print("[QQQ] note: uncommitted task data in the live strategy dir, not gated -- "
+              f"{', '.join(data)}")
     if dirty:
         raise RuntimeError(
             "qqq_system: refusing to render an UNCOMMITTED strategy change -- "

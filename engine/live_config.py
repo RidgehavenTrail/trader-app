@@ -53,6 +53,28 @@ _lock = threading.Lock()
 _cached = None
 
 
+# DATA THE SCHEDULED TASKS WRITE IS NOT A STRATEGY CHANGE (user, 2026-09-18). The Moonshot
+# index watch appends each new Nasdaq-100 roster to a tracked file under moonshot_data/ at
+# 08:00 and 17:50 and does not commit it -- by design, it is a record of what the index
+# held, not a rule. Until this carve-out that append was indistinguishable from an
+# uncommitted edit: on 2026-09-17 at 17:50 it made the repo "dirty", every Moonshot rebuild
+# failed the check from then on, and the panel sat on the previous day's 15:30 ranks marked
+# "updating" while the intraday rank polls landed unseen. It would also have blanked every
+# strategy panel on the next engine restart. Paths under these directories are logged and
+# passed; everything else in the repo is gated exactly as before.
+UNBLESSED_DATA_DIRS = ("moonshot_data/",)
+
+
+def split_unblessed_data(paths):
+    """(still_gated, data): `data` are the paths under UNBLESSED_DATA_DIRS. Shared with
+    qqq_system's copy of the check so the two cannot disagree about what is data."""
+    gated, data = [], []
+    for p in paths:
+        norm = p.strip().strip('"').replace("\\", "/")
+        (data if norm.startswith(UNBLESSED_DATA_DIRS) else gated).append(p)
+    return gated, data
+
+
 def assert_blessed(tag="LIVE"):
     """Refuse to run a strategy change that has not been COMMITTED.
 
@@ -85,6 +107,10 @@ def assert_blessed(tag="LIVE"):
     if untracked:
         print(f"[{tag}] note: untracked file(s) in the strategy repo, ignored: "
               f"{', '.join(untracked[:5])}")
+    dirty, data = split_unblessed_data(dirty)
+    if data:
+        print(f"[{tag}] note: uncommitted task data in the strategy repo, not gated: "
+              f"{', '.join(data[:5])}")
     if dirty:
         raise RuntimeError(
             f"strategy repo has UNCOMMITTED changes to tracked file(s): "

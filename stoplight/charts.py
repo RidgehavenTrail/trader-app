@@ -454,26 +454,39 @@ def refresh(force=False):
 
 
 def with_live_tip(payload):
-    """Overlay the dial chart's HEADING with a live quote. The PICTURE is untouched.
+    """Overlay the dial chart's HEADING with a live quote and the latch's progress. The
+    PICTURE is untouched.
 
     The user's split, 2026-09-10: "the chart can just be rebuilt daily — I just want
     the latest data above the chart". So the plotted series, its regime segments and
     its colouring stay exactly as the daily build left them, and only the reading in
     the header — the rate, its six-month change and the as-of date — is refreshed.
 
-    Costs no pull of its own: it reuses the dial's own 60-second live-quote cache in
-    engine.strategy, so the sidebar and this header cannot show different numbers for
-    the same instant. Returns the payload unchanged for a non-live source (a FRED id
-    has no intraday tip), on any failure, and for every chart that is not the dial.
+    THE HEADER SAYS HOW FAR THE LATCH HAS GOT (user, 2026-09-15). The chart colours each
+    print by its RAW regime, while Rocket Strategy changes state only after `latch_days`
+    consecutive closes past the line -- so on 2026-09-15 the chart read red "Tightening"
+    beside a sidebar still reading Hold, two closes into the latch's count, and the two
+    looked like they disagreed. When the raw regime is ahead of the latched state, the
+    header now carries the count ("Tightening · n/N to latch"), read from the same dial
+    payload the sidebar renders, so the two surfaces cannot count differently.
+
+    Costs no pull of its own: the quote is the dial's 60-second live cache and the count
+    is the dial's own cached payload. Returns the payload unchanged on any failure and for
+    every chart that is not the dial.
     """
     try:
-        from engine.strategy import _dial, _dial_live_rate
+        from engine.strategy import _dial, _dial_live_rate, get_dial
         d = _dial()
-        v = _dial_live_rate(d.get("series_id"))
-        if v is None:
-            return payload
     except Exception:
         return payload                      # a live extra must never break the tab
+    try:
+        v = _dial_live_rate(d.get("series_id"))
+    except Exception:
+        v = None
+    try:
+        dp = get_dial() or {}
+    except Exception:
+        dp = {}
 
     out = dict(payload)
     charts_out = []
@@ -482,35 +495,45 @@ def with_live_tip(payload):
         if c.get("id") != "fed_dial" or lat.get("chg") is None or c.get("error"):
             charts_out.append(c)
             continue
-        base = lat.get("base")               # exact -- `value - chg` is two rounded numbers
-        if base is None:
-            # A cache built before `base` existed (board_charts.json is rebuilt daily, not
-            # on restart). Borrow the sidebar dial's exact baseline -- same series, same
-            # anchor -- but only for the same observation date and lookback, so a header
-            # never measures today's quote against a different day's baseline.
-            try:
-                from engine.strategy import get_dial
-                dp = get_dial() or {}
-                if (dp.get("asof") == c.get("asof")
-                        and dp.get("lookback_months") == lat.get("months")):
-                    base = dp.get("chg_base")
-            except Exception:
-                base = None
-        if base is None:
-            charts_out.append(c)             # no exact baseline: keep the daily header
-            continue
-        chg = change_from(v, base)
         months = lat.get("months") or d.get("lookback_months")
-        # The REGIME is not recomputed here — see _with_live_rate in engine/strategy.py.
-        # A flip needs consecutive daily prints; repainting the header's word off an
-        # intraday wiggle would assert a state change the latch has not made.
-        c = dict(c, latest=dict(lat,
-                                value=round(v, 3),
-                                chg=chg,
-                                live=True,
-                                label=f"{v:.2f}% · {REGIME_LABEL[lat['regime']]} "
-                                      f"({chg:+.3f} {months}mo)"),
-                 asof=store.now_et().date().isoformat())
+        regime = lat.get("regime")
+
+        # -- the live reading, when there is a quote and an exact baseline ------------
+        value, chg, live = lat.get("value"), lat.get("chg"), False
+        base = lat.get("base")               # exact -- `value - chg` is two rounded numbers
+        if base is None and dp.get("asof") == c.get("asof") \
+                and dp.get("lookback_months") == lat.get("months"):
+            # A cache built before `base` existed (board_charts.json is rebuilt daily, not
+            # on restart): borrow the sidebar dial's exact baseline -- same series, same
+            # anchor -- only for the same observation date and lookback.
+            base = dp.get("chg_base")
+        if v is not None and base is not None:
+            value, chg, live = round(v, 3), change_from(v, base), True
+
+        # -- the latch's progress, when the raw regime is ahead of the latched state --
+        # The REGIME word is not recomputed here -- see _with_live_rate in
+        # engine/strategy.py: a flip needs consecutive daily closes, and repainting the
+        # word off an intraday wiggle would assert a change the latch has not made.
+        pend = (dp.get("pending") or {}) if dp.get("ok") else {}
+        latch = ""
+        if (pend.get("state") == regime and dp.get("state") != regime
+                and pend.get("days") is not None and pend.get("need")):
+            latch = f" · {pend['days']}/{pend['need']} to latch"
+
+        if not live and not latch:
+            charts_out.append(c)             # nothing to add: keep the daily header
+            continue
+        new_lat = dict(lat, value=value, chg=chg,
+                       label=f"{float(value):.2f}% · {REGIME_LABEL[regime]}{latch} "
+                             f"({chg:+.3f} {months}mo)")
+        if live:
+            new_lat["live"] = True
+        if latch:
+            new_lat["latch"] = {"days": pend["days"], "need": pend["need"],
+                                "latched": dp.get("state")}
+        c = dict(c, latest=new_lat)
+        if live:
+            c["asof"] = store.now_et().date().isoformat()
         charts_out.append(c)
     out["charts"] = charts_out
     return out

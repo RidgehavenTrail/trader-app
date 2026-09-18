@@ -555,6 +555,25 @@ def _prev_business_day(d):
     return x
 
 
+def _newest_observation(today=None):
+    """The newest observation date that could exist right now.
+
+    A live Yahoo series (a ^-symbol) has today's close once the session has ended --
+    stoplight.sources.rates.last_completed_session, the SAME rule that admits the bar, so
+    the cache cannot call itself caught up while the series it reads has moved on. A FRED
+    series prints T+1, so its newest is the previous business day. An explicit `today`
+    keeps the T+1 rule (the date-only form the tests use)."""
+    if today is None:
+        try:
+            if str(_dial().get("series_id") or "").startswith("^"):
+                from stoplight.sources.rates import last_completed_session
+                return last_completed_session()
+        except Exception:
+            pass
+        today = datetime.now(ET).date()
+    return _prev_business_day(today)
+
+
 def _dial_caught_up(payload, today=None):
     """Is this payload holding the newest observation that could exist?
 
@@ -569,7 +588,7 @@ def _dial_caught_up(payload, today=None):
         seen = date.fromisoformat(str(asof)[:10])
     except ValueError:
         return False
-    return seen >= _prev_business_day(today or datetime.now(ET).date())
+    return seen >= _newest_observation(today)
 
 
 def _asof_lag_bdays(payload, today=None):
@@ -599,7 +618,7 @@ def _asof_lag_bdays(payload, today=None):
         seen = date.fromisoformat(str(asof)[:10])
     except ValueError:
         return None
-    newest = _prev_business_day(today or datetime.now(ET).date())
+    newest = _newest_observation(today)
     lag = 0
     while seen < newest:
         newest = _prev_business_day(newest)

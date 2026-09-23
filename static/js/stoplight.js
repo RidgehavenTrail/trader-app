@@ -4244,7 +4244,15 @@
             const p = m.extras && m.extras.roll_63bar_pct;
             dur = `<div class="ab-dur"><span class="v">$${Math.round(m.value)}B</span>` +
                 (p != null ? `<span class="d">${p >= 0 ? '▲' : '▼'} ${p >= 0 ? '+' : ''}${p}% · 63-bar</span>` : '') +
-                '</div>';
+                '</div>' +
+                // WHAT THE NUMBER IS -- here rather than in the sidebar (user, 2026-09-21:
+                // the left side is already dense). The BASIS is spelled out because the
+                // figure reads like a revenue line and is not one: it is a full-year
+                // EARNINGS estimate, the next twelve months, not a quarter and not sales.
+                '<div class="ab-dur-note">Forward <b>annual net income</b> — earnings, ' +
+                'not revenue — of five AI-compute semis, summed from each name\'s ' +
+                'next-twelve-month estimate: NVDA, AVGO, MU, AMD, MRVL. The second figure ' +
+                'is the composite\'s change over 63 trading bars, about a quarter.</div>';
         }
 
         // Calendar — date · label · 1-word factor · countdown. This-week rows (through the

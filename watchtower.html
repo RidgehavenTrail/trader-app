@@ -816,6 +816,14 @@
     .status-dot-active   { background: #8b5cf6; }
     .status-dot-resolved { background: #34d399; }
 
+    /* EXPIRED reads as a fact about the contract, not a warning about attention, so it
+       takes the slate/steel of a closed thing rather than Stale's amber. Same geometry as
+       .stale-badge -- they sit in the same slot and never both show. */
+    .expired-badge {
+        font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+        color: #cbd5e1; background: rgba(148,163,184,.16); border: 1px solid rgba(148,163,184,.45);
+        border-radius: 4px; padding: 0 4px; cursor: help;
+    }
     .stale-badge {
         font-size: 9px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
         color: #fbbf24; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.35);
@@ -2101,6 +2109,7 @@
                             <div class="text-xs text-slate-400 mt-1">
                                 Status: <span id="nd-status" class="text-slate-300 font-medium">Watching</span>
                                 <span id="nd-stale-badge" class="stale-badge hidden ml-1">Stale</span>
+                                <span id="nd-expired-badge" class="expired-badge hidden ml-1">Expired</span>
                             </div>
                         </div>
                     </div>
@@ -2399,10 +2408,10 @@
 <script src="static/js/strategy.js?v=20260910b"></script>
 <script src="static/js/strategy-dive.js?v=20260910h"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
-<script src="static/js/newsletter-cards.js?v=20260901a"></script>
+<script src="static/js/newsletter-cards.js?v=20260926a"></script>
 <script src="static/js/charts.js?v=20260901c"></script>
 <script src="static/js/news-archive.js?v=20260821n"></script>
-<script src="static/js/newsletter-dive.js?v=20260901b"></script>
+<script src="static/js/newsletter-dive.js?v=20260926a"></script>
 <script src="static/js/newsletter-digest.js?v=20260821n"></script>
 <script src="static/js/main.js?v=20260827a"></script>
 </body>

@@ -68,7 +68,13 @@
         document.getElementById('nd-ratio').innerText = t.campaign_title || '';
         loadTradeQuote(t);
         document.getElementById('nd-status').innerText = meta.label;
-        document.getElementById('nd-stale-badge').classList.toggle('hidden', !meta.stale);
+        // The deep dive says the same thing as the card, and says WHEN -- the panel has room.
+        const ndExp = document.getElementById('nd-expired-badge');
+        if (ndExp) {
+            ndExp.classList.toggle('hidden', !meta.expired);
+            if (meta.expired) ndExp.textContent = `Expired ${meta.expired.on}`;
+        }
+        document.getElementById('nd-stale-badge').classList.toggle('hidden', !meta.stale || !!meta.expired);
         document.getElementById('nd-conviction').innerHTML = renderConvictionDotsHTML(t.conviction);
         document.getElementById('nd-levels').innerHTML = levelsRowHTML(t, meta);
         document.getElementById('nd-structure').innerHTML = renderOptionsStructureHTML(t);
@@ -258,6 +264,8 @@
         document.getElementById('nd-underlying').className = 'hidden text-sm font-mono';
         document.getElementById('nd-status').innerText = meta.label;
         document.getElementById('nd-stale-badge').classList.add('hidden');
+        const ndExpClear = document.getElementById('nd-expired-badge');
+        if (ndExpClear) ndExpClear.classList.add('hidden');
         document.getElementById('nd-conviction').innerHTML = '';
         document.getElementById('nd-levels').innerHTML = '<span class="text-slate-500">—</span>';
         document.getElementById('nd-structure').innerHTML = '';

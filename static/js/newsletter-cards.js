@@ -266,6 +266,37 @@
     // planned trade survives into a second issue without triggering, it
     // reverts to Watching. `abandoned`/`deleted` trades are filtered out
     // entirely before this ever runs (silence = drop, per the schema).
+    // AN EXPIRED OPTIONS TRADE IS NOT MERELY STALE (user, 2026-09-26). Silence never
+    // closes an entered trade -- that is the lifecycle rule and it stands -- but an options
+    // structure whose last leg has expired CANNOT still be live, whatever the letter did or
+    // did not say. Found on the 08-17 import: a KRE 75/85 call spread entered 07-06, last
+    // mentioned 07-20, legs expired 08-21, still sitting on the board wearing the amber
+    // Stale badge five weeks later, indistinguishable from a position that might yet report.
+    //
+    // DISPLAY ONLY. The status stays `open` and nothing is resolved: the letter never said
+    // how it ended, so a close here would invent an outcome and a P&L the scoreboard would
+    // then carry. This says "this one needs your decision" and leaves the decision alone.
+    function lastLegExpiry(t) {
+        const legs = t && t.legs;
+        if (!Array.isArray(legs) || !legs.length) return null;
+        const dates = legs.map(l => l && l.expiry).filter(Boolean).sort();
+        return dates.length ? dates[dates.length - 1] : null;
+    }
+
+    function expiredMeta(t) {
+        // A month-precision expiry ("2026-06") is compared at its LAST day: a leg is not
+        // expired until the month it names is over.
+        const raw = lastLegExpiry(t);
+        if (!raw || (t.status !== 'open' && t.status !== 'planned')) return null;
+        const full = raw.length === 7 ? new Date(Date.UTC(+raw.slice(0, 4), +raw.slice(5, 7), 0))
+                                      : new Date(raw + 'T00:00:00Z');
+        const today = new Date();
+        const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        if (!(full.getTime() < todayUTC)) return null;
+        const days = Math.round((todayUTC - full.getTime()) / 86400000);
+        return { on: raw, days };
+    }
+
     function getStatusMeta(t) {
         // Two DECOUPLED axes (user 2026-07-10):
         //  • `tone`  = the trade's actual LIFECYCLE state — drives card COLOR, the
@@ -274,6 +305,7 @@
         //    wears the New badge even when already entered (open), so a new+entered trade
         //    shows a New badge on an Active(violet)-toned card.
         const stale = t.status === 'open' && !!t.stale_flag;
+        const expired = expiredMeta(t);          // supersedes Stale: it is the sharper fact
         // Unresolved: a planned trade dropped by silence this issue (still in `discarded`),
         // surfaced for its transition week. Sits just after the live cluster (order 1.5) —
         // near where it was last seen — so the drop reads as continuity, not a vanish.
@@ -281,10 +313,10 @@
         if (t.status === 'closed') return { label: 'Closed', tone: 'Closed', dot: 'status-dot-resolved', order: 2, stale };
         if (t.status === 'open' || t.status === 'planned') {
             const tone = t.status === 'open' ? 'Active' : 'Watching';
-            if (t.first_seen === t.last_mentioned) return { label: 'New', tone, dot: 'status-dot-new', order: 0, stale };
+            if (t.first_seen === t.last_mentioned) return { label: 'New', tone, dot: 'status-dot-new', order: 0, stale, expired };
             return t.status === 'open'
-                ? { label: 'Active', tone, dot: 'status-dot-active', order: 1, stale }
-                : { label: 'Watching', tone, dot: 'status-dot-watching', order: 0, stale };
+                ? { label: 'Active', tone, dot: 'status-dot-active', order: 1, stale, expired }
+                : { label: 'Watching', tone, dot: 'status-dot-watching', order: 0, stale, expired };
         }
         return { label: t.status, tone: 'Watching', dot: 'status-dot-watching', order: 3, stale: false };
     }
@@ -599,7 +631,9 @@
             return `
                 <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderClass} shadow-lg flex flex-col gap-1 shrink-0 ${cardMute}" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('${t.id}')">
                     <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold ${dotColorClass} uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full ${meta.dot}"></span>${meta.label}${meta.stale ? '<span class="stale-badge ml-1">Stale</span>' : ''}</span>
+                        <span class="text-[9px] font-bold ${dotColorClass} uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full ${meta.dot}"></span>${meta.label}${meta.expired
+                    ? `<span class="expired-badge ml-1" title="Last leg expired ${esc(meta.expired.on)}, ${meta.expired.days} days ago; the letter never reported a close">Expired</span>`
+                    : (meta.stale ? '<span class="stale-badge ml-1">Stale</span>' : '')}</span>
                         ${renderConvictionDotsHTML(t.conviction)}
                     </div>
                     <div class="flex flex-col gap-1 ${dataMute}">

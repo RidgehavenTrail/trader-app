@@ -288,13 +288,23 @@
         // expired until the month it names is over.
         const raw = lastLegExpiry(t);
         if (!raw || (t.status !== 'open' && t.status !== 'planned')) return null;
+        const issueDate = (typeof NEWSLETTER_ISSUE !== 'undefined' && NEWSLETTER_ISSUE
+                           && NEWSLETTER_ISSUE.issue_date) || null;
         const full = raw.length === 7 ? new Date(Date.UTC(+raw.slice(0, 4), +raw.slice(5, 7), 0))
                                       : new Date(raw + 'T00:00:00Z');
-        const today = new Date();
-        const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-        if (!(full.getTime() < todayUTC)) return null;
-        const days = Math.round((todayUTC - full.getTime()) / 86400000);
-        return { on: raw, days };
+        // THE BOARD IS AN ISSUE, SO THE CLOCK IS THE ISSUE'S (user, 2026-09-27: "why
+        // expired? the issue is 08-17"). Every card on screen belongs to one edition --
+        // the latest import, or a past one pulled up -- and a contract is expired only if
+        // it had already run out by that edition's date. Judging the live board against
+        // TODAY instead stamped KRE dead on a board dated 08-17, four days before its own
+        // expiry, and stamped three plays dead in the week they were published. When the
+        // next issue lands, its date moves the line and whatever has genuinely run out by
+        // then lights up. Falls back to today only when no issue date is loaded at all.
+        const ref = issueDate ? new Date(issueDate + 'T00:00:00Z').getTime()
+                              : Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+        if (!(full.getTime() < ref)) return null;
+        const days = Math.round((ref - full.getTime()) / 86400000);
+        return { on: raw, days, asOf: issueDate };
     }
 
     function getStatusMeta(t) {
@@ -313,6 +323,16 @@
         if (t.status === 'closed') return { label: 'Closed', tone: 'Closed', dot: 'status-dot-resolved', order: 2, stale };
         if (t.status === 'open' || t.status === 'planned') {
             const tone = t.status === 'open' ? 'Active' : 'Watching';
+            // AN EXPIRED CONTRACT READS AS CLOSED (user, 2026-09-27). Once the last leg
+            // is past, the position is over whether or not the letter said so, and the
+            // card should look like the other finished trades -- emerald rail, muted,
+            // sorted with the closes -- rather than sitting in the live cluster wearing
+            // Active. The BADGE carries the reason: Expired, not Closed-as-reported.
+            //
+            // The STORED status is untouched: the letter never reported an outcome, so
+            // `open` it stays and the P&L slot reads '--' rather than a number nobody
+            // published. This is how the card presents, not what the trade became.
+            if (expired) return { label: 'Closed', tone: 'Closed', dot: 'status-dot-resolved', order: 2, stale, expired };
             if (t.first_seen === t.last_mentioned) return { label: 'New', tone, dot: 'status-dot-new', order: 0, stale, expired };
             return t.status === 'open'
                 ? { label: 'Active', tone, dot: 'status-dot-active', order: 1, stale, expired }
@@ -631,9 +651,9 @@
             return `
                 <div class="glass-panel p-2.5 rounded-lg cursor-pointer hover:bg-slate-800 transition border-l-4 ${borderClass} shadow-lg flex flex-col gap-1 shrink-0 ${cardMute}" style="min-width:190px; max-width:220px;" onclick="showNewsletterDive('${t.id}')">
                     <div class="flex justify-between items-center">
-                        <span class="text-[9px] font-bold ${dotColorClass} uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full ${meta.dot}"></span>${meta.label}${meta.expired
-                    ? `<span class="expired-badge ml-1" title="Last leg expired ${esc(meta.expired.on)}, ${meta.expired.days} days ago; the letter never reported a close">Expired</span>`
-                    : (meta.stale ? '<span class="stale-badge ml-1">Stale</span>' : '')}</span>
+                        <span class="text-[9px] font-bold ${dotColorClass} uppercase tracking-widest flex items-center gap-1"><span class="w-1 h-1 rounded-full ${meta.dot}"></span>${meta.label}${meta.stale ? '<span class="stale-badge ml-1">Stale</span>' : ''}${meta.expired
+                    ? `<span class="expired-badge ml-1" title="Last leg expired ${esc(meta.expired.on)}, ${meta.expired.days} days before the ${esc(meta.expired.asOf || 'current')} issue; the letter never reported a close">Expired</span>`
+                    : ''}</span>
                         ${renderConvictionDotsHTML(t.conviction)}
                     </div>
                     <div class="flex flex-col gap-1 ${dataMute}">

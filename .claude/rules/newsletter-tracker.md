@@ -90,6 +90,25 @@ risk-based P&L% calculation rule all live in `.claude/rules/newsletter-ingestion
 `EXTRACTION_SYSTEM`.** Not duplicated here; the session-10 mapping below is
 historical record of what was originally built, not the current target.
 
+**2026-09-26/27 — EXPIRED OPTIONS, a display state the lifecycle does not have.** An options
+trade whose LAST leg has expired cannot still be live, whatever the letter did or did not say —
+but silence still never closes an entered trade, so nothing about the STORED status changes.
+Four rules, settled with the user across three corrections (all of them mine to own):
+- **The clock is the ISSUE ON SCREEN, never today.** Every card belongs to one edition — the
+  latest import or a past one pulled up — and a contract is expired only if it had run out by
+  that edition's date. Judging against today stamped the current issue's own plays dead in the
+  week they were published, and stamped KRE dead on a board dated four days before its expiry.
+- **It presents as CLOSED**: emerald rail, muted, sorted with the closes, label `Closed`, with
+  **Expired** as the badge (`expiredMeta` in `newsletter-cards.js`). The stored status stays
+  `open` and the P&L slot reads `--` — the letter never published an outcome and the board must
+  not invent one for the scoreboard.
+- **Stale and Expired are INDEPENDENT and can both show.** Attention (the letter moved on) and
+  the contract's clock are different facts about one trade; the first attempt had Expired
+  supersede Stale and lost the reason KRE was worth flagging.
+- A month-precision expiry (`2026-06`) is not expired until that month is over; a calendar
+  spread is judged on its LAST leg; closed trades are skipped.
+Found on the 08-17 import: FOUR cards were dead contracts, and only one of them was stale.
+
 **2026-07-10 — status-display revision (SUPERSEDES the session-10 "Status labels" /
 "Status colors" / "Per-play price line" / indicator-as-strip-card notes below).** The
 card's **badge** and its **color** are now DECOUPLED (`getStatusMeta` returns `label` +

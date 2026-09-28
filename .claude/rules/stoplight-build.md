@@ -315,6 +315,17 @@ error colour rather than left blank. It immediately earned itself — Gemini has
 recorded at all, and Copilot's is 28 days behind the reading. Derivations (a x4, a division)
 are NOT sources and get a footnote, never rows that imply a publisher.
 
+**SESSION 54 (2026-09-03..28) — TWO READINGS RE-WORDED, AND WHY.** `capex_pressure`'s rail
+metric counts the band THE LIGHT LANDED ON and names that colour ("3/5 red"), not the names
+through the 100% gate: "2/5 thru" sat under a RED dot captioned with red's own label
+("self-funding"), which described the OTHER three names. The rail says the COLOUR because a
+factor-specific coinage ("thru", "burn") lands only for a reader who already knows the gates
+(user); the detail panel carries the meaning. `value` still records the gate count — it is the
+stored series and re-pointing it would leave one column holding two meanings. And Silicon E's
+odometer now states its BASIS in the detail panel (forward ANNUAL net income, earnings not
+revenue, five names, corner = a quarter's change); the sidebar stays uncluttered by the user's
+standing rule, which is where a first attempt wrongly put it.
+
 **THE ONE SHORTCUT — STATUS, session 50:** `AB_WHY` is now **16 of 16 and DONE**; `AB_VIEWS` is
 13 (nine factors with two views, four with one, and copper / market_credit / net_liquidity
 legend-only on purpose). The definitions are still hand-written in `static/js/stoplight.js` rather

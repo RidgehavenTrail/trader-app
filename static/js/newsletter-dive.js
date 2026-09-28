@@ -74,7 +74,7 @@
             ndExp.classList.toggle('hidden', !meta.expired);
             if (meta.expired) ndExp.textContent = `Expired ${meta.expired.on}`;
         }
-        document.getElementById('nd-stale-badge').classList.toggle('hidden', !meta.stale || !!meta.expired);
+        document.getElementById('nd-stale-badge').classList.toggle('hidden', !meta.stale);
         document.getElementById('nd-conviction').innerHTML = renderConvictionDotsHTML(t.conviction);
         document.getElementById('nd-levels').innerHTML = levelsRowHTML(t, meta);
         document.getElementById('nd-structure').innerHTML = renderOptionsStructureHTML(t);

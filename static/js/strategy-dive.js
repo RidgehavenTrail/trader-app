@@ -1406,7 +1406,12 @@
             (b && b.maxdd != null ? ` <span class="sd-fact-sub">${esc(b.ticker || 'QQQ')} ${b.maxdd.toFixed(1)}%</span>` : ''), '#f87171');
         if (f.calmar != null) out += item('Calmar', f.calmar.toFixed(2));
         out += item('Begins', esc(d.begins || '—'));
-        out += item('As of', esc(d.asof || '—') + (d.stale ? sub('stale') : ''));
+        // Two marks a session apart, on purpose: the book and its equity are at the as-of
+        // close; CAGR, drawdown and the multiple run through the last SIGNAL session (the
+        // research convention -- the engine says why). The sub names that date.
+        out += item('As of', esc(d.asof || '—') + (d.stale ? sub('stale') : '') +
+                    (d.refreshing ? sub('updating') : '') +
+                    (d.stats_through && d.stats_through !== d.asof ? sub(`stats through ${d.stats_through}`) : ''));
         return `<div class="sd-facts-row">${out}</div>`;
     }
 
@@ -1451,41 +1456,43 @@
         }));
     }
 
-    // The two books for one rail selection. i === 0 is the LIVE book: it carries weight,
-    // pick and the next-out mark, all read off the engine's own state. A historical date
-    // shows composition from the records and em-dashes the two figures that need a
-    // per-session snapshot the engine does not yet emit -- shown as a hole on purpose.
+    // The two books for one rail selection. EVERY chip -- the live book and each trade
+    // date -- is an ENGINE SNAPSHOT (2026-09-10): composition, weight, pick, drought, the
+    // bank and the cash as the walk recorded them after that session's trades, priced at
+    // that close. Until then a historical date em-dashed weight and pick as a hole on
+    // purpose. i === 0 is the live book and adds the next-out mark and the ranking; a
+    // past date has no ranking (the signal is today's) and no next-out, and its moon is
+    // the split on that date.
     function moRenderBooks(d, i) {
         const box = document.getElementById('mo-books');
         const strip = document.getElementById('mo-substrip');
         if (!box) return;
         const snaps = (d.snapshots || []).slice().reverse();
-        const s = snaps[i] || { date: d.asof, active: d.active, n_active: (d.active || []).length,
-                                n_banked: (d.bank || []).length, equity: d.facts && d.facts.equity };
         const live = (i === 0);
-        const byTk = {};
-        (d.active || []).forEach(a => { byTk[a.tk] = a; });
+        const s = snaps[i] || { date: d.asof, active: d.active, bank: d.bank,
+                                n_active: (d.active || []).length, n_banked: (d.bank || []).length,
+                                equity: d.facts && d.facts.equity, bank_share: d.facts && d.facts.bank_share };
+        const known = s.equity != null;            // a session the walk marked
 
         if (strip) strip.innerHTML =
             `<span>book as of <b>${esc(s.date || '')}</b></span>` +
             (s.equity != null ? `<span>equity <b>${Number(s.equity).toFixed(2)}u</b></span>` : '') +
             `<span>${s.n_active ?? '—'} active</span><span>${s.n_banked ?? '—'} banked</span>` +
             (live ? '' : `<span>${moEventsHTML(s)}</span>`) +
-            (live ? '' : `<span class="mo-warn">historical — weight and pick need the engine snapshot</span>`);
+            (known ? '' : `<span class="mo-warn">the walk did not mark this session — composition unknown</span>`);
 
-        const rows = live ? (d.active || []) : (s.active || []);
-        const maxW = Math.max(0, ...(d.active || []).map(a => a.weight || 0));
+        const rows = s.active || [];
+        const maxW = Math.max(0, ...rows.map(a => a.weight || 0));
         // Pick brightness: 45% for a fresh pick rising to full for the book's largest --
         // the one the exit rule would act on. Same number, but now you can see which.
-        const maxPick = Math.max(0, ...(d.active || []).map(a => a.pick || 0));
+        const maxPick = Math.max(0, ...rows.map(a => a.pick || 0));
         const pickStyle = pk => (pk == null) ? '' :
             ` style="color:rgba(56,189,248,${(0.45 + 0.55 * (maxPick ? pk / maxPick : 1)).toFixed(2)})"`;
         const activeRows = rows.map(r => {
-            const a = live ? (byTk[r.tk] || r) : r;
             const isNext = live && r.tk === d.next_out;
             const fate = d.next_fate || 'cut';
             const badge = isNext ? `<span class="mo-badge ${fate}">next: ${fate}</span>` : '';
-            const drought = a.drought;
+            const drought = r.drought;
             return `<tr class="${isNext ? 'next ' + fate : ''}" data-tk="${esc(r.tk)}" data-px="${r.px}" data-ret="${r.ret}">` +
                 `<td class="sym">${esc(r.tk)}${badge}</td>` +
                 `<td class="mo-muted">${esc(r.entry || '')}</td>` +
@@ -1494,21 +1501,23 @@
                 `<td class="mo-pl ${moCls(r.ret)}">${moPct(r.ret)}</td>` +
                 `<td>${r.days ?? '—'}</td>` +
                 `<td${(d.gate_days != null && drought > d.gate_days) ? ' class="mo-warn"' : ''}>${drought == null ? '—' : drought}</td>` +
-                `<td class="mo-pick"${pickStyle(live && a.pick != null ? a.pick : null)}>${live && a.pick != null ? a.pick : '<span class="mo-muted">—</span>'}</td>` +
-                `<td>${live && a.weight != null ? a.weight.toFixed(1) + '%' + moBar(a.weight, maxW) : '<span class="mo-muted">—</span>'}</td>` +
+                `<td class="mo-pick"${pickStyle(r.pick != null ? r.pick : null)}>${r.pick != null ? r.pick : '<span class="mo-muted">—</span>'}</td>` +
+                `<td>${r.weight != null ? r.weight.toFixed(1) + '%' + moBar(r.weight, maxW) : '<span class="mo-muted">—</span>'}</td>` +
                 `</tr>`;
         }).join('') || `<tr><td colspan="9" class="mo-empty">No active positions.</td></tr>`;
 
         // SORTED BY MULTIPLE, compact (user, 2026-09-09): the bank tracks sizing and gains
         // only, so the biggest winner leads and the rows are tight -- no weight bar, the
-        // percentage alone.
-        const bank = (d.bank || []).filter(b => !s.date || (b.banked || '') <= s.date)
-            .sort((a, b) => (b.mult || 0) - (a.mult || 0));
+        // percentage alone. The snapshot's bank is the bank ON THAT DATE, multiple and
+        // weight at that close; an older payload without one falls back to the live bank
+        // filtered by banking date.
+        const bank = (s.bank || (d.bank || []).filter(b => !s.date || (b.banked || '') <= s.date))
+            .slice().sort((a, b) => (b.mult || 0) - (a.mult || 0));
         const bankRows = bank.map(b =>
             `<tr><td class="sym">${esc(b.tk)}</td>` +
             `<td class="mo-muted">${esc(b.banked || '')}</td>` +
             `<td class="mo-pl ${moCls((b.mult || 1) - 1)}">${b.mult == null ? '—' : (b.mult >= 10 ? b.mult.toFixed(0) : b.mult.toFixed(1))}x</td>` +
-            `<td>${live && b.weight != null ? b.weight.toFixed(1) + '%' : '<span class="mo-muted">—</span>'}</td></tr>`
+            `<td>${b.weight != null ? b.weight.toFixed(1) + '%' : '<span class="mo-muted">—</span>'}</td></tr>`
         ).join('') || `<tr><td colspan="4" class="mo-empty">Nothing banked yet.</td></tr>`;
 
         // THE CURRENT RANKING (user, 2026-09-10): a thin list between the books -- the
@@ -1532,21 +1541,71 @@
                 `<span class="n">${i + 1}</span><span class="tk">${esc(r.tk)}</span>` +
                 `<span class="m ${moCls(r.mom)}">${(r.mom >= 0 ? '+' : '') + Math.round(r.mom)}%</span>${mk}</div>`;
         }).join('');
-        const rankCard = !live ? '' :
+        // The middle column is always drawn so the three headings stay on one line and the
+        // moon keeps its place; a past date has no ranking (the signal is today's), so the
+        // card says so in one muted line and the moon below it shows THAT date's split.
+        const rankCard =
             `<section class="mo-rank">` +
-            `<div class="mo-rank-h" title="Top ${rk.length} by ${d.lookback_days != null ? d.lookback_days + '-session ' : ''}momentum on the last close — the signal the book acts on at the next open">` +
-            `Rank <span class="d">${esc((d.ranking_date || '').slice(5))}</span>` +
-            (d.veto ? `<span class="v" title="The raw #1 is gated, so the session stands down: no buy, no displacement">veto</span>` : '') +
-            `</div>` +
-            `<div class="mo-card mo-fit mo-rank-card">` + (rankRows || '<div class="mo-empty">—</div>') + `</div>` +
+            (live
+                ? `<div class="mo-rank-h" title="Top ${rk.length} by ${d.lookback_days != null ? d.lookback_days + '-session ' : ''}momentum on the last close — the signal the book acts on at the next open` +
+                  (d.intraday_at ? `. PROVISIONAL: today's row is an intraday poll at ${esc(d.intraday_at.slice(11))} ET; the after-close re-pull replaces it` : '') + `">` +
+                  // An intraday poll (user, 2026-09-10: "situational awareness ... just the
+                  // rank list") stamps the heading with its time so a provisional #1 is not
+                  // read as the close the book will act on.
+                  `Rank <span class="d">${esc((d.ranking_date || '').slice(5))}${d.intraday_at ? ' · ' + esc(d.intraday_at.slice(11)) + ' intraday' : ''}</span>` +
+                  (d.veto ? `<span class="v" title="The raw #1 is gated, so the session stands down: no buy, no displacement">veto</span>` : '') +
+                  `</div>` +
+                  `<div class="mo-card mo-fit mo-rank-card">` + (rankRows || '<div class="mo-empty">—</div>') + `</div>`
+                : `<div class="mo-rank-h" title="The ranking is today's signal; a past date shows its split only">` +
+                  `Rank <span class="d">${esc((s.date || '').slice(5))}</span></div>` +
+                  `<div class="mo-card mo-fit mo-rank-card"><div class="mo-empty">live only</div></div>`) +
             // THE MOON SITS UNDER THE RANK LIST (user, 2026-09-10: "it looks off balance"),
             // so all three columns start with a heading and a card on the same line and the
             // middle one carries the split below its five rows.
-            moPieSVG(d) +
+            moPieSVG(d, s) +
             `</section>`;
 
+        // INDEX ROTATION under the active book (user, 2026-09-11: "the last 10 to enter
+        // and last 10 to exit"), two compact tables side by side, a mark on a name the
+        // book holds (✓) or has banked (◆). Above them, an amber line per ANNOUNCED change
+        // the index watch has read that is not yet in the recorded membership; red once
+        // its effective date has passed and the roster still does not show it.
+        const rot = d.rotation || {}, iw = d.index_watch || {};
+        const heldSet = new Set((d.active || []).map(a => a.tk)), bankSet = new Set((d.bank || []).map(b => b.tk));
+        const rotMark = tk => heldSet.has(tk) ? '<span style="color:#34d399" title="held">✓</span>'
+                            : bankSet.has(tk) ? '<span style="color:#a78bfa" title="in the bank">◆</span>' : '';
+        const rotRows = list => (list || []).map(r =>
+            `<tr><td class="mo-muted">${esc(r.date || '')}</td><td class="sym">${esc(r.tk)}</td><td class="mk">${rotMark(r.tk)}</td></tr>`
+        ).join('') || `<tr><td colspan="3" class="mo-empty">—</td></tr>`;
+        const pendHTML = (iw.pending || []).map(p => {
+            const adds = p.added || [], rems = p.removed || [];
+            const what = [adds.length ? `joins <b>${adds.map(esc).join(', ')}</b>` : '',
+                          rems.length ? `leaves <b>${rems.map(esc).join(', ')}</b>` : ''].filter(Boolean).join(' · ');
+            const when = p.effective ? `effective <b>${esc(p.effective)}</b>` : 'effective date not stated';
+            const note = p.unparsed ? 'the release could not be read' :
+                         p.in_force ? 'past its effective date, not yet in the recorded membership' :
+                                      'announced, not yet in the index';
+            return `<div class="mo-pending${p.in_force ? ' late' : ''}" title="${esc(p.title || '')}">📣 ` +
+                `<span class="mo-muted">${esc((p.published || '').slice(0, 10))}</span> ${what || esc(p.title || '')} · ${when} ` +
+                `<span class="mo-muted">— ${note}</span>` +
+                (p.url ? ` <a href="${esc(p.url)}" target="_blank" rel="noopener" class="mo-muted">release ↗</a>` : '') + `</div>`;
+        }).join('');
+        const unmapped = (iw.unmapped || []).length
+            ? `<div class="mo-pending late">⚠ on the latest roster but unmapped to a ticker: ${iw.unmapped.map(esc).join(', ')}</div>` : '';
+        const rotHTML =
+            `<div class="mo-h3 mo-rot-h">Index rotation <span class="cnt">${rot.n_members ?? '—'} members · as of ${esc(rot.asof || '—')}` +
+            `${iw.checked_at ? ' · watch ' + esc(iw.checked_at) : ''}</span>` +
+            `<span class="lg"><span style="color:#34d399">✓</span> held · <span style="color:#a78bfa">◆</span> banked</span></div>` +
+            pendHTML + unmapped +
+            `<div class="mo-rot">` +
+            `<div><div class="mo-h4 in">Entered</div><div class="mo-card mo-fit"><table class="mo-tbl mo-compact"><thead><tr>` +
+            `<th>Date</th><th>Ticker</th><th></th></tr></thead><tbody>${rotRows(rot.entered)}</tbody></table></div></div>` +
+            `<div><div class="mo-h4 out">Exited</div><div class="mo-card mo-fit"><table class="mo-tbl mo-compact"><thead><tr>` +
+            `<th>Date</th><th>Ticker</th><th></th></tr></thead><tbody>${rotRows(rot.exited)}</tbody></table></div></div>` +
+            `</div>`;
+
         box.innerHTML =
-            `<div class="mo-halves${live ? ' with-rank' : ''}">` +
+            `<div class="mo-halves with-rank">` +
             `<section><div class="mo-h3">Active book <span class="cnt">${rows.length} positions</span></div>` +
             `<div class="mo-card"><div class="mo-tblwrap"><table class="mo-tbl"><thead><tr>` +
             `<th>Ticker</th><th>Entry</th><th>Basis</th><th>Last</th><th>Ret</th><th>Held</th>` +
@@ -1561,7 +1620,7 @@
             `<input type="date" id="mo-start" min="${esc((d.starts || [])[0] || '')}" max="${esc(d.asof || '')}" value="${esc(_moPending || d.begins || '')}">` +
             `<button id="mo-run" type="button" title="Re-run the book from this date (~11s)">Reset &amp; run</button>` +
             `<span id="mo-status" class="mo-status"></span>` +
-            `</div></section>` +
+            `</div>` + rotHTML + `</section>` +
             rankCard +
             `<section>` +
             `<div class="mo-h3 bank">Bank book <span class="cnt">${bank.length} sleeves, held to the end</span></div>` +
@@ -1593,11 +1652,15 @@
     // Bank is SOLID in the bank's violet; the active book is the HATCH, the board's one
     // textured mark, here meaning "the search, not the return". The hatch pattern is
     // declared in this SVG's own defs so it does not depend on the AI bubble having drawn.
-    function moPieSVG(d) {
+    // `s` is the selected rail snapshot: its split and equity are that date's (the live
+    // chip's are the facts strip's own). Without one, the facts.
+    function moPieSVG(d, s) {
         const f = d.facts || {};
-        if (f.bank_share == null || f.equity == null) return '';
-        const bank = Math.max(0, Math.min(100, f.bank_share)), active = 100 - bank;
-        const bankU = f.equity * bank / 100, activeU = f.equity - bankU;
+        const share = (s && s.bank_share != null) ? s.bank_share : f.bank_share;
+        const equity = (s && s.equity != null) ? Number(s.equity) : f.equity;
+        if (share == null || equity == null) return '';
+        const bank = Math.max(0, Math.min(100, share)), active = 100 - bank;
+        const bankU = equity * bank / 100, activeU = equity - bankU;
         const R = 46, cx = 52, cy = 52, W = 104, H = 150;
         // A MOON (user, 2026-09-09 -- "give that pie chart a moon texture"). The bank is
         // the LIT face in the bank's violet; the active book is the DARK SIDE. The phase
@@ -1659,8 +1722,103 @@
             `aria-label="Bank ${bank.toFixed(0)} percent of equity, active book ${active.toFixed(0)} percent">` +
             defs + disc +
             `<text x="${cx}" y="${cy + R + 26}" class="ab-pie-c">Total equity</text>` +
-            `<text x="${cx}" y="${cy + R + 41}" class="ab-pie-v">${f.equity.toFixed(2)}u</text>` +
+            `<text x="${cx}" y="${cy + R + 41}" class="ab-pie-v">${equity.toFixed(2)}u</text>` +
             `</svg></div>`;
+    }
+
+    // THE CHART TAB (user, 2026-09-12: "plot out the equity curve of the moonshot strategy
+    // based on the current 'start' date"; "make the base amount $100,000"). The curve is
+    // the book this payload was BUILT from -- the start the Reset & run control last ran,
+    // not a date typed and not yet run. Rebased so its first mark is the payload's dollar
+    // base; QQQ buy and hold on the same base beside it (the house rule: a buy-and-hold
+    // line beside every result). Log by default: over a decade the early years of a
+    // compounding book are a flat line on a linear axis. The legend reads the hovered day,
+    // or the last one.
+    let _moEqChart = null;
+    let _moEqScale = 'log';
+    function moDrawEquity() {
+        const box = document.getElementById('mo-eq-chart');
+        const legend = document.getElementById('mo-eq-legend');
+        if (!box || typeof LightweightCharts === 'undefined') return;
+        if (_moEqChart) { _moEqChart.remove(); _moEqChart = null; }
+        box.innerHTML = '';
+        const d = _moLast, c = d && d.curve;
+        if (!c || !(c.dates || []).length) {
+            box.innerHTML = `<div class="mo-empty">${d ? 'This book carries no equity curve yet.' : 'Building the book…'}</div>`;
+            if (legend) legend.innerHTML = '';
+            return;
+        }
+        const base = d.chart_base_usd;
+        const k = base ? base / c.equity[0] : 1;
+        const money = v => !base ? v.toFixed(2) + 'u'
+            : v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : '$' + Math.round(v).toLocaleString('en-US');
+        const MO = '#818cf8', BH = '#94a3b8';
+        const chart = LightweightCharts.createChart(box, {
+            autoSize: true,
+            layout: { background: { color: 'transparent' }, textColor: '#94a3b8', fontFamily: 'Inter, sans-serif' },
+            grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+            // minBarSpacing well under the library's 0.5px default: twelve years of daily marks
+            // are ~3,150 points, and at 0.5px fitContent() cannot fit them and clips the
+            // start -- the first cut drew 2019 onward for a 2014 book.
+            timeScale: { borderColor: '#334155', minBarSpacing: 0.05 },
+            rightPriceScale: { borderColor: '#334155', mode: _moEqScale === 'log' ? 1 : 0 },
+            leftPriceScale: { visible: false },
+            localization: { priceFormatter: money },
+            crosshair: { mode: 0 }
+        });
+        // NO SERIES TITLES (user, 2026-09-12): the library paints a title inside the plot beside
+        // the axis, over the last stretch of the line. The legend names both lines; the value
+        // tag stays, on the axis itself.
+        // A DAY WITH NO VALUE IS A GAP, NOT A ZERO (2026-09-23). The payload carries null
+        // where the walk could not price a day -- the price source dropped the whole
+        // 2026-09-22 session for most names -- and `null * k` is 0 in JavaScript, so the
+        // line dived to the axis and back. A point with a time and no value is the
+        // library's own "whitespace": it holds the date on the scale and draws nothing.
+        const pt = (t, v) => (typeof v === 'number' && isFinite(v)) ? { time: t, value: v * k }
+                                                                   : { time: t };
+        const mo = chart.addLineSeries({ color: MO, lineWidth: 2, priceLineVisible: false });
+        mo.setData(c.dates.map((t, i) => pt(t, c.equity[i])));
+        if (c.bench) {
+            const bh = chart.addLineSeries({ color: BH, lineWidth: 1.5, priceLineVisible: false });
+            bh.setData(c.dates.map((t, i) => pt(t, c.bench[i])));
+        }
+        chart.timeScale().fitContent();
+        _moEqChart = chart;
+
+        const byTime = {};
+        c.dates.forEach((t, i) => { byTime[t] = i; });
+        // The readout says the day had no mark rather than printing $0 / 0.0x for it.
+        const num = v => typeof v === 'number' && isFinite(v);
+        const show = i => {
+            if (!legend) return;
+            const e = c.equity[i], b = c.bench ? c.bench[i] : null;
+            const mTxt = num(e) ? `<b>${money(e * k)}</b> ${(e / c.equity[0]).toFixed(1)}×`
+                                : '<b>—</b> <span class="mo-muted">no mark that day</span>';
+            const qTxt = num(b) ? `<b>${money(b * k)}</b> ${(b / c.bench[0]).toFixed(1)}×` : '<b>—</b>';
+            legend.innerHTML =
+                `<span>${esc(c.dates[i])}${i === c.dates.length - 1 ? ' · as of' : ''}</span>` +
+                `<span><span class="sw" style="background:${MO}"></span>Moonshot ${mTxt}</span>` +
+                (b == null && !c.bench ? '' :
+                    `<span><span class="sw" style="background:${BH}"></span>` +
+                    `${esc(c.bench_ticker || 'Benchmark')} ${qTxt}</span>`) +
+                `<span>from ${money(c.equity[0] * k)} on ${esc(c.dates[0])}</span>`;
+        };
+        show(c.dates.length - 1);
+        chart.subscribeCrosshairMove(p => {
+            const t = p && p.time;
+            const key = !t ? null : (typeof t === 'string' ? t
+                : `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`);
+            show(key != null && byTime[key] != null ? byTime[key] : c.dates.length - 1);
+        });
+
+        document.querySelectorAll('.mo-eq-scale button').forEach(btn => {
+            btn.classList.toggle('on', btn.dataset.scale === _moEqScale);
+            btn.onclick = () => {
+                _moEqScale = btn.dataset.scale;
+                document.querySelectorAll('.mo-eq-scale button').forEach(b => b.classList.toggle('on', b === btn));
+                if (_moEqChart) _moEqChart.priceScale('right').applyOptions({ mode: _moEqScale === 'log' ? 1 : 0 });
+            };
+        });
     }
 
     function moRenderPortfolio(d) {
@@ -1690,12 +1848,16 @@
         document.getElementById('sd-regime').innerText =
             (typeof strLast !== 'undefined' && strLast && strLast.label) ? `dial: ${strLast.label}` : '';
 
-        // A RE-RUN keeps the current books on screen and says what it is doing in the
-        // control's own status line; a FIRST load has nothing to keep and says so in the
-        // facts strip instead.
-        const rerun = !!_moLast;
+        // REOPENING ON THE SAME START DATE SHOWS THE BOOK ALREADY IN THE PAGE AT ONCE (user,
+        // 2026-09-14: "I should never have to wait for the tab to appear"), then asks the
+        // engine, which answers immediately too -- with its newest book, or with the one it has
+        // flagged `refreshing` while it walks a new one (moPollRefresh swaps that in).
+        const sameStart = !!_moLast && (start === undefined || (start || '') === (_moLast.begins_key || ''));
+        const rerun = !!_moLast && !sameStart;
         _moBusy = true;
-        if (rerun) {
+        if (sameStart) {
+            moApply(_moLast);
+        } else if (rerun) {
             moSetStatus(`rebuilding the book from ${_moStart || 'the start'} — about 11 seconds`, 'busy');
         } else {
             sdSetFacts('<div class="sd-facts-row"><span class="sd-fact"><span class="sd-fact-k">Book</span>' +
@@ -1708,7 +1870,7 @@
         // Keep whichever of our tabs is showing; a ticker's Chart/Dial can't be.
         const active = document.querySelector('#sd-tabs .view-tab.active');
         const cur = active && active.dataset.view;
-        switchTab('sd', (cur === 'portfolio' || cur === 'custom') ? cur : 'strategy');
+        switchTab('sd', (cur === 'portfolio' || cur === 'equity' || cur === 'custom') ? cur : 'strategy');
 
         let d = null;
         try {
@@ -1720,7 +1882,9 @@
 
         if (!d || !d.ok) {
             const msg = (d && d.error) || 'unavailable';
-            if (rerun) {
+            if (sameStart) {
+                return;                            // keep the book on screen; nothing new to show
+            } else if (rerun) {
                 moSetStatus(`failed: ${msg}`, 'err');
             } else {
                 sdSetFacts('<div class="sd-facts-row"><span class="sd-fact"><span class="sd-fact-k">Book</span>' +
@@ -1728,12 +1892,46 @@
             }
             return;
         }
-        _moLast = d;
+        d.begins_key = _moStart;
         _moPending = null;                         // the typed date is now the built one
+        moApply(d);
+        if (rerun) moSetStatus(`rebuilt from ${d.begins}${d.built_in ? ' in ' + d.built_in + 's' : ' (cached)'}`, 'ok');
+        moPollRefresh(seq);
+    }
+
+    // Render one book into every Moonshot tab. The Portfolio rail keeps the current chip; the
+    // Chart tab redraws only if it is the one showing (a chart built hidden measures zero).
+    function moApply(d) {
+        _moLast = d;
         sdSetFacts(moFactsHTML(d));
         sdSetColumns({ rules: d.rules, trades: d.trades });   // no phase_diagram: draws nothing
         moRenderPortfolio(d);
-        if (rerun) moSetStatus(`rebuilt from ${d.begins}${d.built_in ? ' in ' + d.built_in + 's' : ' (cached)'}`, 'ok');
+        const shown = document.querySelector('#sd-tabs .view-tab.active');
+        if (shown && shown.dataset.view === 'equity') moDrawEquity();
+    }
+
+    // WHILE THE ENGINE WALKS A NEWER BOOK, the panel shows the previous one flagged "updating"
+    // and asks again every ten seconds, swapping the new book in when it lands. Stops when the
+    // viewer opens something else (a new showMoonshotDive or ticker load moves the sequence).
+    let _moRefreshTimer = null;
+    function moPollRefresh(seq) {
+        clearTimeout(_moRefreshTimer);
+        if (!_moLast || !_moLast.refreshing) return;
+        _moRefreshTimer = setTimeout(async () => {
+            if (seq !== _moSeq) return;
+            let d = null;
+            try {
+                const r = await fetch(`${API_BASE}/get_moonshot?start=${encodeURIComponent(_moStart)}`);
+                d = await r.json();
+            } catch (e) { /* try again next tick */ }
+            if (seq !== _moSeq) return;
+            if (d && d.ok) {
+                d.begins_key = _moStart;
+                if (!d.refreshing) moApply(d);
+                else _moLast.refreshing = true;
+            }
+            moPollRefresh(seq);
+        }, 10000);
     }
 
     async function showStrategyDive(ticker) {
@@ -1805,3 +2003,26 @@
         viewState.sd.levels = sdLevels(d, color);
         drawStrategyLevels('sd');
     }
+
+    // THE HEADER ALERT (user, 2026-09-11: "alert the user to any new announced tickers
+    // joining the QQQ, but haven't formally been incorporated"). On page load the
+    // Moonshot button asks the light notices route -- no walk behind it -- and carries an
+    // amber count of announced index changes not yet in force, with the names and
+    // effective dates in its tooltip. Nothing pending, nothing shown.
+    async function moNotices() {
+        const el = document.getElementById('mo-btn-alert'), btn = document.getElementById('mo-btn');
+        if (!el || !btn) return;
+        try {
+            const r = await fetch(`${API_BASE}/get_moonshot_notices`);
+            const d = await r.json();
+            const pend = (d && d.ok) ? (d.pending || []) : [];
+            el.hidden = !pend.length;
+            el.textContent = pend.length ? String(pend.length) : '';
+            btn.title = !pend.length ? 'Moonshot — the momentum book' :
+                `Moonshot — ${pend.length} announced index change${pend.length > 1 ? 's' : ''} not yet in force: ` +
+                pend.map(p => ((p.added || []).map(t => '+' + t).concat((p.removed || []).map(t => '−' + t)).join(' ') || p.title || '?') +
+                              (p.effective ? ` (effective ${p.effective})` : '')).join('; ');
+        } catch (e) { /* the button stays plain */ }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', moNotices);
+    else moNotices();

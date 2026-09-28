@@ -584,6 +584,26 @@
        alone does nothing, a re-run is ~11s of engine and should not fire on a mis-click --
        and a status that says so while it runs. */
     .mo-ctl-run { margin:10px 0 0 2px; }
+    /* INDEX ROTATION under the active book (user, 2026-09-11): two compact tables side by
+       side -- the last names in, the last names out -- and an amber line for an ANNOUNCED
+       change not yet in force. The header button carries a count of those. */
+    .mo-h3.mo-rot-h { margin-top:28px; }    /* clear air under the Strategy-begins control (user, 2026-09-11); .mo-h3's own margin is declared later, so the pair outranks it */
+    .mo-rot-h .lg { margin-left:10px; color:#64748b; letter-spacing:0; text-transform:none; font-weight:400; }
+    .mo-rot { display:grid; grid-template-columns:max-content max-content; gap:14px; align-items:start; }
+    .mo-rot .mo-h4 { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+                     color:#64748b; margin:0 0 4px 2px; }
+    .mo-rot .mo-h4.in { color:#34d399; }
+    .mo-rot .mo-h4.out { color:#f87171; }
+    .mo-rot .mo-card.mo-fit { margin:0; padding:5px 9px 3px; }
+    .mo-rot td.mk { padding-left:4px; padding-right:2px; }
+    .mo-pending { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:baseline; margin:0 0 8px 2px;
+                  padding:5px 9px; border:1px solid rgba(245,158,11,.45); border-radius:6px;
+                  background:rgba(245,158,11,.08); color:#fbbf24; font-size:11px; }
+    .mo-pending b { color:#fde68a; }
+    .mo-pending .mo-muted { color:#b45309; }
+    .mo-pending.late { border-color:rgba(248,113,113,.45); background:rgba(248,113,113,.07); color:#fca5a5; }
+    .mo-btn-alert { display:inline-block; margin-left:6px; padding:0 5px; border-radius:999px;
+                    background:#f59e0b; color:#0b0f19; font-size:9px; letter-spacing:0; vertical-align:1px; }
     #mo-start { background:#0b1424; color:#e2e8f0; border:1px solid #334155; border-radius:5px;
                 padding:3px 8px; font-family:ui-monospace,monospace; font-size:11px;
                 color-scheme:dark; }
@@ -739,6 +759,14 @@
                 border:1px solid; }
     .mo-badge.bank { color:#c4b5fd; border-color:rgba(167,139,250,.5); background:rgba(167,139,250,.12); }
     .mo-badge.cut { color:#fca5a5; border-color:rgba(248,113,113,.5); background:rgba(248,113,113,.12); }
+    /* MOONSHOT CHART TAB (2026-09-12) */
+    .mo-eq-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 8px; flex-wrap:wrap; }
+    .mo-eq-legend { display:flex; gap:16px; flex-wrap:wrap; font-family:ui-monospace,monospace; font-size:11px; color:#64748b; }
+    .mo-eq-legend b { color:#e2e8f0; font-weight:600; }
+    .mo-eq-legend .sw { display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:5px; }
+    .mo-eq-scale { display:flex; border:1px solid #334155; border-radius:6px; overflow:hidden; }
+    .mo-eq-scale button { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:#64748b; padding:2px 9px; background:transparent; }
+    .mo-eq-scale button.on { color:#e2e8f0; background:#1e293b; }
     .mo-todo { border:1px dashed #334155; border-radius:8px; padding:16px; color:#64748b;
                font-size:12px; max-width:72ch; line-height:1.5; }
     .mo-todo p { margin:0 0 10px; }
@@ -818,7 +846,8 @@
 
     /* EXPIRED reads as a fact about the contract, not a warning about attention, so it
        takes the slate/steel of a closed thing rather than Stale's amber. Same geometry as
-       .stale-badge -- they sit in the same slot and never both show. */
+       .stale-badge, and the two SIT TOGETHER when both are true (user, 2026-09-27): the
+       letter's attention and the contract's clock are separate facts about one trade. */
     .expired-badge {
         font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
         color: #cbd5e1; background: rgba(148,163,184,.16); border: 1px solid rgba(148,163,184,.45);
@@ -1754,9 +1783,9 @@
                  ticker, so it has no card to hang off; and there is no summary view by
                  the user's choice -- the panel is dense enough. `ml-auto` puts it in the
                  header's unused right-hand room. -->
-            <button onclick="showMoonshotDive()" title="Moonshot — the momentum book"
+            <button id="mo-btn" onclick="showMoonshotDive()" title="Moonshot — the momentum book"
                     class="ml-auto text-[10px] font-bold uppercase tracking-widest text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2.5 py-0.5 hover:bg-indigo-500/20 hover:text-indigo-200 transition-colors">
-                🚀 Moonshot
+                🚀 Moonshot<span id="mo-btn-alert" class="mo-btn-alert" hidden></span>
             </button>
         </div>
 
@@ -2270,6 +2299,9 @@
                     <button class="view-tab" data-view="chart" data-for="ticker" onclick="switchTab('sd','chart')">Chart</button>
                     <button class="view-tab" data-view="dial" data-for="ticker" onclick="switchTab('sd','dial')">Dial</button>
                     <button class="view-tab" data-view="portfolio" data-for="moonshot" onclick="switchTab('sd','portfolio')">Portfolio</button>
+                    <!-- Named "equity", not "chart": switchTab() lazy-loads a TICKER chart for a
+                         view called chart, and a book has no single price series. -->
+                    <button class="view-tab" data-view="equity" data-for="moonshot" onclick="switchTab('sd','equity'); moDrawEquity();">Chart</button>
                     <button class="view-tab" data-view="custom" data-for="moonshot" onclick="switchTab('sd','custom')">Custom</button>
                 </div>
                 <div class="flex-1 flex flex-col min-h-0">
@@ -2349,6 +2381,19 @@
                             </div>
                         </div>
                     </div>
+                    <!-- MOONSHOT: CHART (user, 2026-09-12). The equity curve for the start date the
+                         book was built from, in dollars from the payload's base, with QQQ buy and
+                         hold rebased to the same base beside it. Drawn by moDrawEquity() when the
+                         tab is selected -- a chart built into a hidden pane measures zero. -->
+                    <div id="sd-pane-equity" class="view-pane hidden flex-1 flex flex-col min-h-0">
+                        <div class="mo-eq-head">
+                            <div id="mo-eq-legend" class="mo-eq-legend"></div>
+                            <div class="mo-eq-scale" role="group" aria-label="Price scale">
+                                <button type="button" data-scale="log" class="on">Log</button><button type="button" data-scale="linear">Linear</button>
+                            </div>
+                        </div>
+                        <div id="mo-eq-chart" class="chart-container flex-1"></div>
+                    </div>
                     <!-- MOONSHOT: CUSTOM. Last of the three to be built, deliberately the
                          simplest (user, 2026-09-09). Placeholder until then. -->
                     <div id="sd-pane-custom" class="view-pane hidden flex-1 overflow-y-auto pr-1">
@@ -2404,14 +2449,14 @@
 <script src="static/js/watchlist.js?v=20260821n"></script>
 <script src="static/js/macro.js?v=20260821n"></script>
 <script src="static/js/us-map.js?v=20260829a"></script>
-<script src="static/js/stoplight.js?v=20260921a"></script>
+<script src="static/js/stoplight.js?v=20260921b"></script>
 <script src="static/js/strategy.js?v=20260910b"></script>
-<script src="static/js/strategy-dive.js?v=20260910h"></script>
+<script src="static/js/strategy-dive.js?v=20260923a"></script>
 <script src="static/js/actionable.js?v=20260821n"></script>
-<script src="static/js/newsletter-cards.js?v=20260926a"></script>
+<script src="static/js/newsletter-cards.js?v=20260927d"></script>
 <script src="static/js/charts.js?v=20260901c"></script>
 <script src="static/js/news-archive.js?v=20260821n"></script>
-<script src="static/js/newsletter-dive.js?v=20260926a"></script>
+<script src="static/js/newsletter-dive.js?v=20260927b"></script>
 <script src="static/js/newsletter-digest.js?v=20260821n"></script>
 <script src="static/js/main.js?v=20260827a"></script>
 </body>

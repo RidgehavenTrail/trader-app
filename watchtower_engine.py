@@ -3479,6 +3479,15 @@ def _log_once_daily(msg):
     print(msg)
 
 
+def _next_session(d=None):
+    """The next weekday after `d`. A holiday only means the contract is banked a day
+    early, which costs nothing; a missed session would cost the mark."""
+    d = (d or datetime.now(ET).date()) + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
 def _vetted_expirations(valid_exps, first_seen):
     """The expirations listed at least VETTED_LISTING_DAYS before they expire -- already
     there when the look-ahead watched that far out -- nearest first."""
@@ -3618,30 +3627,39 @@ def analyze_options_structure(ticker_symbol, current_price):
                 record_atm_mark(ticker_symbol, atm_strike, bid, ask,
                                 current_price, nearest_exp, atm_iv)
 
-                # SEED THE CONTRACT THAT TAKES OVER AT THE ROLL. The DTE floor walks
-                # forward a day every morning, so today's chain eventually falls inside
-                # it -- and on that morning a mark against the old expiry is worthless
-                # (get_atm_mark is asked for the NEW contract and misses). If no mark
-                # for the replacement was banked first, the name goes dark until its
-                # book quotes again, which on a thin name can be days.
+                # BANK THE CONTRACT THE NEXT SESSION WILL USE, AT TODAY'S PRICES (user,
+                # 2026-09-28: "the point is to use the latest options pricing on the
+                # contract an instrument would use on the next trading day").
                 #
-                # Looking ATM_MARK_LOOKAHEAD_DAYS ahead rather than one day is what
-                # makes that robust: ANY quote in the run-up to the roll seeds it, not
-                # only a quote on the single boundary morning. That is precisely what a
-                # name that quotes intermittently needs -- SFIX rolls 2026-09-18 ->
-                # 2026-10-16 on 2026-09-11 and does not quote every day.
+                # The DTE floor walks forward every morning, so the contract that prices
+                # tomorrow's threshold is often not today's. It has to be banked while a
+                # live book exists, because tomorrow's pre-market has none.
                 #
-                # Pulled only when no usable mark for that contract is already held, so
-                # the cost is one extra option_chain() per ticker per contract (~0.2s),
-                # not one per pass.
-                _next_cut = (datetime.today() + timedelta(
-                    days=MIN_DTE_CALENDAR_DAYS + ATM_MARK_LOOKAHEAD_DAYS)
+                # THIS USED TO BANK IT ONCE AND WALK AWAY. The seed was taken from
+                # MIN_DTE + LOOKAHEAD days out and re-taken only when no usable mark was
+                # held at all -- so a mark banked at 12 days out stayed put while the roll
+                # crept toward it, and a carried mark is only trusted for
+                # ATM_MARK_MAX_AGE_DAYS. Measured 2026-09-28: AMD, GOOGL, INTC, MSFT, MU,
+                # NVDA, TSLA and XLE all rolled onto 2026-10-09 carrying a 7-day-old price
+                # banked on 09-21, over the 5-day limit, and 8 of 34 names lost their
+                # pre-market threshold to a staleness the look-ahead was built to prevent.
+                #
+                # So the seed is TOMORROW'S contract, re-banked whenever the one on hand
+                # was not captured today: never more than a session old when it is needed,
+                # and the price is the one the market last made. One extra option_chain()
+                # per ticker per DAY (the first live pass takes it; the rest find it
+                # banked), not one per pass.
+                _next_cut = (_next_session() + timedelta(days=MIN_DTE_CALENDAR_DAYS)
                              ).strftime('%Y-%m-%d')
-                _next_cands = [e for e in expirations if e > _next_cut]
-                # Held already? Ask about every candidate, not just the first: on a
-                # thin name the first is sometimes the put-less one we step over, and
-                # checking only that would re-pull the chain on every single pass.
-                _seeded = any(get_atm_mark(ticker_symbol, e)
+                _next_valid = [e for e in expirations if e > _next_cut]
+                _next_vetted, _ = _vetted_expirations(_next_valid, first_seen), None
+                _next_cands = _next_vetted or _next_valid
+                _today_iso = datetime.now(ET).date().isoformat()
+                # Banked TODAY? Ask about every candidate, not just the first: on a thin
+                # name the first is sometimes the put-less one we step over, and checking
+                # only that would re-pull the chain on every single pass.
+                _seeded = any((get_atm_mark(ticker_symbol, e) or {}).get(
+                                  "captured_at", "")[:10] == _today_iso
                               for e in _next_cands[:MAX_EXPIRY_PROBES])
                 if _next_cands and _next_cands[0] != nearest_exp and not _seeded:
                     try:
@@ -3775,7 +3793,7 @@ app.register_blueprint(macro_bp)
 # --- Moonshot: the ten-slot momentum book with a bank, served as a BOOK rather than a
 #     position (engine/moonshot.py, 2026-09-09). Its own Blueprint because it has no
 #     ticker and does not fit the per-ticker registry; cached per start date. ---
-from engine.moonshot import bp as moonshot_bp
+from engine.moonshot import bp as moonshot_bp, start_book_watcher as start_moonshot_watcher
 app.register_blueprint(moonshot_bp)
 
 # --- Market data + ticker management: extracted to engine/market.py
@@ -4347,4 +4365,9 @@ if __name__ == "__main__":
         start_macro_loop()
         start_news_loop()
         start_stoplight_scheduler()
+        # Keeps the Moonshot book level with its hourly price panel, so opening the panel
+        # never shows an older hour (user, 2026-09-23). NOT started in the --as-of-date
+        # branch above: that path exists to inspect one card, and a 40s walk there would
+        # cost time for a book nobody is looking at.
+        start_moonshot_watcher()
         app.run(port=5001)
